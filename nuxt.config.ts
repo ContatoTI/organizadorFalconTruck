@@ -15,7 +15,9 @@ export default defineNuxtConfig({
   },
   modules: ['@nuxt/eslint', '@nuxtjs/tailwindcss', 'shadcn-nuxt', '@nuxtjs/color-mode', '@nuxtjs/supabase'],
   supabase: {
-    redirect: false
+    redirect: false,
+    url: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
+    key: process.env.SUPABASE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   },
   shadcn: {
     /**
