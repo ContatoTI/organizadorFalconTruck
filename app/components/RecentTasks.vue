@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 import Button from '@/components/ui/button/Button.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 
 const client = useSupabaseClient()
 const user = useSupabaseUser()
@@ -23,6 +24,7 @@ const loading = ref(false)
 const selectedTasks = ref<Set<number>>(new Set())
 const lastSelectedIndex = ref<number | null>(null)
 const shiftKeyPressed = ref(false)
+const showDeleteConfirm = ref(false)
 
 // Computar o ID efetivo usando prop ou o composable local como fallback
 const effectiveUserId = computed(() => props.userId || user.value?.id || (user.value as any)?.sub)
@@ -50,9 +52,10 @@ const fetchTasks = async () => {
     // Configurar a query baseada no filtro
     if (props.viewGroupIds && props.viewGroupIds.length > 0) {
       // Filtrar por múltiplos grupos usando Inner Join e IN
+      // Também trazemos a view_groups para exibir os nomes/cores
       query = client
         .from('todos')
-        .select('*, todo_groups!inner(group_id)')
+        .select('*, todo_groups!inner(group_id), view_groups:todo_groups(view_groups(title, color, type))')
         .eq('user_id', currentUserId)
         .in('todo_groups.group_id', props.viewGroupIds)
         .order('created_at', { ascending: false })
@@ -60,7 +63,7 @@ const fetchTasks = async () => {
       // Filtrar por grupo específico usando Inner Join
       query = client
         .from('todos')
-        .select('*, todo_groups!inner(group_id)')
+        .select('*, todo_groups!inner(group_id), view_groups:todo_groups(view_groups(title, color, type))')
         .eq('user_id', currentUserId)
         .eq('todo_groups.group_id', props.viewGroupId)
         .order('created_at', { ascending: false })
@@ -68,7 +71,7 @@ const fetchTasks = async () => {
       // Buscar todas (ou Inbox) - Trazendo os grupos para filtragem ou display
       query = client
         .from('todos')
-        .select('*, todo_groups(group_id)')
+        .select('*, todo_groups(group_id), view_groups:todo_groups(view_groups(title, color, type))')
         .eq('user_id', currentUserId)
         .order('created_at', { ascending: false })
     }
@@ -149,9 +152,13 @@ const toggleAll = (checked: boolean) => {
   lastSelectedIndex.value = null
 }
 
-const deleteSelected = async () => {
+const requestDelete = () => {
   if (!selectedTasks.value.size) return
-  if (!confirm(`Tem certeza que deseja excluir ${selectedTasks.value.size} tarefas?`)) return
+  showDeleteConfirm.value = true
+}
+
+const confirmDelete = async () => {
+  showDeleteConfirm.value = false
   
   try {
     const { error } = await client
@@ -232,40 +239,55 @@ defineExpose({ refresh: fetchTasks })
 </script>
 
 <template>
-  <div class="mt-8 transition-all" :class="{ 'hidden': hideEmpty && todos.length === 0 }">
-    <div 
-      class="flex items-center justify-between mb-4 h-10 px-3 py-2 rounded-md transition-colors"
-      :style="groupColor ? { backgroundColor: `${groupColor}20`, borderLeft: `4px solid ${groupColor}` } : {}"
-    >
-      <div class="flex items-center gap-3">
-         <Checkbox 
-           :checked="todos.length > 0 && selectedTasks.size === todos.length"
-           @update:checked="toggleAll"
-           v-if="todos.length > 0"
-         />
-         <h3 class="text-sm font-medium" :class="groupColor ? 'text-foreground' : 'text-muted-foreground'">
-           {{ groupTitle || (viewGroupIds?.length ? 'Tarefas Filtradas' : (viewGroupId !== undefined ? (viewGroupId === null ? 'Tarefas sem grupo' : 'Tarefas do Grupo') : 'Todas as tarefas')) }}
-         </h3>
-      </div>
+  <div 
+    class="mt-8 transition-all rounded-xl p-4 border" 
+    :class="{ 'hidden': hideEmpty && todos.length === 0 }"
+    :style="groupColor ? { backgroundColor: `${groupColor}10`, borderColor: `${groupColor}30` } : {}"
+  >
+    <ConfirmDialog 
+      :isOpen="showDeleteConfirm"
+      :title="`Excluir ${selectedTasks.size} tarefa(s)`"
+      description="Tem certeza que deseja excluir as tarefas selecionadas? Esta ação não pode ser desfeita."
+      confirmText="Excluir"
+      @confirm="confirmDelete"
+      @cancel="showDeleteConfirm = false"
+    />
 
-      <Button 
-        v-if="selectedTasks.size > 0" 
-        variant="destructive" 
-        size="sm" 
-        @click="deleteSelected"
-        class="animate-in fade-in slide-in-from-right-5"
-      >
-        <Trash2 class="w-4 h-4 mr-2" />
-        Apagar ({{ selectedTasks.size }})
-      </Button>
+    <!-- Header Discreto -->
+    <div class="flex items-center justify-between mb-3">
+       <div class="text-[10px] font-bold uppercase tracking-wider opacity-70 flex items-center gap-2" :style="{ color: groupColor }">
+          {{ groupTitle || (viewGroupIds?.length ? 'Tarefas Filtradas' : (viewGroupId !== undefined ? (viewGroupId === null ? 'Tarefas sem grupo' : 'Tarefas do Grupo') : 'Todas as tarefas')) }}
+       </div>
+       
+       <div class="flex items-center gap-2">
+         <div v-if="todos.length > 0" class="flex items-center gap-2 mr-2">
+            <span class="text-[10px] text-muted-foreground uppercase tracking-wider">Selecionar Tudo</span>
+            <Checkbox 
+              :checked="todos.length > 0 && selectedTasks.size === todos.length"
+              @update:checked="toggleAll"
+              class="w-4 h-4"
+            />
+         </div>
+
+         <Button 
+            v-if="selectedTasks.size > 0" 
+            variant="destructive" 
+            size="sm" 
+            @click.stop="requestDelete"
+            class="h-6 px-2 text-xs"
+          >
+            <Trash2 class="w-3 h-3 mr-1" />
+            Apagar ({{ selectedTasks.size }})
+          </Button>
+       </div>
     </div>
     
-    <div class="space-y-2 pl-2">
-      <div v-if="loading && todos.length === 0" class="text-sm text-muted-foreground animate-pulse">
+    <div class="space-y-2">
+      <div v-if="loading && todos.length === 0" class="text-sm text-muted-foreground animate-pulse pl-1">
         Carregando...
       </div>
       
-      <div v-else-if="todos.length === 0" class="text-sm text-muted-foreground italic pl-2">
+      <div v-else-if="todos.length === 0" class="text-sm text-muted-foreground italic pl-1 opacity-60">
         Nenhuma tarefa encontrada.
       </div>
       
@@ -295,19 +317,37 @@ defineExpose({ refresh: fetchTasks })
             :class="{ 'line-through text-muted-foreground': todo.is_completed }"
           />
           
-          <div class="relative flex items-center">
-            <input 
-              type="datetime-local"
-              :value="todo.due_at ? new Date(todo.due_at).toISOString().slice(0, 16) : ''"
-              @change="updateDueDate(todo, $event)"
-              class="absolute inset-0 opacity-0 cursor-pointer w-8"
-            />
-            <div 
-              class="flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-muted transition-colors whitespace-nowrap"
-              :class="todo.due_at ? 'text-primary' : 'text-muted-foreground opacity-0 group-hover/item:opacity-100'"
-            >
-              <Calendar class="w-3 h-3" />
-              <span v-if="todo.due_at">{{ formatDate(todo.due_at) }}</span>
+          <div class="flex items-center gap-2">
+            <!-- Tags de Grupo (Blocos de Tempo) -->
+            <div v-if="todo.view_groups && todo.view_groups.length > 0" class="flex gap-1">
+               <span 
+                 v-for="(vg, idx) in todo.view_groups" 
+                 :key="idx"
+                 class="text-[10px] px-1.5 py-0.5 rounded border opacity-70 whitespace-nowrap"
+                 :style="{ 
+                   backgroundColor: vg.view_groups?.color ? `${vg.view_groups.color}20` : '#8882',
+                   borderColor: vg.view_groups?.color ? `${vg.view_groups.color}50` : '#8885',
+                   color: vg.view_groups?.color || 'currentColor'
+                 }"
+               >
+                 {{ vg.view_groups?.title }}
+               </span>
+            </div>
+
+            <div class="relative flex items-center">
+              <input 
+                type="datetime-local"
+                :value="todo.due_at ? new Date(todo.due_at).toISOString().slice(0, 16) : ''"
+                @change="updateDueDate(todo, $event)"
+                class="absolute inset-0 opacity-0 cursor-pointer w-8"
+              />
+              <div 
+                class="flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-muted transition-colors whitespace-nowrap"
+                :class="todo.due_at ? 'text-primary' : 'text-muted-foreground opacity-0 group-hover/item:opacity-100'"
+              >
+                <Calendar class="w-3 h-3" />
+                <span v-if="todo.due_at">{{ formatDate(todo.due_at) }}</span>
+              </div>
             </div>
           </div>
         </div>

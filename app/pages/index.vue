@@ -20,6 +20,7 @@ const groups = ref<any[]>([])
 const activeGroupsByTime = ref<any[]>([])
 // Default to 'auto' to show relevant tasks or all tasks if no group is active
 const selectedMode = ref<'auto' | 'all' | 'inbox' | number>('auto')
+const showOnlyActiveBlocks = ref(false)
 let timeInterval: any = null
 
 const calculateCurrentGroup = () => {
@@ -32,19 +33,35 @@ const calculateCurrentGroup = () => {
   const currentTime = now.toTimeString().slice(0, 5)
 
   const active = groups.value.filter(g => {
-    // Ignore groups without time or list type groups (unless they have time set, but user specified "time blocks")
-    if (!g.start_time || !g.end_time) return false
-    
-    // Handle cross-midnight groups (e.g. 23:00 to 02:00)
-    if (g.start_time <= g.end_time) {
-      return currentTime >= g.start_time && currentTime < g.end_time
-    } else {
-      // Crosses midnight
-      return currentTime >= g.start_time || currentTime < g.end_time
-    }
+    return isGroupActive(g)
   })
 
   activeGroupsByTime.value = active
+}
+
+const timeBlockGroups = computed(() => {
+  const allBlocks = groups.value.filter(g => g.start_time && g.end_time)
+  if (showOnlyActiveBlocks.value) {
+    return allBlocks.filter(g => isGroupActive(g))
+  }
+  return allBlocks
+})
+
+const customListGroups = computed(() => {
+  return groups.value.filter(g => !g.start_time || !g.end_time)
+})
+
+const isGroupActive = (group: any) => {
+    if (!group.start_time || !group.end_time) return false
+    const now = new Date()
+    const currentTime = now.toTimeString().slice(0, 5)
+    
+    if (group.start_time <= group.end_time) {
+      return currentTime >= group.start_time && currentTime < group.end_time
+    } else {
+      // Crosses midnight
+      return currentTime >= group.start_time || currentTime < group.end_time
+    }
 }
 
 const fetchGroups = async () => {
@@ -137,81 +154,145 @@ watch(() => route.query.group, (newGroup) => {
   if (newGroup) {
     selectedMode.value = Number(newGroup)
   } else {
-    // If query removed, revert to default 'inbox'
-    selectedMode.value = 'inbox'
+    // If query removed, revert to default 'auto'
+    selectedMode.value = 'auto'
   }
 }, { immediate: true })
+
+watch(selectedMode, (val) => {
+  console.log('Selected Mode alterado para:', val)
+})
 
 </script>
 
 <template>
-  <div class="p-8 max-w-4xl mx-auto space-y-8">
+  <div class="p-8 w-full space-y-8">
     <div class="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
       <div>
         <h1 class="text-4xl font-bold tracking-tight mb-2">
           {{ 
             selectedMode === 'inbox' ? 'Caixa de Entrada' : 
             selectedMode === 'all' ? 'Todas as Tarefas' :
-            selectedMode === 'auto' ? (activeGroupsByTime.length ? `Automático (${activeGroupsByTime.map(g => g.title).join(', ')})` : 'Automático') :
+            selectedMode === 'auto' ? 'Visão Geral' :
             groups.find(g => g.id === selectedMode)?.title || 'Tarefas'
           }}
         </h1>
         <p class="text-muted-foreground">
           {{ 
              selectedMode === 'inbox' ? 'Tarefas sem grupo definido.' :
+             selectedMode === 'auto' ? (activeGroupsByTime.length ? `Foco atual: ${activeGroupsByTime.map(g => g.title).join(', ')}` : 'Gerencie seu dia com foco.') :
              'Gerencie suas tarefas.' 
           }}
         </p>
       </div>
       
-      <div class="flex items-center gap-2">
-        <select 
-          v-model="selectedMode" 
-          class="h-9 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      <div class="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
+        <button 
+          @click="selectedMode = 'auto'"
+          class="px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap"
+          :class="selectedMode === 'auto' 
+            ? 'bg-primary text-primary-foreground shadow-md' 
+            : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'"
         >
-          <option value="inbox">Caixa de Entrada (Sem Grupo)</option>
-          <option value="auto">Automático {{ activeGroupsByTime.length ? `(${activeGroupsByTime.map(g => g.title).join(', ')})` : '' }}</option>
-          <option value="all">Todas as Tarefas</option>
-          <option disabled>──────────</option>
-          <option v-for="group in groups" :key="group.id" :value="group.id">
-            {{ group.title }}
-          </option>
-        </select>
+          Blocos de Tempo
+        </button>
+
+        <div class="w-px h-6 bg-border mx-1 flex-shrink-0"></div>
+
+        <button 
+          v-for="group in customListGroups"
+          :key="group.id"
+          @click="selectedMode = group.id"
+          class="px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap"
+          :class="selectedMode === group.id
+            ? 'bg-primary text-primary-foreground shadow-md' 
+            : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'"
+        >
+          {{ group.title }}
+        </button>
+
+        <button 
+          @click="selectedMode = 'inbox'"
+          class="px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap"
+          :class="selectedMode === 'inbox' 
+            ? 'bg-primary text-primary-foreground shadow-md' 
+            : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'"
+        >
+          Caixa de Entrada
+        </button>
       </div>
     </div>
 
-    <!-- Quick Capture -->
-    <QuickCapture 
-      :groups="groups" 
-      :current-group-id="effectiveGroupIdForCapture"
-      @task-added="handleTaskAdded"
-    />
-
     <!-- Task List -->
     <template v-if="selectedMode === 'auto'">
-      <div v-if="activeGroupsByTime.length === 0" class="text-center py-4 text-muted-foreground bg-muted/20 rounded-lg border border-dashed">
-        <p>Nenhum bloco de tempo ativo neste horário.</p>
-        <button class="text-primary hover:underline text-sm" @click="selectedMode = 'all'">Ver todas as tarefas</button>
+      
+      <!-- Sub-filter for Time Blocks AND Quick Capture -->
+      <div class="flex flex-col md:flex-row items-center justify-between gap-4 mb-4">
+        <!-- Quick Capture (moved here) -->
+        <div class="w-full md:w-1/2">
+            <QuickCapture 
+              :groups="groups" 
+              :current-group-id="effectiveGroupIdForCapture"
+              @task-added="handleTaskAdded"
+            />
+        </div>
+
+        <div class="inline-flex items-center p-1 bg-muted rounded-lg shrink-0">
+          <button 
+            @click="showOnlyActiveBlocks = false"
+            class="px-3 py-1.5 text-xs font-medium rounded-md transition-all"
+            :class="!showOnlyActiveBlocks ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'"
+          >
+            Todos os Blocos
+          </button>
+          <button 
+            @click="showOnlyActiveBlocks = true"
+            class="px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1.5"
+            :class="showOnlyActiveBlocks ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'"
+          >
+            <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+            Apenas Atuais
+          </button>
+        </div>
       </div>
 
-      <!-- Active Groups -->
-      <RecentTasks 
-        v-for="group in activeGroupsByTime"
-        :key="group.id"
-        :view-group-id="group.id"
-        :group-color="group.color"
-        :group-title="group.title"
-        :hide-empty="false"
-      />
-      
-      <!-- Inbox (Always show in auto mode, separated) -->
+      <!-- Tarefas da Caixa de Entrada (Sem grupo) -->
       <RecentTasks 
         :view-group-id="null"
-        group-title="Sem Bloco"
+        group-title="Caixa de Entrada"
+        :hide-empty="true"
+        class="!mt-4 mb-8"
       />
+
+      <div class="space-y-4">
+        <div 
+          v-for="group in timeBlockGroups" 
+          :key="group.id"
+          class="transition-all duration-300"
+          :class="isGroupActive(group) ? 'scale-[1.01]' : 'opacity-80 hover:opacity-100'"
+        >
+          <RecentTasks 
+            :view-group-id="group.id"
+            :group-color="group.color"
+            :group-title="group.title + (group.start_time ? ` (${group.start_time.slice(0,5)} - ${group.end_time?.slice(0,5)})` : '')"
+            :hide-empty="false"
+          />
+        </div>
+
+        <div v-if="timeBlockGroups.length === 0" class="text-center py-10 text-muted-foreground">
+           Nenhum bloco de tempo configurado.
+        </div>
+      </div>
     </template>
     
     <template v-else>
+      <div class="mb-4">
+          <QuickCapture 
+            :groups="groups" 
+            :current-group-id="effectiveGroupIdForCapture"
+            @task-added="handleTaskAdded"
+          />
+      </div>
       <RecentTasks 
         ref="recentTasksRef"
         :view-group-id="effectiveGroupIdForList"

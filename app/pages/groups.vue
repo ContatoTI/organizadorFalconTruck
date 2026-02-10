@@ -1,5 +1,5 @@
 <template>
-  <div class="p-6 max-w-4xl mx-auto">
+  <div class="p-6 w-full">
     <div class="flex items-center justify-between mb-8">
       <div>
         <h1 class="text-3xl font-bold tracking-tight">Grupos de Visualização</h1>
@@ -141,7 +141,7 @@
               <Button 
                 variant="ghost" 
                 size="sm" 
-                @click.stop="deleteGroup(group.id)" 
+                @click.stop="openDeleteModal(group.id)" 
                 class="text-destructive hover:text-destructive hover:bg-destructive/10"
               >
                 Excluir
@@ -151,17 +151,32 @@
         </CardContent>
       </Card>
     </div>
+    
+    <!-- Delete Confirmation Modal -->
+    <div v-if="showDeleteModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="closeDeleteModal">
+      <Card class="w-full max-w-md mx-4 animate-in fade-in zoom-in duration-200">
+        <CardHeader>
+          <CardTitle>Confirmar Exclusão</CardTitle>
+          <CardDescription>Tem certeza que deseja excluir este grupo? Esta ação não pode ser desfeita.</CardDescription>
+        </CardHeader>
+        <CardFooter class="flex justify-end gap-2">
+          <Button variant="outline" @click="closeDeleteModal">Cancelar (Esc)</Button>
+          <Button variant="destructive" @click="executeDeleteGroup">Excluir (Enter)</Button>
+        </CardFooter>
+      </Card>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import Button from '@/components/ui/button/Button.vue'
 import Card from '@/components/ui/card/Card.vue'
 import CardHeader from '@/components/ui/card/CardHeader.vue'
 import CardTitle from '@/components/ui/card/CardTitle.vue'
 import CardDescription from '@/components/ui/card/CardDescription.vue'
 import CardContent from '@/components/ui/card/CardContent.vue'
+import CardFooter from '@/components/ui/card/CardFooter.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Label from '@/components/ui/label/Label.vue'
 import { 
@@ -177,6 +192,8 @@ const loadingGroups = ref(false)
 const groups = ref<any[]>([])
 const isEditing = ref(false)
 const editingId = ref<number | null>(null)
+const showDeleteModal = ref(false)
+const groupToDeleteId = ref<number | null>(null)
 
 const formGroup = ref({
   title: '',
@@ -318,10 +335,43 @@ const saveGroup = async () => {
   }
 }
 
-const deleteGroup = async (id: number) => {
-  if (!confirm('Tem certeza que deseja excluir este grupo?')) return
+const openDeleteModal = (id: number) => {
+  groupToDeleteId.value = id
+  showDeleteModal.value = true
+}
+
+const closeDeleteModal = () => {
+  showDeleteModal.value = false
+  groupToDeleteId.value = null
+}
+
+const executeDeleteGroup = async () => {
+  if (!groupToDeleteId.value) return
+  const id = groupToDeleteId.value
   
   try {
+    // First, unlink any todos associated with this group
+    const { error: unlinkError } = await client
+      .from('todos')
+      .update({ view_group_id: null })
+      .eq('view_group_id', id)
+
+    if (unlinkError) {
+      console.error('Error unlinking todos:', unlinkError)
+      // Continue anyway to try deleting from todo_groups
+    }
+
+    // Remove from join table if exists
+    const { error: joinError } = await client
+      .from('todo_groups')
+      .delete()
+      .eq('group_id', id)
+
+    if (joinError) {
+       console.error('Error deleting from todo_groups:', joinError)
+    }
+
+    // Finally delete the group
     const { error } = await client
       .from('view_groups')
       .delete()
@@ -333,8 +383,10 @@ const deleteGroup = async (id: number) => {
       cancelEdit()
     }
     await fetchGroups()
-  } catch (e) {
+    closeDeleteModal()
+  } catch (e: any) {
     console.error('Error deleting group:', e)
+    alert(`Erro ao excluir grupo: ${e.message || 'Erro desconhecido'}`)
   }
 }
 
@@ -344,9 +396,20 @@ const formatTime = (time: string | null | undefined) => {
   return time.substring(0, 5)
 }
 
+const handleKeydown = (e: KeyboardEvent) => {
+  if (!showDeleteModal.value) return
+  
+  if (e.key === 'Escape') {
+    closeDeleteModal()
+  } else if (e.key === 'Enter') {
+    executeDeleteGroup()
+  }
+}
+
 const route = useRoute()
 
 onMounted(() => {
+  window.addEventListener('keydown', handleKeydown)
   if (user.value) fetchGroups()
   
   // Check for create action
@@ -354,6 +417,10 @@ onMounted(() => {
     cancelEdit() // Reset form
     formGroup.value.type = route.query.type as string
   }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown)
 })
 
 watch(user, (u) => {

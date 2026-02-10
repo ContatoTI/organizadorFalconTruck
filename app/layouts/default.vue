@@ -290,11 +290,11 @@ const ensureDefaultGroups = async () => {
     const { data: existingCompras } = await client
       .from('view_groups')
       .select('id')
-      .eq('user_id', currentUser.id)
+      .eq('user_id', currentUserId)
       .eq('title', 'Compras')
-      .maybeSingle()
+      .limit(1)
 
-    if (!existingCompras) {
+    if (!existingCompras || existingCompras.length === 0) {
       const { error } = await client.from('view_groups').insert({
         title: 'Compras',
         user_id: currentUserId,
@@ -309,9 +309,9 @@ const ensureDefaultGroups = async () => {
       .select('id')
       .eq('user_id', currentUserId)
       .eq('title', 'Finanças')
-      .maybeSingle()
+      .limit(1)
 
-    if (!existingFinancas) {
+    if (!existingFinancas || existingFinancas.length === 0) {
       const { error } = await client.from('view_groups').insert({
         title: 'Finanças',
         user_id: currentUserId,

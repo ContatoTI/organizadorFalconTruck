@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { Plus, Trash2, Calendar as CalendarIcon, DollarSign, ArrowUpCircle, ArrowDownCircle } from 'lucide-vue-next'
 import { format } from 'date-fns'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 
 const route = useRoute()
 const client = useSupabaseClient()
@@ -11,6 +12,8 @@ const type = computed(() => route.query.type as 'payable' | 'receivable' | undef
 const title = computed(() => type.value === 'payable' ? 'Contas a Pagar' : type.value === 'receivable' ? 'Contas a Receber' : 'Finanças')
 const transactions = ref<any[]>([])
 const loading = ref(false)
+const showDeleteConfirm = ref(false)
+const transactionToDelete = ref<number | null>(null)
 
 // Form state
 const isAdding = ref(false)
@@ -66,8 +69,17 @@ const addTransaction = async () => {
   }
 }
 
-const deleteTransaction = async (id: number) => {
-  if (!confirm('Tem certeza que deseja excluir?')) return
+const requestDelete = (id: number) => {
+  transactionToDelete.value = id
+  showDeleteConfirm.value = true
+}
+
+const confirmDelete = async () => {
+  if (!transactionToDelete.value) return
+  const id = transactionToDelete.value
+  showDeleteConfirm.value = false
+  transactionToDelete.value = null
+  
   const { error } = await client.from('finance_transactions').delete().eq('id', id)
   if (error) console.error('Error deleting:', error)
   else fetchTransactions()
@@ -96,7 +108,15 @@ const totalPaid = computed(() => transactions.value.filter(t => t.status === 'pa
 </script>
 
 <template>
-  <div class="p-8 max-w-4xl mx-auto space-y-8">
+  <div class="p-8 w-full space-y-8">
+    <ConfirmDialog 
+      :isOpen="showDeleteConfirm"
+      title="Excluir transação"
+      description="Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita."
+      confirmText="Excluir"
+      @confirm="confirmDelete"
+      @cancel="showDeleteConfirm = false"
+    />
     <div class="flex items-center justify-between">
       <div>
         <h1 class="text-3xl font-bold flex items-center gap-2">
@@ -170,7 +190,7 @@ const totalPaid = computed(() => transactions.value.filter(t => t.status === 'pa
           <div class="font-bold" :class="t.type === 'payable' ? 'text-red-600' : 'text-emerald-600'">
             {{ t.type === 'payable' ? '-' : '+' }} R$ {{ Number(t.amount).toFixed(2) }}
           </div>
-          <button @click="deleteTransaction(t.id)" class="text-muted-foreground hover:text-destructive transition-colors">
+          <button @click.stop="requestDelete(t.id)" class="text-muted-foreground hover:text-destructive transition-colors">
             <Trash2 class="w-4 h-4" />
           </button>
         </div>

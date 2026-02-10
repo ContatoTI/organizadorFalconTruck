@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import QuickCapture from '@/components/QuickCapture.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { Trash2 } from 'lucide-vue-next'
 
 const client = useSupabaseClient()
 const user = useSupabaseUser()
 const todos = ref<any[]>([])
 const loading = ref(false)
+const showDeleteConfirm = ref(false)
+const todoToDelete = ref<number | null>(null)
 
 const effectiveUserId = computed(() => user.value?.id)
 
@@ -55,8 +58,16 @@ const toggleTodo = async (todo: any) => {
   }
 }
 
-const deleteTodo = async (id: number) => {
-  if (!confirm('Tem certeza que deseja excluir esta tarefa?')) return
+const requestDelete = (id: number) => {
+  todoToDelete.value = id
+  showDeleteConfirm.value = true
+}
+
+const confirmDelete = async () => {
+  if (!todoToDelete.value) return
+  const id = todoToDelete.value
+  showDeleteConfirm.value = false
+  todoToDelete.value = null
 
   // Optimistic remove
   const original = [...todos.value]
@@ -83,7 +94,15 @@ watch(effectiveUserId, (newId) => {
 </script>
 
 <template>
-  <div class="p-6 max-w-4xl mx-auto">
+  <div class="p-6 w-full">
+    <ConfirmDialog 
+      :isOpen="showDeleteConfirm"
+      title="Excluir tarefa"
+      description="Tem certeza que deseja excluir esta tarefa? Esta ação não pode ser desfeita."
+      confirmText="Excluir"
+      @confirm="confirmDelete"
+      @cancel="showDeleteConfirm = false"
+    />
     <h1 class="text-3xl font-bold mb-8">Afazeres</h1>
     
     <QuickCapture @task-added="fetchTasks" />
@@ -119,7 +138,7 @@ watch(effectiveUserId, (newId) => {
         </span>
         
         <button 
-          @click="deleteTodo(todo.id)"
+          @click.stop="requestDelete(todo.id)"
           class="p-2 text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
           title="Excluir tarefa"
         >
