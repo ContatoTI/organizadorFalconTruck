@@ -46,7 +46,7 @@
                <span>Blocos de Tempo</span>
                <div class="flex items-center gap-1">
                  <NuxtLink to="/groups?action=create&type=time" class="hover:text-foreground"><Plus class="w-3 h-3" /></NuxtLink>
-                 <NuxtLink to="/groups" class="hover:text-foreground"><Settings class="w-3 h-3" /></NuxtLink>
+                 <NuxtLink to="/groups?type=time" class="hover:text-foreground"><Settings class="w-3 h-3" /></NuxtLink>
                </div>
              </div>
              
@@ -83,7 +83,7 @@
                <span>Listas</span>
                <div class="flex items-center gap-1">
                  <NuxtLink to="/groups?action=create&type=list" class="hover:text-foreground"><Plus class="w-3 h-3" /></NuxtLink>
-                 <NuxtLink to="/groups" class="hover:text-foreground"><Settings class="w-3 h-3" /></NuxtLink>
+                 <NuxtLink to="/groups?type=list" class="hover:text-foreground"><Settings class="w-3 h-3" /></NuxtLink>
                </div>
              </div>
              
@@ -120,7 +120,7 @@
                <span>Categorias</span>
                <div class="flex items-center gap-1">
                  <NuxtLink to="/groups?action=create&type=category" class="hover:text-foreground"><Plus class="w-3 h-3" /></NuxtLink>
-                 <NuxtLink to="/groups" class="hover:text-foreground"><Settings class="w-3 h-3" /></NuxtLink>
+                 <NuxtLink to="/groups?type=category" class="hover:text-foreground"><Settings class="w-3 h-3" /></NuxtLink>
                </div>
              </div>
              

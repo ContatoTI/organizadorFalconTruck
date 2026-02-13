@@ -205,6 +205,9 @@ export type Database = {
           title: string
           type: string | null
           user_id: string
+          recurrence_type?: string | null
+          recurrence_days?: number[] | null
+          schedules?: any | null
         }
         Insert: {
           color?: string | null
@@ -216,6 +219,9 @@ export type Database = {
           title: string
           type?: string | null
           user_id?: string
+          recurrence_type?: string | null
+          recurrence_days?: number[] | null
+          schedules?: any | null
         }
         Update: {
           color?: string | null
@@ -227,6 +233,9 @@ export type Database = {
           title: string
           type?: string | null
           user_id?: string
+          recurrence_type?: string | null
+          recurrence_days?: number[] | null
+          schedules?: any | null
         }
         Relationships: []
       }

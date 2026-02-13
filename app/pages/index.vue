@@ -20,7 +20,8 @@ const groups = ref<any[]>([])
 const activeGroupsByTime = ref<any[]>([])
 // Default to 'auto' to show relevant tasks or all tasks if no group is active
 const selectedMode = ref<'auto' | 'all' | 'inbox' | number>('auto')
-const showOnlyActiveBlocks = ref(false)
+const showOnlyActiveBlocks = ref(true)
+const showCompletedTasks = ref(false)
 let timeInterval: any = null
 
 const calculateCurrentGroup = () => {
@@ -52,16 +53,93 @@ const customListGroups = computed(() => {
 })
 
 const isGroupActive = (group: any) => {
-    if (!group.start_time || !group.end_time) return false
+  // Helper function to check a single schedule
+  const isScheduleActive = (start: string, end: string, recType: string, recDays: number[]) => {
+    if (!start || !end) return false
     const now = new Date()
+    
+    // Recurrence Check
+    if (recType === 'weekly') {
+       const currentDay = now.getDay() // 0 = Sunday, 6 = Saturday
+       const days = Array.isArray(recDays) ? recDays : []
+       if (days.length > 0 && !days.includes(currentDay)) return false
+    } else if (recType === 'monthly') {
+       const currentDate = now.getDate() // 1-31
+       const days = Array.isArray(recDays) ? recDays : []
+       if (days.length > 0 && !days.includes(currentDate)) return false
+    }
+
     const currentTime = now.toTimeString().slice(0, 5)
     
-    if (group.start_time <= group.end_time) {
-      return currentTime >= group.start_time && currentTime < group.end_time
+    if (start <= end) {
+      return currentTime >= start && currentTime < end
     } else {
       // Crosses midnight
-      return currentTime >= group.start_time || currentTime < group.end_time
+      return currentTime >= start || currentTime < end
     }
+  }
+
+  // Check multiple schedules if available
+  if (group.schedules && Array.isArray(group.schedules) && group.schedules.length > 0) {
+    return group.schedules.some((s: any) => isScheduleActive(s.start_time, s.end_time, s.recurrence_type, s.recurrence_days))
+  }
+
+  // Fallback to legacy fields
+  return isScheduleActive(group.start_time, group.end_time, group.recurrence_type, group.recurrence_days)
+}
+
+const formatGroupTitle = (group: any) => {
+  let title = group.title
+  
+  // Helper to format a single schedule string
+  const formatSchedule = (start: string, end: string, recType: string, recDays: number[]) => {
+    let suffix = ` (${start.slice(0,5)} - ${end.slice(0,5)})`
+    
+    if (recType === 'weekly' && Array.isArray(recDays) && recDays.length > 0) {
+      const weekMap = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+      const days = recDays.map((d: number) => weekMap[d]).join(', ')
+      suffix += ` - ${days}`
+    } else if (recType === 'monthly' && Array.isArray(recDays) && recDays.length > 0) {
+      suffix += ` - Dias: ${recDays.join(', ')}`
+    }
+    return suffix
+  }
+
+  // If multiple schedules, try to find the currently active one to display
+  if (group.schedules && Array.isArray(group.schedules) && group.schedules.length > 0) {
+    // Check if any schedule is active right now
+    const now = new Date()
+    const currentTime = now.toTimeString().slice(0, 5)
+    const currentDay = now.getDay()
+    const currentDate = now.getDate()
+
+    const activeSchedule = group.schedules.find((s: any) => {
+      // Re-implementing simplified check just to find active one for display
+      if (s.recurrence_type === 'weekly' && s.recurrence_days?.length && !s.recurrence_days.includes(currentDay)) return false
+      if (s.recurrence_type === 'monthly' && s.recurrence_days?.length && !s.recurrence_days.includes(currentDate)) return false
+      
+      if (s.start_time <= s.end_time) {
+        return currentTime >= s.start_time && currentTime < s.end_time
+      } else {
+        return currentTime >= s.start_time || currentTime < s.end_time
+      }
+    })
+
+    if (activeSchedule) {
+      return title + formatSchedule(activeSchedule.start_time, activeSchedule.end_time, activeSchedule.recurrence_type, activeSchedule.recurrence_days) + ' (Ativo agora)'
+    } else {
+      // If none active, show "Múltiplos Horários" or the first one?
+      // Let's show "Múltiplos Horários" to keep it clean
+      return title + ' (Múltiplos Horários)'
+    }
+  }
+
+  // Legacy fallback
+  if (group.start_time && group.end_time) {
+    return title + formatSchedule(group.start_time, group.end_time, group.recurrence_type, group.recurrence_days)
+  }
+  
+  return title
 }
 
 const fetchGroups = async () => {
@@ -237,22 +315,32 @@ watch(selectedMode, (val) => {
             />
         </div>
 
-        <div class="inline-flex items-center p-1 bg-muted rounded-lg shrink-0">
+        <div class="flex items-center gap-3">
           <button 
-            @click="showOnlyActiveBlocks = false"
-            class="px-3 py-1.5 text-xs font-medium rounded-md transition-all"
-            :class="!showOnlyActiveBlocks ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'"
-          >
-            Todos os Blocos
-          </button>
-          <button 
-            @click="showOnlyActiveBlocks = true"
-            class="px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1.5"
-            :class="showOnlyActiveBlocks ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'"
-          >
-            <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-            Apenas Atuais
-          </button>
+             @click="showCompletedTasks = !showCompletedTasks"
+             class="px-3 py-1.5 text-xs font-medium rounded-lg border transition-all"
+             :class="showCompletedTasks ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-muted text-muted-foreground border-border'"
+           >
+             {{ showCompletedTasks ? 'Ocultar Concluídas' : 'Mostrar Concluídas' }}
+           </button>
+
+          <div class="inline-flex items-center p-1 bg-muted rounded-lg shrink-0">
+            <button 
+              @click="showOnlyActiveBlocks = true"
+              class="px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1.5"
+              :class="showOnlyActiveBlocks ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'"
+            >
+              <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+              Apenas Atuais
+            </button>
+            <button 
+              @click="showOnlyActiveBlocks = false"
+              class="px-3 py-1.5 text-xs font-medium rounded-md transition-all"
+              :class="!showOnlyActiveBlocks ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'"
+            >
+              Todos os Blocos
+            </button>
+          </div>
         </div>
       </div>
 
@@ -261,6 +349,7 @@ watch(selectedMode, (val) => {
         :view-group-id="null"
         group-title="Caixa de Entrada"
         :hide-empty="true"
+        :show-completed="showCompletedTasks"
         class="!mt-4 mb-8"
       />
 
@@ -274,8 +363,9 @@ watch(selectedMode, (val) => {
           <RecentTasks 
             :view-group-id="group.id"
             :group-color="group.color"
-            :group-title="group.title + (group.start_time ? ` (${group.start_time.slice(0,5)} - ${group.end_time?.slice(0,5)})` : '')"
+            :group-title="formatGroupTitle(group)"
             :hide-empty="false"
+            :show-completed="showCompletedTasks"
           />
         </div>
 
@@ -297,6 +387,7 @@ watch(selectedMode, (val) => {
         ref="recentTasksRef"
         :view-group-id="effectiveGroupIdForList"
         :view-group-ids="effectiveGroupIdsForList"
+        :show-completed="showCompletedTasks"
       />
     </template>
   </div>

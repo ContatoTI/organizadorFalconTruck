@@ -6,6 +6,7 @@ import { ptBR } from 'date-fns/locale'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 import Button from '@/components/ui/button/Button.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import ToastNotification from '@/components/ui/ToastNotification.vue'
 
 const client = useSupabaseClient()
 const user = useSupabaseUser()
@@ -17,14 +18,19 @@ const props = defineProps<{
   groupColor?: string
   groupTitle?: string
   hideEmpty?: boolean
+  showCompleted?: boolean
 }>()
 
 const todos = ref<any[]>([])
 const loading = ref(false)
 const selectedTasks = ref<Set<number>>(new Set())
+const isSelectionMode = ref(false)
 const lastSelectedIndex = ref<number | null>(null)
 const shiftKeyPressed = ref(false)
 const showDeleteConfirm = ref(false)
+const lastCompletedTask = ref<any>(null)
+const showUndoToast = ref(false)
+let undoTimer: NodeJS.Timeout | null = null
 
 // Computar o ID efetivo usando prop ou o composable local como fallback
 const effectiveUserId = computed(() => props.userId || user.value?.id || (user.value as any)?.sub)
@@ -50,6 +56,8 @@ const fetchTasks = async () => {
     console.log('Querying tasks for user:', currentUserId)
     
     // Configurar a query baseada no filtro
+    const isCompleted = !!props.showCompleted
+
     if (props.viewGroupIds && props.viewGroupIds.length > 0) {
       // Filtrar por múltiplos grupos usando Inner Join e IN
       // Também trazemos a view_groups para exibir os nomes/cores
@@ -57,6 +65,7 @@ const fetchTasks = async () => {
         .from('todos')
         .select('*, todo_groups!inner(group_id), view_groups:todo_groups(view_groups(title, color, type))')
         .eq('user_id', currentUserId)
+        .eq('is_completed', isCompleted)
         .in('todo_groups.group_id', props.viewGroupIds)
         .order('created_at', { ascending: false })
     } else if (props.viewGroupId !== undefined && props.viewGroupId !== null) {
@@ -65,6 +74,7 @@ const fetchTasks = async () => {
         .from('todos')
         .select('*, todo_groups!inner(group_id), view_groups:todo_groups(view_groups(title, color, type))')
         .eq('user_id', currentUserId)
+        .eq('is_completed', isCompleted)
         .eq('todo_groups.group_id', props.viewGroupId)
         .order('created_at', { ascending: false })
     } else {
@@ -73,6 +83,7 @@ const fetchTasks = async () => {
         .from('todos')
         .select('*, todo_groups(group_id), view_groups:todo_groups(view_groups(title, color, type))')
         .eq('user_id', currentUserId)
+        .eq('is_completed', isCompleted)
         .order('created_at', { ascending: false })
     }
 
@@ -115,6 +126,12 @@ const handleCheckboxClick = (event: MouseEvent) => {
 }
 
 const handleCheckboxUpdate = (id: number, checked: boolean, index: number) => {
+  // Se não estiver em modo de seleção, trata como conclusão da tarefa
+  if (!isSelectionMode.value) {
+    toggleComplete(todos.value[index], checked)
+    return
+  }
+
   if (shiftKeyPressed.value && lastSelectedIndex.value !== null) {
     const start = Math.min(lastSelectedIndex.value, index)
     const end = Math.max(lastSelectedIndex.value, index)
@@ -141,6 +158,79 @@ const handleCheckboxUpdate = (id: number, checked: boolean, index: number) => {
   lastSelectedIndex.value = index
   // Resetar flag
   shiftKeyPressed.value = false
+}
+
+const toggleSelectionMode = () => {
+  isSelectionMode.value = !isSelectionMode.value
+  if (!isSelectionMode.value) {
+    selectedTasks.value.clear()
+    lastSelectedIndex.value = null
+  }
+}
+
+const toggleComplete = async (todo: any, checked: boolean) => {
+  // Otimistic update
+  todo.is_completed = checked
+  
+  // Se marcou como concluída
+  if (checked) {
+    // Salvar para undo
+    lastCompletedTask.value = { ...todo }
+    showUndoToast.value = true
+    
+    // Limpar timer anterior se houver
+    if (undoTimer) clearTimeout(undoTimer)
+    
+    // Timer de 10s para esconder toast
+    undoTimer = setTimeout(() => {
+      showUndoToast.value = false
+      lastCompletedTask.value = null
+    }, 10000)
+
+    // Remover da lista após animação
+    setTimeout(() => {
+      todos.value = todos.value.filter(t => t.id !== todo.id)
+    }, 300)
+  }
+  
+  try {
+    await client
+      .from('todos')
+      .update({ is_completed: checked })
+      .eq('id', todo.id)
+  } catch (e) {
+    console.error('Error toggling complete:', e)
+    // Revert on error
+    todo.is_completed = !checked
+    // Se foi removido, recarrega
+    if (checked) fetchTasks()
+  }
+}
+
+const handleUndo = async () => {
+  if (!lastCompletedTask.value) return
+  
+  const taskToRestore = lastCompletedTask.value
+  showUndoToast.value = false
+  if (undoTimer) clearTimeout(undoTimer)
+  
+  // Optimistic restore
+  taskToRestore.is_completed = false
+  todos.value.unshift(taskToRestore) // Adiciona no topo
+  
+  try {
+    await client
+      .from('todos')
+      .update({ is_completed: false })
+      .eq('id', taskToRestore.id)
+      
+    // Recarregar para garantir ordem e dados corretos
+    fetchTasks()
+  } catch (e) {
+    console.error('Error undoing complete:', e)
+    // Se der erro, remove da lista de novo
+    todos.value = todos.value.filter(t => t.id !== taskToRestore.id)
+  }
 }
 
 const toggleAll = (checked: boolean) => {
@@ -225,6 +315,10 @@ watch(() => props.viewGroupIds, () => {
   fetchTasks()
 }, { deep: true })
 
+watch(() => props.showCompleted, () => {
+  fetchTasks()
+})
+
 onMounted(() => {
   // Listen for global task updates (e.g. dropped in sidebar)
   window.addEventListener('task-updated', fetchTasks)
@@ -244,6 +338,13 @@ defineExpose({ refresh: fetchTasks })
     :class="{ 'hidden': hideEmpty && todos.length === 0 }"
     :style="groupColor ? { backgroundColor: `${groupColor}10`, borderColor: `${groupColor}30` } : {}"
   >
+    <ToastNotification 
+      :show="showUndoToast" 
+      message="Tarefa concluída" 
+      @close="showUndoToast = false"
+      @undo="handleUndo"
+    />
+
     <ConfirmDialog 
       :isOpen="showDeleteConfirm"
       :title="`Excluir ${selectedTasks.size} tarefa(s)`"
@@ -261,12 +362,20 @@ defineExpose({ refresh: fetchTasks })
        
        <div class="flex items-center gap-2">
          <div v-if="todos.length > 0" class="flex items-center gap-2 mr-2">
-            <span class="text-[10px] text-muted-foreground uppercase tracking-wider">Selecionar Tudo</span>
-            <Checkbox 
-              :checked="todos.length > 0 && selectedTasks.size === todos.length"
-              @update:checked="toggleAll"
-              class="w-4 h-4"
-            />
+            
+            <template v-if="isSelectionMode">
+              <span class="text-[10px] text-muted-foreground uppercase tracking-wider">Selecionar Tudo</span>
+              <Checkbox 
+                :checked="todos.length > 0 && selectedTasks.size === todos.length"
+                @update:checked="toggleAll"
+                class="w-4 h-4"
+              />
+              <Button variant="ghost" size="sm" class="h-6 px-2 text-xs" @click="toggleSelectionMode">Cancelar</Button>
+            </template>
+            
+            <Button v-else variant="ghost" size="sm" class="h-6 px-2 text-xs hover:bg-secondary" @click="toggleSelectionMode">
+              Selecionar
+            </Button>
          </div>
 
          <Button 
@@ -302,13 +411,26 @@ defineExpose({ refresh: fetchTasks })
       >
         <GripVertical class="w-4 h-4 text-muted-foreground opacity-20 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing" />
         
-        <Checkbox 
-          :checked="selectedTasks.has(todo.id)"
-          @click="handleCheckboxClick"
-          @update:checked="(val) => handleCheckboxUpdate(todo.id, val, index)"
-        />
+        <div class="relative flex items-center justify-center w-5 h-5">
+           <!-- Checkbox de Seleção (apenas no modo de seleção) -->
+           <Checkbox 
+             v-if="isSelectionMode"
+             :checked="selectedTasks.has(todo.id)"
+             @click="handleCheckboxClick"
+             @update:checked="(val) => handleCheckboxUpdate(todo.id, val, index)"
+             class="absolute inset-0"
+           />
+           
+           <!-- Checkbox de Conclusão (apenas no modo normal) -->
+           <Checkbox 
+             v-else
+             :checked="todo.is_completed"
+             @update:checked="(val) => handleCheckboxUpdate(todo.id, val, index)"
+             class="absolute inset-0 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground rounded-full"
+           />
+        </div>
 
-        <div class="flex-1 min-w-0 flex items-center gap-2 group/item">
+        <div class="flex-1 min-w-0 flex items-center gap-2 group/item" :class="{ 'opacity-50': todo.is_completed && !isSelectionMode }">
           <input 
             v-model="todo.title" 
             @blur="handleBlur(todo)"
