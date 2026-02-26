@@ -244,8 +244,8 @@ watch(selectedMode, (val) => {
 </script>
 
 <template>
-  <div class="p-8 w-full space-y-8">
-    <div class="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+  <div class="p-4 md:p-8 w-full space-y-6 md:space-y-8 pb-24 md:pb-8">
+    <div class="mb-6 md:mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
       <div>
         <h1 class="text-4xl font-bold tracking-tight mb-2">
           {{ 

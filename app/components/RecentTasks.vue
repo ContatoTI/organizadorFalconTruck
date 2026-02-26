@@ -430,16 +430,16 @@ defineExpose({ refresh: fetchTasks })
            />
         </div>
 
-        <div class="flex-1 min-w-0 flex items-center gap-2 group/item" :class="{ 'opacity-50': todo.is_completed && !isSelectionMode }">
+        <div class="flex-1 min-w-0 flex flex-col md:flex-row md:items-center gap-1 md:gap-2 group/item" :class="{ 'opacity-50': todo.is_completed && !isSelectionMode }">
           <input 
             v-model="todo.title" 
             @blur="handleBlur(todo)"
             @keydown.enter="($event.target as HTMLInputElement).blur()"
-            class="w-full bg-transparent border-none p-0 text-sm focus:ring-0"
+            class="w-full bg-transparent border-none p-0 text-sm focus:ring-0 truncate"
             :class="{ 'line-through text-muted-foreground': todo.is_completed }"
           />
           
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 self-start md:self-auto">
             <!-- Tags de Grupo (Blocos de Tempo) -->
             <div v-if="todo.view_groups && todo.view_groups.length > 0" class="flex gap-1">
                <span 

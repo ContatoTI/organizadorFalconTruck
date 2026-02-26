@@ -108,7 +108,7 @@ const totalPaid = computed(() => transactions.value.filter(t => t.status === 'pa
 </script>
 
 <template>
-  <div class="p-8 w-full space-y-8">
+  <div class="p-4 md:p-8 w-full space-y-6 md:space-y-8 pb-24 md:pb-8">
     <ConfirmDialog 
       :isOpen="showDeleteConfirm"
       title="Excluir transação"

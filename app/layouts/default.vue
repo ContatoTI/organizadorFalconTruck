@@ -199,27 +199,24 @@
       </div>
     </aside>
 
-    <!-- Mobile Header (Visible only on small screens) -->
-    <div class="md:hidden flex flex-col flex-1">
-      <header class="h-16 border-b flex items-center px-4 justify-between bg-card">
-        <h1 class="font-bold">Organizador</h1>
-        <!-- Mobile Menu Button could go here -->
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col h-screen overflow-hidden bg-secondary/10 relative">
+      <!-- Mobile Header -->
+      <header class="md:hidden h-14 border-b flex items-center justify-between px-4 bg-card shrink-0 z-10">
+        <h1 class="font-bold text-lg">Organizador</h1>
+        <div class="flex items-center gap-2">
+           <NuxtLink to="/groups" class="p-2 hover:bg-accent rounded-full"><Settings class="w-5 h-5 text-muted-foreground" /></NuxtLink>
+        </div>
       </header>
-      <main class="flex-1 overflow-auto bg-secondary/10">
+
+      <!-- Scrollable Content -->
+      <main class="flex-1 overflow-y-auto overflow-x-hidden p-4 pb-24 md:pb-4 scroll-smooth">
         <slot />
       </main>
-      <!-- Mobile Bottom Nav -->
-      <nav class="h-16 border-t bg-card flex items-center justify-around px-2">
-        <NuxtLink to="/" class="p-2 rounded-md" active-class="text-primary"><LayoutDashboard class="w-6 h-6" /></NuxtLink>
-        <NuxtLink to="/calendar" class="p-2 rounded-md" active-class="text-primary"><Calendar class="w-6 h-6" /></NuxtLink>
-        <NuxtLink to="/groups" class="p-2 rounded-md" active-class="text-primary"><Clock class="w-6 h-6" /></NuxtLink>
-      </nav>
-    </div>
 
-    <!-- Desktop Main Content -->
-    <main class="flex-1 overflow-auto bg-secondary/10 hidden md:block">
-      <slot />
-    </main>
+      <!-- Mobile Navigation (Fixed Bottom) -->
+      <MobileNav class="md:hidden" />
+    </div>
   </div>
 </template>
 

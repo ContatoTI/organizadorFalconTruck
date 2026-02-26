@@ -1,8 +1,8 @@
 <template>
-  <div class="p-6 w-full">
-    <div class="flex items-center justify-between mb-8">
+  <div class="p-4 md:p-6 w-full pb-24 md:pb-6">
+    <div class="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 md:mb-8 gap-4">
       <div>
-        <h1 class="text-3xl font-bold tracking-tight">{{ pageTitle }}</h1>
+        <h1 class="text-2xl md:text-3xl font-bold tracking-tight">{{ pageTitle }}</h1>
         <p class="text-muted-foreground">Gerencie seus grupos de tarefas baseados em horários.</p>
       </div>
       <Button variant="outline" @click="$router.push('/')">Voltar</Button>

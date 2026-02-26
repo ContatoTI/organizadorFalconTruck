@@ -147,15 +147,21 @@ const loadData = async () => {
 }
 
 onMounted(() => {
+  const isMobile = window.innerWidth < 768
+  calendarOptions.value.initialView = isMobile ? 'timeGridDay' : 'timeGridWeek'
+  calendarOptions.value.headerToolbar = isMobile 
+    ? { left: 'prev,next', center: 'title', right: 'timeGridDay,listWeek' }
+    : { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' }
+  
   loadData()
 })
 </script>
 
 <template>
-  <div class="p-6 h-full flex flex-col">
-    <div class="flex items-center justify-between mb-6">
-      <h1 class="text-3xl font-bold">Calendário</h1>
-      <div class="flex gap-2 text-sm text-gray-500">
+  <div class="p-4 md:p-6 h-full flex flex-col pb-24 md:pb-6">
+    <div class="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 md:mb-6 gap-4">
+      <h1 class="text-2xl md:text-3xl font-bold">Calendário</h1>
+      <div class="flex gap-2 text-xs md:text-sm text-gray-500">
         <div class="flex items-center gap-1">
           <div class="w-3 h-3 rounded-full bg-blue-500"></div>
           <span>Tarefas</span>
@@ -167,8 +173,8 @@ onMounted(() => {
       </div>
     </div>
     
-    <div class="bg-white p-4 rounded-lg shadow border flex-1 min-h-[600px]">
-      <FullCalendar :options="calendarOptions" class="h-full" />
+    <div class="bg-white p-2 md:p-4 rounded-lg shadow border flex-1 min-h-[500px] md:min-h-0 overflow-hidden">
+      <FullCalendar :options="calendarOptions" class="h-full w-full text-xs md:text-sm" />
     </div>
   </div>
 </template>
