@@ -16,6 +16,7 @@ export default defineNuxtConfig({
   modules: ['@nuxt/eslint', '@nuxtjs/tailwindcss', 'shadcn-nuxt', '@nuxtjs/color-mode', '@nuxtjs/supabase', '@vite-pwa/nuxt'],
   pwa: {
     registerType: 'autoUpdate',
+    injectRegister: 'auto',
     manifest: {
       name: 'App Organizador',
       short_name: 'Organizador',
@@ -46,7 +47,8 @@ export default defineNuxtConfig({
       globPatterns: ['**/*.{js,css,html,png,svg,ico}']
     },
     client: {
-      installPrompt: true
+      installPrompt: true,
+      periodicSyncForUpdates: 20
     },
     devOptions: {
       enabled: true,

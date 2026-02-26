@@ -73,7 +73,7 @@ watch(user, (u) => {
         <div>
           <label for="email" class="block text-sm font-medium">Email</label>
           <input
-            id="email"
+            id="login-email"
             v-model="email"
             type="email"
             required
@@ -85,7 +85,7 @@ watch(user, (u) => {
         <div>
           <label for="password" class="block text-sm font-medium">Senha (Opcional se usar Magic Link)</label>
           <input
-            id="password"
+            id="login-password"
             v-model="password"
             type="password"
             class="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
