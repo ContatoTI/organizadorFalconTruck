@@ -24,7 +24,9 @@ export default defineNuxtConfig({
       theme_color: '#ffffff',
       background_color: '#ffffff',
       display: 'standalone',
+      orientation: 'portrait',
       start_url: '/',
+      id: '/',
       scope: '/',
       lang: 'pt-BR',
       icons: [
@@ -32,28 +34,54 @@ export default defineNuxtConfig({
           src: '/pwa-192x192.png',
           sizes: '192x192',
           type: 'image/png',
-          purpose: 'any maskable'
+          purpose: 'any'
         },
         {
           src: '/pwa-512x512.png',
           sizes: '512x512',
           type: 'image/png',
-          purpose: 'any maskable'
+          purpose: 'any'
+        },
+        {
+          src: '/pwa-512x512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'maskable'
+        }
+      ],
+      screenshots: [
+        {
+          src: '/pwa-512x512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          form_factor: 'wide',
+          label: 'Application'
+        },
+        {
+          src: '/pwa-512x512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          form_factor: 'narrow',
+          label: 'Application'
         }
       ]
     },
     workbox: {
       navigateFallback: '/',
-      globPatterns: ['**/*.{js,css,html,png,svg,ico}']
+      globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
+      cleanupOutdatedCaches: true,
+      clientsClaim: true,
+      skipWaiting: true
     },
     client: {
       installPrompt: true,
       periodicSyncForUpdates: 20
     },
     devOptions: {
-      enabled: true,
+      enabled: false,
       suppressWarnings: true,
       navigateFallback: '/',
+      navigateFallbackAllowlist: [/^\/$/],
       type: 'module'
     }
   },
