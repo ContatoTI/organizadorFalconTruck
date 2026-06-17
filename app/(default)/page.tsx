@@ -30,7 +30,7 @@ interface Group {
 
 interface Project {
   id: number;
-  owner_id: string;
+  user_id: string;
   name: string;
   color: string;
   shared_with: string[];
@@ -106,7 +106,7 @@ function DashboardContent() {
     const { data } = await client
       .from('view_groups')
       .select('*')
-      .eq('owner_id', user.id)
+      .eq('user_id', user.id)
       .order('created_at');
 
     if (data) setGroups(data);
@@ -120,7 +120,7 @@ function DashboardContent() {
     const { data, error } = await client
       .from('projects')
       .select('*')
-      .or(`owner_id.eq.${user.id},shared_with.cs.{${user.id}}`);
+      .or(`user_id.eq.${user.id},shared_with.cs.{${user.id}}`);
 
     if (error) console.error('Erro fetchProjects:', error);
     if (data) setProjects(data);
@@ -181,7 +181,7 @@ function DashboardContent() {
     const { data } = await client
       .from('todos')
       .select('*')
-      .eq('owner_id', user.id)
+      .eq('user_id', user.id)
       .order('created_at');
 
     if (data) setTasks(data);
@@ -240,7 +240,7 @@ function DashboardContent() {
   const createSection = async () => {
     if (!newSectionTitle.trim() || !user || !selectedProjectId) return;
     // Only project owner can create sections
-    if (selectedProject && selectedProject.owner_id !== user.id) return;
+    if (selectedProject && selectedProject.user_id !== user.id) return;
 
     const { data, error } = await client
       .from('sections')
@@ -462,7 +462,7 @@ function DashboardContent() {
               Limpar filtro
             </button>
           )}
-          {selectedProject && user && selectedProject.owner_id === user.id && (
+          {selectedProject && user && selectedProject.user_id === user.id && (
             <button
               onClick={openShareModal}
               className="flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 hover:bg-primary/20 text-primary text-sm transition-colors"

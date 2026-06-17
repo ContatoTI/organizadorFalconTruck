@@ -24,7 +24,7 @@ import {
 
 interface Project {
   id: number;
-  owner_id: string;
+  user_id: string;
   name: string;
   title?: string;
   color: string;
@@ -77,7 +77,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     const { data, error } = await client
       .from('projects')
       .select('*')
-      .eq('owner_id', user.id);
+      .eq('user_id', user.id);
 
     if (!error && data) {
       setProjects(data);
@@ -98,7 +98,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     const { data, error } = await client
       .from('projects')
       .insert({
-        owner_id: user.id,
+        user_id: user.id,
         name: newProjectName,
         color: newProjectColor,
       })
@@ -327,7 +327,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                       </div>
                     ) : (
                       projects.map((project) => {
-                        const isOwner = project.owner_id === user?.id;
+                        const isOwner = project.user_id === user?.id;
                         return (
                         <Link
                           key={project.id}
