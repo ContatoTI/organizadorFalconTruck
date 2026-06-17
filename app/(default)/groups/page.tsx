@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useGroups } from '@/app/lib/GroupsContext';
 import { Plus, X, Edit2, Trash2 } from 'lucide-react';
 
-export default function GroupsPage() {
+function GroupsContent() {
   const { groups, loading, refreshGroups, addGroup } = useGroups();
   const [user, setUser] = useState<any>(null);
   const [showForm, setShowForm] = useState(false);
@@ -186,7 +186,7 @@ export default function GroupsPage() {
           groups.map((group) => (
             <div key={group.id} className="p-4 rounded-lg border bg-card">
               <div className="flex items-center gap-3">
-                {group.icon && <span className="text-2xl" style={{ color: group.color }}>{group.icon}</span>}
+                {group.icon && <span className="text-2xl" style={{ color: group.color ?? undefined }}>{group.icon}</span>}
                 <div className="flex-1">
                   <h3 className="font-medium">{group.title}</h3>
                   <p className="text-xs text-muted-foreground capitalize">
@@ -333,5 +333,13 @@ export default function GroupsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function GroupsPage() {
+  return (
+    <Suspense fallback={<div className="p-4 text-center">Carregando...</div>}>
+      <GroupsContent />
+    </Suspense>
   );
 }

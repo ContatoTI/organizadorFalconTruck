@@ -9,6 +9,9 @@ dist
 # Node dependencies
 node_modules
 
+# Next.js build output
+.next
+
 # Logs
 logs
 *.log

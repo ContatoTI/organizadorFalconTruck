@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Check, X, GripVertical, Star, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search } from 'lucide-react';
@@ -44,7 +44,7 @@ interface Section {
   order: number;
 }
 
-export default function DashboardPage() {
+function DashboardContent() {
   const [user, setUser] = useState<any>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -698,5 +698,13 @@ export default function DashboardPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="p-4 text-center">Carregando...</div>}>
+      <DashboardContent />
+    </Suspense>
   );
 }

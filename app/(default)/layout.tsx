@@ -241,7 +241,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                         href={`/?group=${group.id}`}
                         className="flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-accent/50 transition-colors"
                       >
-                        {group.icon && <span style={{ color: group.color }}>{group.icon}</span>}
+                        {group.icon && <span style={{ color: group.color ?? undefined }}>{group.icon}</span>}
                         <span className="truncate">{group.title}</span>
                       </Link>
                     ))}
@@ -278,7 +278,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                         href={`/?group=${group.id}`}
                         className="flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-accent/50 transition-colors"
                       >
-                        {group.icon && <span style={{ color: group.color }}>{group.icon}</span>}
+                        {group.icon && <span style={{ color: group.color ?? undefined }}>{group.icon}</span>}
                         <span className="truncate">{group.title}</span>
                       </Link>
                     ))}
