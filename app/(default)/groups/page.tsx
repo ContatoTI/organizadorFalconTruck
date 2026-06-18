@@ -219,6 +219,7 @@ function GroupsContent() {
                 type="text"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && saveGroup()}
                 className="w-full px-4 py-2 rounded-lg border border-input bg-background"
                 placeholder="Nome do grupo"
               />
