@@ -291,8 +291,8 @@ function DashboardContent() {
     setTasks(tasks.filter(t => t.id !== taskId));
   };
 
-  const createSection = async () => {
-    if (!newSectionTitle.trim() || !user || !selectedProjectId) return;
+  const createSection = async (title: string) => {
+    if (!title.trim() || !user || !selectedProjectId) return;
     // Only project owner can create sections
     if (selectedProject && selectedProject.owner_id !== user.id) return;
 
@@ -301,7 +301,7 @@ function DashboardContent() {
       .insert({
         user_id: user.id,
         project_id: parseInt(selectedProjectId),
-        title: newSectionTitle.trim(),
+        title: title.trim(),
         order: sections.length,
       })
       .select()
@@ -310,7 +310,6 @@ function DashboardContent() {
     if (!error && data) {
       setSections(prev => [...prev, data]);
       setExpandedSections(prev => ({ ...prev, [data.id]: true }));
-      setNewSectionTitle('');
     }
   };
 
@@ -752,7 +751,7 @@ function DashboardContent() {
                 <button
                   onClick={() => {
                     const title = prompt('Nome da nova seção:');
-                    if (title) { setNewSectionTitle(title); createSection(); }
+                    if (title?.trim()) { createSection(title.trim()); }
                   }}
                   className="flex items-center gap-2 px-4 py-2 text-sm text-primary hover:bg-accent/20 rounded-lg transition-colors"
                 >
