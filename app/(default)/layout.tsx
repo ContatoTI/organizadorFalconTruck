@@ -217,9 +217,20 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       .update({ status: 'accepted' })
       .eq('id', inviteId);
 
-    await client
+    // Verificar se já é membro antes de inserir
+    const { data: existingMember } = await client
       .from('project_members')
-      .insert({ project_id: projectId, user_id: user.id });
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('user_id', user.id)
+      .single();
+
+    // Só insere se não for membro ainda
+    if (!existingMember) {
+      await client
+        .from('project_members')
+        .insert({ project_id: projectId, user_id: user.id });
+    }
 
     await fetchProjects();
     fetchNotifications();
