@@ -88,7 +88,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     }
 
     return () => {
-      client.removeChannel('invites-channel');
+      client.channel('invites-channel').unsubscribe();
     };
   }, [user]);
 
