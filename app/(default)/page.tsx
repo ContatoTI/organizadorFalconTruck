@@ -152,7 +152,7 @@ function DashboardContent() {
       .select('project_id')
       .eq('user_id', user.id);
 
-    const memberProjectIds = memberProjects?.map(m => m.project_id) || [];
+    const memberProjectIds: number[] = memberProjects?.map(m => m.project_id).filter((id): id is number => typeof id === 'number') || [];
     const { data: sharedProjects } = memberProjectIds.length > 0
       ? await client.from('projects').select('*').in('id', memberProjectIds)
       : { data: [] };

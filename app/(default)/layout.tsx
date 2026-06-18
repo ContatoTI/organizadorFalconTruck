@@ -20,7 +20,20 @@ import {
   ChevronRight,
   Folder,
   X,
+  Bell,
+  Check,
 } from 'lucide-react';
+
+interface Notification {
+  id: number;
+  type: 'invite_received' | 'invite_declined';
+  project_id?: number;
+  project_title?: string;
+  project_color?: string;
+  invited_user_name?: string;
+  inviter_name?: string;
+  created_at: string;
+}
 
 interface Project {
   id: number;
@@ -43,6 +56,9 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectColor, setNewProjectColor] = useState('#6366f1');
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [pendingInvites, setPendingInvites] = useState<any[]>([]);
+  const [declineNotifications, setDeclineNotifications] = useState<any[]>([]);
   const client = createClient();
 
   useEffect(() => {
@@ -62,11 +78,186 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   useEffect(() => {
     if (user) {
       fetchProjects();
+      fetchNotifications();
+      subscribeToInvites();
     } else {
       setProjects([]);
       setLoadingProjects(false);
+      setPendingInvites([]);
+      setDeclineNotifications([]);
     }
+
+    return () => {
+      client.removeChannel('invites-channel');
+    };
   }, [user]);
+
+  const fetchNotifications = async () => {
+    const { data: { user } } = await client.auth.getUser();
+    if (!user) return;
+
+    // Buscar projetos do usuário
+    const { data: ownProjects } = await client
+      .from('projects')
+      .select('id, title, color')
+      .eq('owner_id', user.id);
+
+    const { data: memberProjects } = await client
+      .from('project_members')
+      .select('project_id')
+      .eq('user_id', user.id);
+
+    const userProjectIds: number[] = [
+      ...(ownProjects?.map(p => p.id).filter((id): id is number => typeof id === 'number') || []),
+      ...(memberProjects?.map(m => m.project_id).filter((id): id is number => typeof id === 'number') || []),
+    ];
+
+    // Buscar convites pendentes
+    const { data: invites } = await client
+      .from('project_invites')
+      .select('id, project_id, invited_by_user_id, created_at')
+      .eq('invited_user_id', user.id)
+      .eq('status', 'pending');
+
+    if (invites && invites.length > 0) {
+      const projectIds: number[] = [...new Set(invites.map(i => i.project_id).filter((id): id is number => typeof id === 'number'))];
+      const inviterIds: string[] = [...new Set(invites.map(i => i.invited_by_user_id).filter((id): id is string => typeof id === 'string'))];
+
+      const [{ data: projects }, { data: profiles }] = await Promise.all([
+        client.from('projects').select('id, title, color').in('id', projectIds),
+        client.from('profiles').select('id, full_name, email').in('id', inviterIds),
+      ]);
+
+      const projectsMap: any = {};
+      projects?.forEach(p => { projectsMap[p.id] = p; });
+
+      const profilesMap: any = {};
+      profiles?.forEach(p => { profilesMap[p.id] = p; });
+
+      const formatted = invites.map((inv: any) => ({
+        id: inv.id,
+        project_id: inv.project_id,
+        project_title: projectsMap[inv.project_id]?.title || 'Projeto',
+        project_color: projectsMap[inv.project_id]?.color || '#6366f1',
+        inviter_name: profilesMap[inv.invited_by_user_id]?.full_name || 'Usuário',
+        inviter_email: profilesMap[inv.invited_by_user_id]?.email || '',
+        created_at: inv.created_at,
+      }));
+
+      setPendingInvites(formatted);
+    } else {
+      setPendingInvites([]);
+    }
+
+    // Buscar recusas dos meus projetos
+    if (userProjectIds.length === 0) {
+      setDeclineNotifications([]);
+      return;
+    }
+
+    const { data: declined } = await client
+      .from('project_invites')
+      .select('id, project_id, invited_user_id, created_at')
+      .eq('status', 'declined')
+      .in('project_id', userProjectIds);
+
+    if (declined && declined.length > 0) {
+      const userIds: string[] = [...new Set(declined.map(d => d.invited_user_id).filter((id): id is string => typeof id === 'string'))];
+      const projIds: number[] = [...new Set(declined.map(d => d.project_id).filter((id): id is number => typeof id === 'number'))];
+
+      const [{ data: users }, { data: projs }] = await Promise.all([
+        client.from('profiles').select('id, full_name, email').in('id', userIds),
+        client.from('projects').select('id, title, color').in('id', projIds),
+      ]);
+
+      const usersMap: any = {};
+      users?.forEach(u => { usersMap[u.id] = u; });
+      const projsMap: any = {};
+      projs?.forEach(p => { projsMap[p.id] = p; });
+
+      const formatted = declined.map((dec: any) => ({
+        id: dec.id,
+        project_id: dec.project_id,
+        project_title: projsMap[dec.project_id]?.title || 'Projeto',
+        project_color: projsMap[dec.project_id]?.color || '#6366f1',
+        declined_user_name: usersMap[dec.invited_user_id]?.full_name || 'Usuário',
+        invited_user_id: dec.invited_user_id,
+        created_at: dec.created_at,
+      }));
+
+      setDeclineNotifications(formatted);
+    } else {
+      setDeclineNotifications([]);
+    }
+  };
+
+  const subscribeToInvites = () => {
+    client
+      .channel('invites-channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'project_invites' },
+        () => {
+          fetchNotifications();
+        }
+      )
+      .subscribe();
+  };
+
+  const acceptInviteFromBell = async (inviteId: number, projectId: number) => {
+    await client
+      .from('project_invites')
+      .update({ status: 'accepted' })
+      .eq('id', inviteId);
+
+    await client
+      .from('project_members')
+      .insert({ project_id: projectId, user_id: user.id });
+
+    await fetchProjects();
+    fetchNotifications();
+  };
+
+  const declineInviteFromBell = async (inviteId: number) => {
+    await client
+      .from('project_invites')
+      .update({ status: 'declined' })
+      .eq('id', inviteId);
+
+    fetchNotifications();
+  };
+
+  const dismissDeclineNotification = async (inviteId: number) => {
+    await client
+      .from('project_invites')
+      .delete()
+      .eq('id', inviteId);
+
+    fetchNotifications();
+  };
+
+  const reinviteUser = async (projectId: number, userId: string) => {
+    // Deletar convite recusado
+    await client
+      .from('project_invites')
+      .delete()
+      .eq('project_id', projectId)
+      .eq('invited_user_id', userId);
+
+    // Criar novo convite
+    await client
+      .from('project_invites')
+      .insert({
+        project_id: projectId,
+        invited_user_id: userId,
+        invited_by_user_id: user.id,
+        status: 'pending'
+      });
+
+    fetchNotifications();
+  };
+
+  const totalNotifications = pendingInvites.length + declineNotifications.length;
 
   const fetchProjects = async () => {
     setLoadingProjects(true);
@@ -152,7 +343,112 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const listGroups = groups.filter((g) => g.type === 'list');
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background relative">
+      {/* Sino de Notificações - fixo no canto superior direito */}
+      {user && (
+        <div className="fixed top-4 right-4 z-40">
+          <button
+            onClick={() => setShowNotifications(!showNotifications)}
+            className="relative p-2 rounded-full bg-card border hover:bg-accent transition-colors shadow-sm"
+          >
+            <Bell className="w-5 h-5" />
+            {totalNotifications > 0 && (
+              <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
+                {totalNotifications}
+              </span>
+            )}
+          </button>
+
+          {showNotifications && (
+            <div className="absolute right-0 mt-2 w-80 bg-card rounded-lg border shadow-xl max-h-96 overflow-y-auto">
+              <div className="p-3 border-b">
+                <h3 className="font-semibold">Notificações</h3>
+              </div>
+
+              {pendingInvites.length === 0 && declineNotifications.length === 0 ? (
+                <div className="p-6 text-center text-sm text-muted-foreground">
+                  Nenhuma notificação
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {/* Convites pendentes */}
+                  {pendingInvites.map((invite) => (
+                    <div key={`invite-${invite.id}`} className="p-3">
+                      <div className="flex items-start gap-3 mb-2">
+                        <div
+                          className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                          style={{ backgroundColor: invite.project_color }}
+                        >
+                          <Folder className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            Convite para {invite.project_title}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Por {invite.inviter_name}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => acceptInviteFromBell(invite.id, invite.project_id)}
+                          className="flex-1 py-1.5 rounded-md bg-green-500 text-white hover:bg-green-600 text-xs font-medium"
+                        >
+                          Aceitar
+                        </button>
+                        <button
+                          onClick={() => declineInviteFromBell(invite.id)}
+                          className="flex-1 py-1.5 rounded-md border hover:bg-accent text-xs"
+                        >
+                          Recusar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Recusas */}
+                  {declineNotifications.map((notif) => (
+                    <div key={`declined-${notif.id}`} className="p-3">
+                      <div className="flex items-start gap-3 mb-2">
+                        <div
+                          className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                          style={{ backgroundColor: notif.project_color }}
+                        >
+                          <Folder className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {notif.declined_user_name} recusou o convite
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Projeto: {notif.project_title}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => reinviteUser(notif.project_id, notif.invited_user_id)}
+                          className="flex-1 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-medium"
+                        >
+                          Convidar novamente
+                        </button>
+                        <button
+                          onClick={() => dismissDeclineNotification(notif.id)}
+                          className="px-3 py-1.5 rounded-md border hover:bg-accent text-xs"
+                        >
+                          Dispensar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Modal para criar projeto */}
       {showProjectModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
