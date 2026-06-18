@@ -114,6 +114,12 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       return;
     }
 
+    console.log('Creating project with:', {
+      owner_id: user.id,
+      name: newProjectName,
+      color: newProjectColor,
+    });
+
     const { data, error } = await client
       .from('projects')
       .insert({
