@@ -109,7 +109,10 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   };
 
   const createProject = async () => {
-    if (!newProjectName.trim() || !user) return;
+    if (!newProjectName.trim() || !user) {
+      console.error('Validation failed:', { newProjectName: newProjectName.trim(), user });
+      return;
+    }
 
     const { data, error } = await client
       .from('projects')
@@ -121,7 +124,12 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       .select()
       .single();
 
-    if (!error && data) {
+    if (error) {
+      console.error('Error creating project:', error);
+      return;
+    }
+
+    if (data) {
       setProjects([...projects, data]);
       setNewProjectName('');
       setNewProjectColor('#6366f1');
