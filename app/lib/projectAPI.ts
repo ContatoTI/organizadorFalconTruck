@@ -31,14 +31,10 @@ class ProjectAPI {
         .select('project_id')
         .eq('user_id', userId);
 
-      console.log('[DEBUG API] memberProjects:', memberProjects);
-      console.log('[DEBUG API] memberError:', memberError);
-
       if (memberError) throw memberError;
 
       // Se não tem projetos compartilhados, retornar apenas os próprios
       if (!memberProjects || memberProjects.length === 0) {
-        console.log('[DEBUG API] Nenhum projeto compartilhado, retornando apenas próprios:', ownProjects);
         return ownProjects || [];
       }
 
@@ -47,22 +43,16 @@ class ProjectAPI {
         .map(m => m.project_id)
         .filter((id): id is number => typeof id === 'number');
 
-      console.log('[DEBUG API] memberProjectIds:', memberProjectIds);
-
       const { data: sharedProjects, error: sharedError } = await client
         .from('projects')
         .select('*')
         .in('id', memberProjectIds);
-
-      console.log('[DEBUG API] sharedProjects:', sharedProjects);
 
       if (sharedError) throw sharedError;
 
       // Combinar e remover duplicatas
       const allProjects = [...(ownProjects || []), ...(sharedProjects || [])];
       const uniqueMap = new Map(allProjects.map(p => [p.id, p]));
-
-      console.log('[DEBUG API] allProjects (final):', Array.from(uniqueMap.values()));
 
       return Array.from(uniqueMap.values());
     } catch (error) {

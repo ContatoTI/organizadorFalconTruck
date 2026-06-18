@@ -146,17 +146,14 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   };
 
   const acceptInviteFromBell = async (inviteId: number, projectId: number) => {
-    console.log('[DEBUG] Aceitando convite:', { inviteId, projectId });
-    
     // Buscar user atual diretamente para garantir que está atualizado
     const { data: { user: currentUser } } = await client.auth.getUser();
     if (!currentUser) return;
 
-    const inviteUpdate = await client
+    await client
       .from('project_invites')
       .update({ status: 'accepted' })
       .eq('id', inviteId);
-    console.log('[DEBUG] Convite atualizado:', inviteUpdate);
 
     // Verificar se já é membro antes de inserir
     const { data: existingMember } = await client
@@ -165,14 +162,12 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       .eq('project_id', projectId)
       .eq('user_id', currentUser.id)
       .maybeSingle();
-    console.log('[DEBUG] Membro existente:', existingMember);
 
     // Só insere se não for membro ainda
     if (!existingMember) {
-      const insertResult = await client
+      await client
         .from('project_members')
         .insert({ project_id: projectId, user_id: currentUser.id });
-      console.log('[DEBUG] Resultado da inserção em members:', insertResult);
     }
 
     await fetchProjects();
@@ -228,7 +223,6 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
     try {
       const allProjects = await projectAPI.getUserProjects(user.id);
-      console.log('[DEBUG] Projetos buscados:', allProjects);
       setProjects(allProjects);
     } catch (error) {
       console.error('Erro ao buscar projetos:', error);
