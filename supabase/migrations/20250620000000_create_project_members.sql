@@ -11,8 +11,14 @@ create table public.project_members (
 alter table public.project_members enable row level security;
 
 -- Políticas: membros veem projetos; só dono pode gerenciar membros
-create policy "Users can view projects they are members of" on public.project_members
-  for select using (auth.uid() = user_id);
+create policy "Users can view project members of their projects" on public.project_members
+  for select using (
+    auth.uid() = user_id or
+    exists (
+      select 1 from public.projects
+      where id = project_id and owner_id = auth.uid()
+    )
+  );
 
 create policy "Project owners can manage members" on public.project_members
   for all using (
