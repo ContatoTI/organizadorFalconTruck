@@ -138,8 +138,14 @@ function DashboardContent() {
         )
         .subscribe();
 
+      const handleProjectsUpdated = () => {
+        fetchProjects();
+      };
+      window.addEventListener('projects_updated', handleProjectsUpdated);
+
       return () => {
         client.removeChannel(channel);
+        window.removeEventListener('projects_updated', handleProjectsUpdated);
       };
     }
   }, [user]);
@@ -365,6 +371,7 @@ function DashboardContent() {
 
     if (project) {
       setProjects([...projects, project]);
+      window.dispatchEvent(new CustomEvent('projects_updated'));
     }
 
     // Remover do modal
@@ -489,6 +496,7 @@ function DashboardContent() {
 
     // Atualizar UI
     setProjects(projects.filter(p => p.id !== projectId));
+    window.dispatchEvent(new CustomEvent('projects_updated'));
     router.push('/');
   };
 

@@ -89,8 +89,15 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       setDeclineNotifications([]);
     }
 
+    const handleProjectsUpdated = () => {
+      fetchProjects();
+    };
+
+    window.addEventListener('projects_updated', handleProjectsUpdated);
+
     return () => {
       client.channel('sidebar-changes').unsubscribe();
+      window.removeEventListener('projects_updated', handleProjectsUpdated);
     };
   }, [user]);
 
@@ -165,6 +172,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
     await fetchProjects();
     fetchNotifications();
+    window.dispatchEvent(new CustomEvent('projects_updated'));
   };
 
   const declineInviteFromBell = async (inviteId: number) => {
@@ -254,6 +262,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       setNewProjectName('');
       setNewProjectColor('#6366f1');
       setShowProjectModal(false);
+      window.dispatchEvent(new CustomEvent('projects_updated'));
     }
   };
 
