@@ -113,20 +113,27 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     ];
 
     // Buscar convites pendentes
-    const { data: invites } = await client
+    const { data: invites, error: invitesError } = await client
       .from('project_invites')
       .select('id, project_id, invited_by_user_id, created_at')
       .eq('invited_user_id', user.id)
       .eq('status', 'pending');
 
+    if (invitesError) {
+      console.error('Error fetching invites:', invitesError);
+    }
+
     if (invites && invites.length > 0) {
       const projectIds: number[] = [...new Set(invites.map(i => i.project_id).filter((id): id is number => typeof id === 'number'))];
       const inviterIds: string[] = [...new Set(invites.map(i => i.invited_by_user_id).filter((id): id is string => typeof id === 'string'))];
 
-      const [{ data: projects }, { data: profiles }] = await Promise.all([
+      const [{ data: projects, error: projectsError }, { data: profiles, error: profilesError }] = await Promise.all([
         client.from('projects').select('id, title, color').in('id', projectIds),
         client.from('profiles').select('id, full_name, email').in('id', inviterIds),
       ]);
+
+      if (projectsError) console.error('Error fetching projects:', projectsError);
+      if (profilesError) console.error('Error fetching profiles:', profilesError);
 
       const projectsMap: any = {};
       projects?.forEach(p => { projectsMap[p.id] = p; });
