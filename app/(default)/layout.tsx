@@ -38,8 +38,7 @@ interface Notification {
 interface Project {
   id: number;
   owner_id: string;
-  name: string;
-  title?: string;
+  title: string;
   color: string;
 }
 
@@ -216,8 +215,6 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     const { data: { user: currentUser } } = await client.auth.getUser();
     if (!currentUser) return;
 
-    console.log('acceptInviteFromBell:', { inviteId, projectId, userId: currentUser.id });
-
     await client
       .from('project_invites')
       .update({ status: 'accepted' })
@@ -231,20 +228,15 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       .eq('user_id', currentUser.id)
       .single();
 
-    console.log('existingMember check:', existingMember);
-
     // Só insere se não for membro ainda
     if (!existingMember) {
-      console.log('Inserting as new member');
       await client
         .from('project_members')
         .insert({ project_id: projectId, user_id: currentUser.id });
     }
 
-    console.log('Calling fetchProjects...');
     await fetchProjects();
     fetchNotifications();
-    console.log('Done!');
   };
 
   const declineInviteFromBell = async (inviteId: number) => {
@@ -291,12 +283,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const fetchProjects = async () => {
     setLoadingProjects(true);
     const { data: { user } } = await client.auth.getUser();
-    if (!user) {
-      console.log('fetchProjects: no user');
-      return;
-    }
-
-    console.log('fetchProjects: user_id:', user.id);
+    if (!user) return;
 
     // Buscar projetos próprios
     const { data: ownProjects, error } = await client
@@ -304,27 +291,19 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       .select('*')
       .eq('owner_id', user.id);
 
-    console.log('ownProjects:', ownProjects?.length);
-
     // Buscar projetos dos quais é membro
-    const { data: memberProjects, error: memberError } = await client
+    const { data: memberProjects } = await client
       .from('project_members')
       .select('project_id')
       .eq('user_id', user.id);
 
-    console.log('memberProjects:', memberProjects, 'error:', memberError);
-
     const memberProjectIds = memberProjects?.map((m: any) => m.project_id) || [];
-    console.log('memberProjectIds:', memberProjectIds);
 
     let sharedProjects: any[] = [];
     if (memberProjectIds.length > 0) {
       const result = await client.from('projects').select('*').in('id', memberProjectIds);
-      console.log('sharedProjects query result:', result.data, 'error:', result.error);
       sharedProjects = result.data || [];
     }
-
-    console.log('sharedProjects:', sharedProjects?.length);
 
     const allProjects = [...(ownProjects || []), ...(sharedProjects || [])];
 
@@ -345,16 +324,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   };
 
   const createProject = async () => {
-    if (!newProjectName.trim() || !user) {
-      console.error('Validation failed:', { newProjectName: newProjectName.trim(), user });
-      return;
-    }
-
-    console.log('Creating project with:', {
-      owner_id: user.id,
-      title: newProjectName,
-      color: newProjectColor,
-    });
+    if (!newProjectName.trim() || !user) return;
 
     const { data, error } = await client
       .from('projects')

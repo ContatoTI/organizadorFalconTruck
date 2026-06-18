@@ -31,7 +31,7 @@ interface Group {
 interface Project {
   id: number;
   owner_id: string;
-  name: string;
+  title: string;
   color: string;
 }
 
@@ -205,12 +205,7 @@ function DashboardContent() {
   };
 
   const toggleShareUser = async (targetUserId: string) => {
-    if (!selectedProject || selectedProject.owner_id !== user.id) {
-      console.log('toggleShareUser: early return - not owner or no project');
-      return;
-    }
-
-    console.log('toggleShareUser:', { targetUserId, selectedProjectId: selectedProject.id });
+    if (!selectedProject || selectedProject.owner_id !== user.id) return;
 
     // Verificar se já é membro
     const { data: existingMember } = await client
@@ -220,18 +215,12 @@ function DashboardContent() {
       .eq('user_id', targetUserId)
       .single();
 
-    console.log('existingMember:', existingMember);
-
     if (existingMember) {
       // Remover membro
       await client
         .from('project_members')
         .delete()
         .eq('id', existingMember.id);
-      // Atualizar projects locais (remover da lista de compartilhados)
-      if (user.id !== selectedProject.owner_id) {
-        setProjects(projects.filter(p => p.id !== selectedProject.id));
-      }
     } else {
       // Verificar se já existe convite pendente
       const { data: existingInvite } = await client
@@ -242,16 +231,10 @@ function DashboardContent() {
         .eq('status', 'pending')
         .single();
 
-      console.log('existingInvite:', existingInvite);
-
-      if (existingInvite) {
-        // Já existe convite pendente
-        console.log('Existing invite found, returning');
-        return;
-      }
+      if (existingInvite) return;
 
       // Criar convite
-      const { error } = await client
+      await client
         .from('project_invites')
         .insert({
           project_id: selectedProject.id,
@@ -259,12 +242,6 @@ function DashboardContent() {
           invited_by_user_id: user.id,
           status: 'pending'
         });
-
-      console.log('Invite created, error:', error);
-
-      if (error && error.code !== '23505') {
-        console.error('Erro ao criar convite:', error);
-      }
     }
   };
 
@@ -474,7 +451,7 @@ function DashboardContent() {
 
   const deleteProject = async () => {
     if (!selectedProject || !user || selectedProject.owner_id !== user.id) return;
-    if (!confirm(`Tem certeza que deseja excluir o projeto "${selectedProject.name}"? Esta ação não pode ser desfeita.`)) return;
+    if (!confirm(`Tem certeza que deseja excluir o projeto "${selectedProject.title}"? Esta ação não pode ser desfeita.`)) return;
 
     const projectId = selectedProject.id;
 
@@ -738,7 +715,7 @@ function DashboardContent() {
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
           <h1 className="text-3xl font-bold text-foreground">
-            {selectedProject ? selectedProject.name : selectedGroup ? selectedGroup.title : 'Dashboard'}
+            {selectedProject ? selectedProject.title : selectedGroup ? selectedGroup.title : 'Dashboard'}
           </h1>
           {(selectedGroup || selectedProject) && (
             <button
