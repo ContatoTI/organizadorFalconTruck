@@ -287,26 +287,35 @@ function DashboardContent() {
 
     const { data: invites } = await client
       .from('project_invites')
-      .select(`
-        id,
-        project_id,
-        status,
-        created_at,
-        project:projects(id, title, color),
-        inviter:profiles!invited_by_user_id(full_name, email)
-      `)
+      .select('id, project_id, invited_by_user_id, status, created_at')
       .eq('invited_user_id', user.id)
       .eq('status', 'pending');
 
-    if (invites) {
+    if (invites && invites.length > 0) {
+      // Buscar dados dos projetos e inviters separadamente
+      const projectIds = [...new Set(invites.map(i => i.project_id))];
+      const inviterIds = [...new Set(invites.map(i => i.invited_by_user_id))];
+
+      const [{ data: projects }, { data: profiles }] = await Promise.all([
+        client.from('projects').select('id, title, color').in('id', projectIds),
+        client.from('profiles').select('id, full_name, email').in('id', inviterIds),
+      ]);
+
+      const projectsMap: any = {};
+      projects?.forEach(p => { projectsMap[p.id] = p; });
+
+      const profilesMap: any = {};
+      profiles?.forEach(p => { profilesMap[p.id] = p; });
+
       const formattedInvites: PendingInvite[] = invites.map((inv: any) => ({
         id: inv.id,
         project_id: inv.project_id,
-        project_title: inv.project?.title || 'Projeto',
-        project_color: inv.project?.color || '#6366f1',
-        inviter_name: inv.inviter?.full_name || 'Usuário',
-        inviter_email: inv.inviter?.email || '',
+        project_title: projectsMap[inv.project_id]?.title || 'Projeto',
+        project_color: projectsMap[inv.project_id]?.color || '#6366f1',
+        inviter_name: profilesMap[inv.invited_by_user_id]?.full_name || 'Usuário',
+        inviter_email: profilesMap[inv.invited_by_user_id]?.email || '',
       }));
+
       setPendingInvites(formattedInvites);
       if (formattedInvites.length > 0) {
         setShowInviteModal(true);
