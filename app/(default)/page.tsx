@@ -61,7 +61,7 @@ function DashboardContent() {
   const [searchUsers, setSearchUsers] = useState('');
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  const [projectMembers, setProjectMembers] = useState<string[]>([]);
+  const [projectMembers, setProjectMembers] = useState<{userId: string; memberId: number}[]>([]);
   const router = useRouter();
   const searchParams = useSearchParams();
   const client = createClient();
@@ -167,13 +167,13 @@ function DashboardContent() {
       .limit(50);
     if (usersData) setAllUsers(usersData);
 
-    // Buscar membros atuais do projeto
+    // Buscar membros atuais do projeto com IDs
     if (selectedProject) {
       const { data: members } = await client
         .from('project_members')
-        .select('user_id')
+        .select('id, user_id')
         .eq('project_id', selectedProject.id);
-      setProjectMembers(members?.map(m => m.user_id) || []);
+      setProjectMembers(members?.map(m => ({ userId: m.user_id, memberId: m.id })) || []);
     } else {
       setProjectMembers([]);
     }
@@ -213,6 +213,18 @@ function DashboardContent() {
       if (user.id === targetUserId) {
         setProjects([...projects, selectedProject]);
       }
+    }
+  };
+
+  const removeMember = async (memberId: number, memberUserId: string) => {
+    if (!selectedProject || selectedProject.owner_id !== user.id) return;
+
+    await client.from('project_members').delete().eq('id', memberId);
+    setProjectMembers(projectMembers.filter(m => m.memberId !== memberId));
+
+    // Se o usuário atual é o membro removido, tirar da lista de projetos
+    if (user.id === memberUserId) {
+      setProjects(projects.filter(p => p.id !== selectedProject.id));
     }
   };
 
@@ -321,6 +333,20 @@ function DashboardContent() {
     setTasks(tasks.map(t => t.section_id === sectionId ? { ...t, section_id: null } : t));
   };
 
+  const deleteProject = async () => {
+    if (!selectedProject || !user || selectedProject.owner_id !== user.id) return;
+    if (!confirm(`Tem certeza que deseja excluir o projeto "${selectedProject.name}"? Esta ação não pode ser desfeita.`)) return;
+
+    const projectId = selectedProject.id;
+
+    // Excluir o projeto (cascade remove members e sections automaticamente)
+    await client.from('projects').delete().eq('id', projectId);
+
+    // Atualizar UI
+    setProjects(projects.filter(p => p.id !== projectId));
+    router.push('/');
+  };
+
   const toggleSectionExpand = (sectionId: number) => {
     setExpandedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
   };
@@ -424,6 +450,38 @@ function DashboardContent() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+            {/* Membros atuais */}
+            {projectMembers.length > 0 && (
+              <div className="mb-4 pb-4 border-b border-border">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Membros atuais</p>
+                <div className="space-y-2">
+                  {projectMembers.map((member) => {
+                    const memberProfile = allUsers.find(u => u.id === member.userId);
+                    return (
+                      <div key={member.memberId} className="flex items-center justify-between p-2 rounded-lg hover:bg-accent/50 transition-colors">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+                            {memberProfile?.avatar_url ? (
+                              <img src={memberProfile.avatar_url} className="w-7 h-7 rounded-full" />
+                            ) : (
+                              <User className="w-3 h-3 text-primary" />
+                            )}
+                          </div>
+                          <span className="text-sm">{memberProfile?.full_name || memberProfile?.email || 'Usuário'}</span>
+                        </div>
+                        <button
+                          onClick={() => removeMember(member.memberId, member.userId)}
+                          className="p-1 text-muted-foreground hover:text-destructive transition-colors"
+                          title="Remover membro"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {/* Busca */}
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -431,7 +489,7 @@ function DashboardContent() {
                 type="text"
                 value={searchUsers}
                 onChange={(e) => setSearchUsers(e.target.value)}
-                placeholder="Buscar usuário..."
+                placeholder="Buscar usuário para adicionar..."
                 className="w-full pl-9 pr-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
@@ -443,7 +501,7 @@ function DashboardContent() {
                 <div className="text-center py-4 text-muted-foreground text-sm">Nenhum usuário encontrado</div>
               ) : (
                 filteredShareUsers.map((u: any) => {
-                  const isShared = projectMembers.includes(u.id);
+                  const isShared = projectMembers.some(m => m.userId === u.id);
                   return (
                     <div key={u.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
                       <div className="flex items-center gap-3">
@@ -505,13 +563,22 @@ function DashboardContent() {
             </button>
           )}
           {selectedProject && user && selectedProject.owner_id === user.id && (
-            <button
-              onClick={openShareModal}
-              className="flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 hover:bg-primary/20 text-primary text-sm transition-colors"
-            >
-              <Share className="w-4 h-4" />
-              Compartilhar
-            </button>
+            <>
+              <button
+                onClick={openShareModal}
+                className="flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 hover:bg-primary/20 text-primary text-sm transition-colors"
+              >
+                <Share className="w-4 h-4" />
+                Compartilhar
+              </button>
+              <button
+                onClick={deleteProject}
+                className="flex items-center gap-1 px-3 py-1 rounded-full bg-destructive/10 hover:bg-destructive/20 text-destructive text-sm transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Excluir
+              </button>
+            </>
           )}
         </div>
         <div className="flex items-center gap-6">
