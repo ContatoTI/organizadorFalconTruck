@@ -116,7 +116,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
     console.log('Creating project with:', {
       owner_id: user.id,
-      name: newProjectName,
+      title: newProjectName,
       color: newProjectColor,
     });
 
@@ -124,7 +124,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       .from('projects')
       .insert({
         owner_id: user.id,
-        name: newProjectName,
+        title: newProjectName,
         color: newProjectColor,
       })
       .select()
