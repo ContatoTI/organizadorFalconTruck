@@ -20,7 +20,7 @@ import {
   ChevronRight,
   Folder,
   X,
-  Bell,
+    Bell,
   Check,
 } from 'lucide-react';
 
@@ -307,17 +307,22 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     console.log('ownProjects:', ownProjects?.length);
 
     // Buscar projetos dos quais é membro
-    const { data: memberProjects } = await client
+    const { data: memberProjects, error: memberError } = await client
       .from('project_members')
       .select('project_id')
       .eq('user_id', user.id);
 
-    console.log('memberProjects:', memberProjects);
+    console.log('memberProjects:', memberProjects, 'error:', memberError);
 
     const memberProjectIds = memberProjects?.map((m: any) => m.project_id) || [];
-    const { data: sharedProjects } = memberProjectIds.length > 0
-      ? await client.from('projects').select('*').in('id', memberProjectIds)
-      : { data: [] };
+    console.log('memberProjectIds:', memberProjectIds);
+
+    let sharedProjects: any[] = [];
+    if (memberProjectIds.length > 0) {
+      const result = await client.from('projects').select('*').in('id', memberProjectIds);
+      console.log('sharedProjects query result:', result.data, 'error:', result.error);
+      sharedProjects = result.data || [];
+    }
 
     console.log('sharedProjects:', sharedProjects?.length);
 
