@@ -120,7 +120,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       .eq('status', 'pending');
 
     if (invitesError) {
-      console.error('Error fetching invites:', invitesError);
+      console.error('Error fetching invites:', invitesError.message, invitesError.code, invitesError.details);
     }
 
     if (invites && invites.length > 0) {
