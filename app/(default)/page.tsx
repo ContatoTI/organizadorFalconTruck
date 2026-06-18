@@ -30,7 +30,7 @@ interface Group {
 
 interface Project {
   id: number;
-  user_id: string;
+  owner_id: string;
   name: string;
   color: string;
   shared_with: string[];
@@ -120,7 +120,7 @@ function DashboardContent() {
     const { data, error } = await client
       .from('projects')
       .select('*')
-      .or(`user_id.eq.${user.id},shared_with.cs.{${user.id}}`);
+      .or(`owner_id.eq.${user.id},shared_with.cs.{${user.id}}`);
 
     if (error) console.error('Erro fetchProjects:', error);
     if (data) setProjects(data);

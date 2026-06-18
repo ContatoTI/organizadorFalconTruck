@@ -24,7 +24,7 @@ import {
 
 interface Project {
   id: number;
-  user_id: string;
+  owner_id: string;
   name: string;
   title?: string;
   color: string;
@@ -77,10 +77,13 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     const { data, error } = await client
       .from('projects')
       .select('*')
-      .eq('user_id', user.id);
+      .eq('owner_id', user.id);
 
-    if (!error && data) {
-      setProjects(data);
+    if (error) {
+      console.error('Erro ao buscar projetos:', error);
+      setProjects([]);
+    } else {
+      setProjects(data ?? []);
     }
     setLoadingProjects(false);
   };
