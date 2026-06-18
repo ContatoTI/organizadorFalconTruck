@@ -240,7 +240,7 @@ function DashboardContent() {
   const createSection = async () => {
     if (!newSectionTitle.trim() || !user || !selectedProjectId) return;
     // Only project owner can create sections
-    if (selectedProject && selectedProject.user_id !== user.id) return;
+    if (selectedProject && selectedProject.owner_id !== user.id) return;
 
     const { data, error } = await client
       .from('sections')
@@ -462,7 +462,7 @@ function DashboardContent() {
               Limpar filtro
             </button>
           )}
-          {selectedProject && user && selectedProject.user_id === user.id && (
+          {selectedProject && user && selectedProject.owner_id === user.id && (
             <button
               onClick={openShareModal}
               className="flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 hover:bg-primary/20 text-primary text-sm transition-colors"
