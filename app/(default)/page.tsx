@@ -43,6 +43,26 @@ interface Section {
   order: number;
 }
 
+interface ProjectInvite {
+  id: number;
+  project_id: number;
+  invited_user_id: string;
+  invited_by_user_id: string;
+  status: 'pending' | 'accepted' | 'declined';
+  created_at: string;
+  project?: { id: number; title: string; color: string };
+  inviter?: { full_name: string; email: string };
+}
+
+interface PendingInvite {
+  id: number;
+  project_id: number;
+  project_title: string;
+  project_color: string;
+  inviter_name: string;
+  inviter_email: string;
+}
+
 function DashboardContent() {
   const [user, setUser] = useState<any>(null);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -62,6 +82,9 @@ function DashboardContent() {
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [projectMembers, setProjectMembers] = useState<{userId: string; memberId: number}[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [invitesLoaded, setInvitesLoaded] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const client = createClient();
@@ -88,6 +111,7 @@ function DashboardContent() {
       fetchGroups();
       fetchProjects();
       fetchTasks();
+      fetchPendingInvites();
     }
   }, [user]);
 
@@ -202,16 +226,32 @@ function DashboardContent() {
         setProjects(projects.filter(p => p.id !== selectedProject.id));
       }
     } else {
-      // Adicionar membro
-      const { error } = await client
-        .from('project_members')
-        .insert({ project_id: selectedProject.id, user_id: targetUserId });
-      if (error && error.code !== '23505') {
-        console.error('Erro ao adicionar membro:', error);
+      // Verificar se já existe convite pendente
+      const { data: existingInvite } = await client
+        .from('project_invites')
+        .select('id')
+        .eq('project_id', selectedProject.id)
+        .eq('invited_user_id', targetUserId)
+        .eq('status', 'pending')
+        .single();
+
+      if (existingInvite) {
+        // Já existe convite pendente
+        return;
       }
-      // Atualizar UI para membro ver o projeto
-      if (user.id === targetUserId) {
-        setProjects([...projects, selectedProject]);
+
+      // Criar convite
+      const { error } = await client
+        .from('project_invites')
+        .insert({
+          project_id: selectedProject.id,
+          invited_user_id: targetUserId,
+          invited_by_user_id: user.id,
+          status: 'pending'
+        });
+
+      if (error && error.code !== '23505') {
+        console.error('Erro ao criar convite:', error);
       }
     }
   };
@@ -240,6 +280,85 @@ function DashboardContent() {
 
     if (data) setTasks(data);
     setLoading(false);
+  };
+
+  const fetchPendingInvites = async () => {
+    if (!user) return;
+
+    const { data: invites } = await client
+      .from('project_invites')
+      .select(`
+        id,
+        project_id,
+        status,
+        created_at,
+        project:projects(id, title, color),
+        inviter:profiles!invited_by_user_id(full_name, email)
+      `)
+      .eq('invited_user_id', user.id)
+      .eq('status', 'pending');
+
+    if (invites) {
+      const formattedInvites: PendingInvite[] = invites.map((inv: any) => ({
+        id: inv.id,
+        project_id: inv.project_id,
+        project_title: inv.project?.title || 'Projeto',
+        project_color: inv.project?.color || '#6366f1',
+        inviter_name: inv.inviter?.full_name || 'Usuário',
+        inviter_email: inv.inviter?.email || '',
+      }));
+      setPendingInvites(formattedInvites);
+      if (formattedInvites.length > 0) {
+        setShowInviteModal(true);
+      }
+    }
+    setInvitesLoaded(true);
+  };
+
+  const acceptInvite = async (inviteId: number, projectId: number) => {
+    if (!user) return;
+
+    // Atualizar status do convite para aceito
+    await client
+      .from('project_invites')
+      .update({ status: 'accepted' })
+      .eq('id', inviteId);
+
+    // Adicionar como membro do projeto
+    await client
+      .from('project_members')
+      .insert({ project_id: projectId, user_id: user.id });
+
+    // Atualizar lista de projetos
+    const { data: project } = await client
+      .from('projects')
+      .select('*')
+      .eq('id', projectId)
+      .single();
+
+    if (project) {
+      setProjects([...projects, project]);
+    }
+
+    // Remover do modal
+    setPendingInvites(pendingInvites.filter(inv => inv.id !== inviteId));
+    if (pendingInvites.length <= 1) {
+      setShowInviteModal(false);
+    }
+  };
+
+  const declineInvite = async (inviteId: number) => {
+    if (!user) return;
+
+    await client
+      .from('project_invites')
+      .update({ status: 'declined' })
+      .eq('id', inviteId);
+
+    setPendingInvites(pendingInvites.filter(inv => inv.id !== inviteId));
+    if (pendingInvites.length <= 1) {
+      setShowInviteModal(false);
+    }
   };
 
   const handleAddTask = async (sectionId?: number) => {
@@ -439,6 +558,54 @@ function DashboardContent() {
 
   return (
     <div className="p-6 w-full max-w-4xl mx-auto">
+      {/* Modal de Convites */}
+      {showInviteModal && pendingInvites.length > 0 && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card rounded-xl p-6 w-96 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Convites de Projeto</h3>
+              <button onClick={() => setShowInviteModal(false)} className="p-1 hover:bg-accent rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              {pendingInvites.map((invite) => (
+                <div key={invite.id} className="p-4 rounded-lg border bg-accent/20">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: invite.project_color }}
+                    >
+                      <Folder className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{invite.project_title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Convidado por {invite.inviter_name}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => acceptInvite(invite.id, invite.project_id)}
+                      className="flex-1 py-2 rounded-lg bg-green-500 text-white hover:bg-green-600 transition-colors text-sm font-medium"
+                    >
+                      Aceitar
+                    </button>
+                    <button
+                      onClick={() => declineInvite(invite.id)}
+                      className="flex-1 py-2 rounded-lg border border-input hover:bg-accent transition-colors text-sm"
+                    >
+                      Recusar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Compartilhamento */}
       {showShareModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowShareModal(false)}>
@@ -528,12 +695,12 @@ function DashboardContent() {
                         {isShared ? (
                           <>
                             <Check className="w-3 h-3" />
-                            Convidado
+                            Membro
                           </>
                         ) : (
                           <>
                             <Plus className="w-3 h-3" />
-                            Adicionar
+                            Convidar
                           </>
                         )}
                       </button>
