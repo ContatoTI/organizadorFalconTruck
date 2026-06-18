@@ -10,22 +10,26 @@ create table public.project_members (
 -- Habilitar RLS
 alter table public.project_members enable row level security;
 
--- Políticas: membros veem projetos; só dono pode gerenciar membros
-create policy "Users can view project members of their projects" on public.project_members
+-- Função helper para verificar membership (não dispara RLS)
+create or replace function public.is_project_member(p_project_id bigint, p_user_id uuid)
+returns boolean as $$
+  select exists (
+    select 1 from public.project_members where project_id = p_project_id and user_id = p_user_id
+  );
+$$ language sql stable security definer;
+
+-- Políticas usando a função helper
+create policy "Users can view project members" on public.project_members
   for select using (
     auth.uid() = user_id or
-    exists (
-      select 1 from public.projects
-      where id = project_id and owner_id = auth.uid()
-    )
+    exists (select 1 from public.projects where id = project_id and owner_id = auth.uid()) or
+    public.is_project_member(project_id, auth.uid())
   );
 
-create policy "Project owners can manage members" on public.project_members
-  for all using (
-    exists (
-      select 1 from public.projects
-      where id = project_id and owner_id = auth.uid()
-    )
+create policy "Project members can add members" on public.project_members
+  for insert with check (
+    exists (select 1 from public.projects where id = project_id and owner_id = auth.uid()) or
+    public.is_project_member(project_id, auth.uid())
   );
 
 -- Ajustar RLS da tabela projects para usar owner_id
