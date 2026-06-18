@@ -33,7 +33,6 @@ interface Project {
   owner_id: string;
   name: string;
   color: string;
-  shared_with: string[];
 }
 
 interface Section {
@@ -62,6 +61,7 @@ function DashboardContent() {
   const [searchUsers, setSearchUsers] = useState('');
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [projectMembers, setProjectMembers] = useState<string[]>([]);
   const router = useRouter();
   const searchParams = useSearchParams();
   const client = createClient();
@@ -116,14 +116,27 @@ function DashboardContent() {
     const { data: { user } } = await client.auth.getUser();
     if (!user) return;
 
-    // Buscar projetos próprios e compartilhados
-    const { data, error } = await client
+    // Buscar projetos próprios
+    const { data: ownProjects, error } = await client
       .from('projects')
       .select('*')
-      .or(`owner_id.eq.${user.id},shared_with.cs.{${user.id}}`);
+      .eq('owner_id', user.id);
+
+    // Buscar projetos dos quais é membro
+    const { data: memberProjects } = await client
+      .from('project_members')
+      .select('project_id')
+      .eq('user_id', user.id);
+
+    const memberProjectIds = memberProjects?.map(m => m.project_id) || [];
+    const { data: sharedProjects } = memberProjectIds.length > 0
+      ? await client.from('projects').select('*').in('id', memberProjectIds)
+      : { data: [] };
+
+    const allProjects = [...(ownProjects || []), ...(sharedProjects || [])];
 
     if (error) console.error('Erro fetchProjects:', error);
-    if (data) setProjects(data);
+    if (allProjects) setProjects(allProjects);
   };
 
   const fetchSections = async () => {
@@ -153,24 +166,53 @@ function DashboardContent() {
       .neq('id', user.id)
       .limit(50);
     if (usersData) setAllUsers(usersData);
+
+    // Buscar membros atuais do projeto
+    if (selectedProject) {
+      const { data: members } = await client
+        .from('project_members')
+        .select('user_id')
+        .eq('project_id', selectedProject.id);
+      setProjectMembers(members?.map(m => m.user_id) || []);
+    } else {
+      setProjectMembers([]);
+    }
     setLoadingUsers(false);
   };
 
   const toggleShareUser = async (targetUserId: string) => {
-    if (!selectedProject) return;
-    const currentShared = selectedProject.shared_with || [];
-    const isShared = currentShared.includes(targetUserId);
-    const newShared = isShared
-      ? currentShared.filter((id: string) => id !== targetUserId)
-      : [...currentShared, targetUserId];
-    const { error } = await client
-      .from('projects')
-      .update({ shared_with: newShared })
-      .eq('id', selectedProject.id);
-    if (!error) {
-      setProjects(projects.map(p =>
-        p.id === selectedProject.id ? { ...p, shared_with: newShared } : p
-      ));
+    if (!selectedProject || selectedProject.owner_id !== user.id) return;
+
+    // Verificar se já é membro
+    const { data: existingMember } = await client
+      .from('project_members')
+      .select('id')
+      .eq('project_id', selectedProject.id)
+      .eq('user_id', targetUserId)
+      .single();
+
+    if (existingMember) {
+      // Remover membro
+      await client
+        .from('project_members')
+        .delete()
+        .eq('id', existingMember.id);
+      // Atualizar projects locais (remover da lista de compartilhados)
+      if (user.id !== selectedProject.owner_id) {
+        setProjects(projects.filter(p => p.id !== selectedProject.id));
+      }
+    } else {
+      // Adicionar membro
+      const { error } = await client
+        .from('project_members')
+        .insert({ project_id: selectedProject.id, user_id: targetUserId });
+      if (error && error.code !== '23505') {
+        console.error('Erro ao adicionar membro:', error);
+      }
+      // Atualizar UI para membro ver o projeto
+      if (user.id === targetUserId) {
+        setProjects([...projects, selectedProject]);
+      }
     }
   };
 
@@ -401,7 +443,7 @@ function DashboardContent() {
                 <div className="text-center py-4 text-muted-foreground text-sm">Nenhum usuário encontrado</div>
               ) : (
                 filteredShareUsers.map((u: any) => {
-                  const isShared = selectedProject?.shared_with?.includes(u.id);
+                  const isShared = projectMembers.includes(u.id);
                   return (
                     <div key={u.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
                       <div className="flex items-center gap-3">

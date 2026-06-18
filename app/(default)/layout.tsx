@@ -28,7 +28,6 @@ interface Project {
   name: string;
   title?: string;
   color: string;
-  shared_with: string[];
 }
 
 export default function DefaultLayout({ children }: { children: React.ReactNode }) {
@@ -74,16 +73,30 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     const { data: { user } } = await client.auth.getUser();
     if (!user) return;
 
-    const { data, error } = await client
+    // Buscar projetos próprios
+    const { data: ownProjects, error } = await client
       .from('projects')
       .select('*')
       .eq('owner_id', user.id);
+
+    // Buscar projetos dos quais é membro
+    const { data: memberProjects } = await client
+      .from('project_members')
+      .select('project_id')
+      .eq('user_id', user.id);
+
+    const memberProjectIds = memberProjects?.map((m: any) => m.project_id) || [];
+    const { data: sharedProjects } = memberProjectIds.length > 0
+      ? await client.from('projects').select('*').in('id', memberProjectIds)
+      : { data: [] };
+
+    const allProjects = [...(ownProjects || []), ...(sharedProjects || [])];
 
     if (error) {
       console.error('Erro ao buscar projetos:', error);
       setProjects([]);
     } else {
-      setProjects(data ?? []);
+      setProjects(allProjects);
     }
     setLoadingProjects(false);
   };
