@@ -212,6 +212,12 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   };
 
   const acceptInviteFromBell = async (inviteId: number, projectId: number) => {
+    // Buscar user atual diretamente para garantir que está atualizado
+    const { data: { user: currentUser } } = await client.auth.getUser();
+    if (!currentUser) return;
+
+    console.log('acceptInviteFromBell:', { inviteId, projectId, userId: currentUser.id });
+
     await client
       .from('project_invites')
       .update({ status: 'accepted' })
@@ -222,18 +228,23 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       .from('project_members')
       .select('id')
       .eq('project_id', projectId)
-      .eq('user_id', user.id)
+      .eq('user_id', currentUser.id)
       .single();
+
+    console.log('existingMember check:', existingMember);
 
     // Só insere se não for membro ainda
     if (!existingMember) {
+      console.log('Inserting as new member');
       await client
         .from('project_members')
-        .insert({ project_id: projectId, user_id: user.id });
+        .insert({ project_id: projectId, user_id: currentUser.id });
     }
 
+    console.log('Calling fetchProjects...');
     await fetchProjects();
     fetchNotifications();
+    console.log('Done!');
   };
 
   const declineInviteFromBell = async (inviteId: number) => {
