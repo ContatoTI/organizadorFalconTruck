@@ -205,7 +205,12 @@ function DashboardContent() {
   };
 
   const toggleShareUser = async (targetUserId: string) => {
-    if (!selectedProject || selectedProject.owner_id !== user.id) return;
+    if (!selectedProject || selectedProject.owner_id !== user.id) {
+      console.log('toggleShareUser: early return - not owner or no project');
+      return;
+    }
+
+    console.log('toggleShareUser:', { targetUserId, selectedProjectId: selectedProject.id });
 
     // Verificar se já é membro
     const { data: existingMember } = await client
@@ -214,6 +219,8 @@ function DashboardContent() {
       .eq('project_id', selectedProject.id)
       .eq('user_id', targetUserId)
       .single();
+
+    console.log('existingMember:', existingMember);
 
     if (existingMember) {
       // Remover membro
@@ -235,8 +242,11 @@ function DashboardContent() {
         .eq('status', 'pending')
         .single();
 
+      console.log('existingInvite:', existingInvite);
+
       if (existingInvite) {
         // Já existe convite pendente
+        console.log('Existing invite found, returning');
         return;
       }
 
@@ -249,6 +259,8 @@ function DashboardContent() {
           invited_by_user_id: user.id,
           status: 'pending'
         });
+
+      console.log('Invite created, error:', error);
 
       if (error && error.code !== '23505') {
         console.error('Erro ao criar convite:', error);
