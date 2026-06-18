@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { cn } from '@/app/lib/utils';
 import { useGroups } from '@/app/lib/GroupsContext';
+import { projectAPI } from '@/app/lib/projectAPI';
 import {
   LayoutDashboard,
   Calendar,
@@ -285,35 +286,15 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     const { data: { user } } = await client.auth.getUser();
     if (!user) return;
 
-    // Buscar projetos próprios
-    const { data: ownProjects, error } = await client
-      .from('projects')
-      .select('*')
-      .eq('owner_id', user.id);
-
-    // Buscar projetos dos quais é membro
-    const { data: memberProjects } = await client
-      .from('project_members')
-      .select('project_id')
-      .eq('user_id', user.id);
-
-    const memberProjectIds = memberProjects?.map((m: any) => m.project_id) || [];
-
-    let sharedProjects: any[] = [];
-    if (memberProjectIds.length > 0) {
-      const result = await client.from('projects').select('*').in('id', memberProjectIds);
-      sharedProjects = result.data || [];
-    }
-
-    const allProjects = [...(ownProjects || []), ...(sharedProjects || [])];
-
-    if (error) {
+    try {
+      const allProjects = await projectAPI.getUserProjects(user.id);
+      setProjects(allProjects);
+    } catch (error) {
       console.error('Erro ao buscar projetos:', error);
       setProjects([]);
-    } else {
-      setProjects(allProjects);
+    } finally {
+      setLoadingProjects(false);
     }
-    setLoadingProjects(false);
   };
 
   const toggleSection = (section: string) => {
