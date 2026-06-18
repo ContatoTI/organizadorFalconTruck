@@ -213,7 +213,7 @@ function DashboardContent() {
       .select('id')
       .eq('project_id', selectedProject.id)
       .eq('user_id', targetUserId)
-      .single();
+      .maybeSingle();
 
     if (existingMember) {
       // Remover membro
@@ -229,7 +229,7 @@ function DashboardContent() {
         .eq('project_id', selectedProject.id)
         .eq('invited_user_id', targetUserId)
         .eq('status', 'pending')
-        .single();
+        .maybeSingle();
 
       if (existingInvite) return;
 
@@ -332,7 +332,7 @@ function DashboardContent() {
       .from('projects')
       .select('*')
       .eq('id', projectId)
-      .single();
+      .maybeSingle();
 
     if (project) {
       setProjects([...projects, project]);

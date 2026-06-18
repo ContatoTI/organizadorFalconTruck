@@ -140,7 +140,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       .select('id')
       .eq('project_id', projectId)
       .eq('user_id', currentUser.id)
-      .single();
+      .maybeSingle();
 
     // Só insere se não for membro ainda
     if (!existingMember) {

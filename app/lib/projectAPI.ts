@@ -224,7 +224,7 @@ class ProjectAPI {
         .from('projects')
         .select('owner_id')
         .eq('id', projectId)
-        .single();
+        .maybeSingle();
 
       return data?.owner_id === userId;
     } catch (error) {
