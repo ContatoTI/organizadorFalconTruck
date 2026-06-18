@@ -330,7 +330,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                       </div>
                     ) : (
                       projects.map((project) => {
-                        const isOwner = project.user_id === user?.id;
+                        const isOwner = project.owner_id === user?.id;
                         return (
                         <Link
                           key={project.id}
