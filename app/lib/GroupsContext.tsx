@@ -2,20 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
-
-interface Group {
-  id: number;
-  user_id: string;
-  title: string;
-  type: 'time' | 'list';
-  icon: string | null;
-  color: string | null;
-  start_time: string | null;
-  end_time: string | null;
-  recurrence_type: string | null;
-  recurrence_days: number[] | null;
-  created_at: string;
-}
+import type { Group } from '@/types/index';
 
 interface GroupsContextType {
   groups: Group[];
@@ -55,7 +42,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       .eq('user_id', user.id)
       .order('created_at');
 
-    if (data) setGroups(data);
+    if (data) setGroups(data as Group[]);
     setLoading(false);
   };
 

@@ -679,7 +679,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                             className="w-3 h-3 rounded-full"
                             style={{ backgroundColor: project.color }}
                           />
-                          <span className="truncate">{project.name || project.title}</span>
+                          <span className="truncate">{project.title}</span>
                           {!isOwner && (
                             <span className="text-xs text-muted-foreground ml-auto">compartilhado</span>
                           )}
