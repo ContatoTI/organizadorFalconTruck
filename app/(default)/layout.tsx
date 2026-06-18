@@ -114,7 +114,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     const { data, error } = await client
       .from('projects')
       .insert({
-        user_id: user.id,
+        owner_id: user.id,
         name: newProjectName,
         color: newProjectColor,
       })
