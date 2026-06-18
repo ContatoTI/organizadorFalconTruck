@@ -280,7 +280,12 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const fetchProjects = async () => {
     setLoadingProjects(true);
     const { data: { user } } = await client.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      console.log('fetchProjects: no user');
+      return;
+    }
+
+    console.log('fetchProjects: user_id:', user.id);
 
     // Buscar projetos próprios
     const { data: ownProjects, error } = await client
@@ -288,16 +293,22 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       .select('*')
       .eq('owner_id', user.id);
 
+    console.log('ownProjects:', ownProjects?.length);
+
     // Buscar projetos dos quais é membro
     const { data: memberProjects } = await client
       .from('project_members')
       .select('project_id')
       .eq('user_id', user.id);
 
+    console.log('memberProjects:', memberProjects);
+
     const memberProjectIds = memberProjects?.map((m: any) => m.project_id) || [];
     const { data: sharedProjects } = memberProjectIds.length > 0
       ? await client.from('projects').select('*').in('id', memberProjectIds)
       : { data: [] };
+
+    console.log('sharedProjects:', sharedProjects?.length);
 
     const allProjects = [...(ownProjects || []), ...(sharedProjects || [])];
 
