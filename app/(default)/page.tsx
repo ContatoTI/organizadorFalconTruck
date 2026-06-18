@@ -112,6 +112,35 @@ function DashboardContent() {
       fetchProjects();
       fetchTasks();
       fetchPendingInvites();
+      
+      // Inscrição para atualizações em tempo real
+      const channel = client
+        .channel('dashboard-changes')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'project_invites', filter: `invited_user_id=eq.${user.id}` },
+          () => fetchPendingInvites()
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'project_members', filter: `user_id=eq.${user.id}` },
+          () => fetchProjects()
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'projects' },
+          () => fetchProjects()
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'todos', filter: `user_id=eq.${user.id}` },
+          () => fetchTasks()
+        )
+        .subscribe();
+
+      return () => {
+        client.removeChannel(channel);
+      };
     }
   }, [user]);
 

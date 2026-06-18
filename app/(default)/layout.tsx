@@ -81,7 +81,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     if (user) {
       fetchProjects();
       fetchNotifications();
-      subscribeToInvites();
+      subscribeToChanges();
     } else {
       setProjects([]);
       setLoadingProjects(false);
@@ -90,7 +90,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     }
 
     return () => {
-      client.channel('invites-channel').unsubscribe();
+      client.channel('sidebar-changes').unsubscribe();
     };
   }, [user]);
 
@@ -111,14 +111,28 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     }
   };
 
-  const subscribeToInvites = () => {
+  const subscribeToChanges = () => {
     client
-      .channel('invites-channel')
+      .channel('sidebar-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'project_invites' },
         () => {
           fetchNotifications();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'project_members', filter: `user_id=eq.${user.id}` },
+        () => {
+          fetchProjects();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'projects' },
+        () => {
+          fetchProjects();
         }
       )
       .subscribe();
