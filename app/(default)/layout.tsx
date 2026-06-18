@@ -7,6 +7,8 @@ import { createClient } from '@/app/lib/supabase/Client';
 import { cn } from '@/app/lib/utils';
 import { useGroups } from '@/app/lib/GroupsContext';
 import { projectAPI } from '@/app/lib/projectAPI';
+import { notificationAPI } from '@/app/lib/notificationAPI';
+import { NotificationBell, NotificationsPanel } from '@/app/components/NotificationsPanel';
 import {
   LayoutDashboard,
   Calendar,
@@ -96,104 +98,15 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     const { data: { user } } = await client.auth.getUser();
     if (!user) return;
 
-    // Buscar projetos do usuário
-    const { data: ownProjects } = await client
-      .from('projects')
-      .select('id, title, color')
-      .eq('owner_id', user.id);
+    try {
+      const { pendingInvites: invites, declineNotifications: declined } =
+        await notificationAPI.getUserNotifications(user.id);
 
-    const { data: memberProjects } = await client
-      .from('project_members')
-      .select('project_id')
-      .eq('user_id', user.id);
-
-    const userProjectIds: number[] = [
-      ...(ownProjects?.map(p => p.id).filter((id): id is number => typeof id === 'number') || []),
-      ...(memberProjects?.map(m => m.project_id).filter((id): id is number => typeof id === 'number') || []),
-    ];
-
-    // Buscar convites pendentes
-    const { data: invites, error: invitesError } = await client
-      .from('project_invites')
-      .select('id, project_id, invited_by_user_id, created_at')
-      .eq('invited_user_id', user.id)
-      .eq('status', 'pending');
-
-    if (invitesError) {
-      console.error('Error fetching invites:', invitesError.message, invitesError.code, invitesError.details);
-    }
-
-    if (invites && invites.length > 0) {
-      const projectIds: number[] = [...new Set(invites.map(i => i.project_id).filter((id): id is number => typeof id === 'number'))];
-      const inviterIds: string[] = [...new Set(invites.map(i => i.invited_by_user_id).filter((id): id is string => typeof id === 'string'))];
-
-      const [{ data: projects, error: projectsError }, { data: profiles, error: profilesError }] = await Promise.all([
-        client.from('projects').select('id, title, color').in('id', projectIds),
-        client.from('profiles').select('id, full_name, email').in('id', inviterIds),
-      ]);
-
-      if (projectsError) console.error('Error fetching projects:', projectsError);
-      if (profilesError) console.error('Error fetching profiles:', profilesError);
-
-      const projectsMap: any = {};
-      projects?.forEach(p => { projectsMap[p.id] = p; });
-
-      const profilesMap: any = {};
-      profiles?.forEach(p => { profilesMap[p.id] = p; });
-
-      const formatted = invites.map((inv: any) => ({
-        id: inv.id,
-        project_id: inv.project_id,
-        project_title: projectsMap[inv.project_id]?.title || 'Projeto',
-        project_color: projectsMap[inv.project_id]?.color || '#6366f1',
-        inviter_name: profilesMap[inv.invited_by_user_id]?.full_name || 'Usuário',
-        inviter_email: profilesMap[inv.invited_by_user_id]?.email || '',
-        created_at: inv.created_at,
-      }));
-
-      setPendingInvites(formatted);
-    } else {
+      setPendingInvites(invites);
+      setDeclineNotifications(declined);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
       setPendingInvites([]);
-    }
-
-    // Buscar recusas dos meus projetos
-    if (userProjectIds.length === 0) {
-      setDeclineNotifications([]);
-      return;
-    }
-
-    const { data: declined } = await client
-      .from('project_invites')
-      .select('id, project_id, invited_user_id, created_at')
-      .eq('status', 'declined')
-      .in('project_id', userProjectIds);
-
-    if (declined && declined.length > 0) {
-      const userIds: string[] = [...new Set(declined.map(d => d.invited_user_id).filter((id): id is string => typeof id === 'string'))];
-      const projIds: number[] = [...new Set(declined.map(d => d.project_id).filter((id): id is number => typeof id === 'number'))];
-
-      const [{ data: users }, { data: projs }] = await Promise.all([
-        client.from('profiles').select('id, full_name, email').in('id', userIds),
-        client.from('projects').select('id, title, color').in('id', projIds),
-      ]);
-
-      const usersMap: any = {};
-      users?.forEach(u => { usersMap[u.id] = u; });
-      const projsMap: any = {};
-      projs?.forEach(p => { projsMap[p.id] = p; });
-
-      const formatted = declined.map((dec: any) => ({
-        id: dec.id,
-        project_id: dec.project_id,
-        project_title: projsMap[dec.project_id]?.title || 'Projeto',
-        project_color: projsMap[dec.project_id]?.color || '#6366f1',
-        declined_user_name: usersMap[dec.invited_user_id]?.full_name || 'Usuário',
-        invited_user_id: dec.invited_user_id,
-        created_at: dec.created_at,
-      }));
-
-      setDeclineNotifications(formatted);
-    } else {
       setDeclineNotifications([]);
     }
   };
@@ -343,105 +256,20 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       {/* Sino de Notificações - fixo no canto superior direito */}
       {user && (
         <div className="fixed top-4 right-4 z-40">
-          <button
+          <NotificationBell
+            count={totalNotifications}
             onClick={() => setShowNotifications(!showNotifications)}
-            className="relative p-2 rounded-full bg-card border hover:bg-accent transition-colors shadow-sm"
-          >
-            <Bell className="w-5 h-5" />
-            {totalNotifications > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
-                {totalNotifications}
-              </span>
-            )}
-          </button>
-
-          {showNotifications && (
-            <div className="absolute right-0 mt-2 w-80 bg-card rounded-lg border shadow-xl max-h-96 overflow-y-auto">
-              <div className="p-3 border-b">
-                <h3 className="font-semibold">Notificações</h3>
-              </div>
-
-              {pendingInvites.length === 0 && declineNotifications.length === 0 ? (
-                <div className="p-6 text-center text-sm text-muted-foreground">
-                  Nenhuma notificação
-                </div>
-              ) : (
-                <div className="divide-y">
-                  {/* Convites pendentes */}
-                  {pendingInvites.map((invite) => (
-                    <div key={`invite-${invite.id}`} className="p-3">
-                      <div className="flex items-start gap-3 mb-2">
-                        <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                          style={{ backgroundColor: invite.project_color }}
-                        >
-                          <Folder className="w-4 h-4 text-white" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            Convite para {invite.project_title}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Por {invite.inviter_name}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => acceptInviteFromBell(invite.id, invite.project_id)}
-                          className="flex-1 py-1.5 rounded-md bg-green-500 text-white hover:bg-green-600 text-xs font-medium"
-                        >
-                          Aceitar
-                        </button>
-                        <button
-                          onClick={() => declineInviteFromBell(invite.id)}
-                          className="flex-1 py-1.5 rounded-md border hover:bg-accent text-xs"
-                        >
-                          Recusar
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Recusas */}
-                  {declineNotifications.map((notif) => (
-                    <div key={`declined-${notif.id}`} className="p-3">
-                      <div className="flex items-start gap-3 mb-2">
-                        <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                          style={{ backgroundColor: notif.project_color }}
-                        >
-                          <Folder className="w-4 h-4 text-white" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            {notif.declined_user_name} recusou o convite
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Projeto: {notif.project_title}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => reinviteUser(notif.project_id, notif.invited_user_id)}
-                          className="flex-1 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-medium"
-                        >
-                          Convidar novamente
-                        </button>
-                        <button
-                          onClick={() => dismissDeclineNotification(notif.id)}
-                          className="px-3 py-1.5 rounded-md border hover:bg-accent text-xs"
-                        >
-                          Dispensar
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          />
+          <NotificationsPanel
+            isOpen={showNotifications}
+            pendingInvites={pendingInvites}
+            declineNotifications={declineNotifications}
+            onAcceptInvite={acceptInviteFromBell}
+            onDeclineInvite={declineInviteFromBell}
+            onReinviteUser={reinviteUser}
+            onDismissDecline={dismissDeclineNotification}
+            onClose={() => setShowNotifications(false)}
+          />
         </div>
       )}
 
