@@ -3,12 +3,22 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
+import { taskAPI } from '@/app/lib/taskAPI';
+import { cn } from '@/app/lib/utils';
+import type { Task, Group, User } from '@/types/index';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 
 export default function CalendarPage() {
-  const [user, setUser] = useState<any>(null);
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [groups, setGroups] = useState<any[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -20,12 +30,12 @@ export default function CalendarPage() {
 
   useEffect(() => {
     const getUser = async () => {
-      const { data: { user } } = await client.auth.getUser();
-      if (!user) {
+      const { data: { user: authUser } } = await client.auth.getUser();
+      if (!authUser) {
         router.push('/login');
         return;
       }
-      setUser(user);
+      setUser(authUser as any);
     };
     getUser();
   }, []);
@@ -34,34 +44,47 @@ export default function CalendarPage() {
     if (user) {
       fetchTasks();
       fetchGroups();
+
+      // Realtime: reflete exclusões/edições de tarefas em tempo real
+      const channel = client
+        .channel('calendar-todos-changes')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'todos', filter: `user_id=eq.${user.id}` },
+          (payload) => {
+            if (payload.eventType === 'INSERT') {
+              setTasks((prev) => [payload.new as Task, ...prev.filter(t => t.id !== (payload.new as Task).id)]);
+            } else if (payload.eventType === 'UPDATE') {
+              setTasks((prev) => prev.map(t => t.id === (payload.new as Task).id ? (payload.new as Task) : t));
+            } else if (payload.eventType === 'DELETE') {
+              setTasks((prev) => prev.filter(t => t.id !== (payload.old as Task).id));
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        client.removeChannel(channel);
+      };
     }
   }, [user]);
 
   const fetchTasks = async () => {
     if (!user) return;
     setLoading(true);
-
-    const { data } = await client
-      .from('todos')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at');
-
-    if (data) setTasks(data);
+    const data = await taskAPI.getUserTasks(user.id, { showCompleted: true });
+    setTasks(data);
     setLoading(false);
   };
 
   const fetchGroups = async () => {
-    const { data: { user } } = await client.auth.getUser();
-    if (!user) return;
-
     const { data } = await client
       .from('view_groups')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', user?.id)
       .order('title');
 
-    if (data) setGroups(data);
+    if (data) setGroups(data as Group[]);
   };
 
   const getDaysInMonth = (date: Date) => {
@@ -115,20 +138,17 @@ export default function CalendarPage() {
   const addTask = async () => {
     if (!newTaskTitle.trim() || !user || !selectedDate) return;
 
-    const { data, error } = await client
-      .from('todos')
-      .insert({
-        user_id: user.id,
-        title: newTaskTitle,
-        is_completed: false,
-        view_group_id: selectedGroupId,
-        due_date: selectedDate.toISOString().split('T')[0],
-      })
-      .select()
-      .single();
+    const result = await taskAPI.createTask(
+      user.id,
+      newTaskTitle,
+      undefined,
+      undefined,
+      selectedGroupId || undefined,
+      selectedDate.toISOString().split('T')[0]
+    );
 
-    if (!error && data) {
-      setTasks([...tasks, data]);
+    if (result.success && result.data) {
+      setTasks([...tasks, result.data]);
       setShowModal(false);
     }
   };
@@ -146,28 +166,31 @@ export default function CalendarPage() {
 
   return (
     <div className="p-6 w-full max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-8">Calendário</h1>
+      <div className="flex items-center gap-3 mb-8">
+        <CalendarIcon className="w-8 h-8 text-primary" />
+        <h1 className="text-3xl font-bold">Calendário</h1>
+      </div>
 
-      <div className="bg-card border rounded-lg p-4">
-        <div className="flex items-center justify-between mb-4">
-          <button onClick={prevMonth} className="p-2 hover:bg-accent rounded-lg">
-            ←
-          </button>
+      <Card className="p-6 shadow-none border-accent/20">
+        <div className="flex items-center justify-between mb-8">
+          <Button variant="ghost" size="icon" onClick={prevMonth}>
+            <ChevronLeft className="w-5 h-5" />
+          </Button>
           <h2 className="text-xl font-semibold capitalize">{getMonthName(currentDate)}</h2>
-          <button onClick={nextMonth} className="p-2 hover:bg-accent rounded-lg">
-            →
-          </button>
+          <Button variant="ghost" size="icon" onClick={nextMonth}>
+            <ChevronRight className="w-5 h-5" />
+          </Button>
         </div>
 
-        <div className="grid grid-cols-7 gap-1 mb-2">
+        <div className="grid grid-cols-7 gap-2 mb-2">
           {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => (
-            <div key={day} className="text-center text-sm font-medium text-muted-foreground py-2">
+            <div key={day} className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-2">
               {day}
             </div>
           ))}
         </div>
 
-        <div className="grid grid-cols-7 gap-1">
+        <div className="grid grid-cols-7 gap-2">
           {days.map((date, index) => {
             if (!date) {
               return <div key={`empty-${index}`} className="aspect-square" />;
@@ -175,108 +198,125 @@ export default function CalendarPage() {
 
             const dayTasks = getTasksForDate(date);
             const hasTasks = dayTasks.length > 0;
-            const hasCompleted = dayTasks.some(t => t.is_completed);
+            const hasCompleted = dayTasks.every(t => t.is_completed) && hasTasks;
 
             return (
-              <button
+              <Button
                 key={date.toISOString()}
+                variant="ghost"
                 onClick={() => openModal(date)}
-                className={`aspect-square p-1 rounded-lg border flex flex-col items-center justify-start transition-colors hover:bg-accent ${
-                  isToday(date) ? 'border-primary' : 'border-transparent'
-                }`}
+                className={cn(
+                  "aspect-square p-2 rounded-xl border flex flex-col items-center justify-start transition-all hover:bg-accent h-auto w-full",
+                  isToday(date) ? "border-primary bg-primary/5" : "border-transparent",
+                  selectedDate?.toDateString() === date.toDateString() && "bg-accent border-accent"
+                )}
               >
-                <span className={`text-sm ${isToday(date) ? 'font-bold text-primary' : ''}`}>
+                <span className={cn(
+                  "text-sm",
+                  isToday(date) ? "font-bold text-primary" : "text-foreground"
+                )}>
                   {date.getDate()}
                 </span>
                 {hasTasks && (
-                  <div className="flex gap-0.5 mt-1">
-                    <span className={`w-1.5 h-1.5 rounded-full ${hasCompleted ? 'bg-muted-foreground' : 'bg-primary'}`} />
+                  <div className="flex gap-0.5 mt-auto">
+                    <div className={cn(
+                      "w-1.5 h-1.5 rounded-full",
+                      hasCompleted ? "bg-muted-foreground" : "bg-primary"
+                    )} />
                     {dayTasks.length > 1 && (
-                      <span className="text-xs text-muted-foreground">+{dayTasks.length - 1}</span>
+                      <span className="text-[10px] text-muted-foreground font-medium">+{dayTasks.length - 1}</span>
                     )}
                   </div>
                 )}
-              </button>
+              </Button>
             );
           })}
         </div>
-      </div>
+      </Card>
 
       {selectedDate && (
-        <div className="mt-6">
-          <h3 className="text-lg font-semibold mb-4">
-            Tarefas em {selectedDate.toLocaleDateString('pt-BR')}
-          </h3>
+        <div className="mt-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">
+              Tarefas em {selectedDate.toLocaleDateString('pt-BR')}
+            </h3>
+            <Button size="sm" onClick={() => setShowModal(true)} className="rounded-full">
+              <Plus className="w-4 h-4 mr-1" /> Adicionar
+            </Button>
+          </div>
           <div className="space-y-2">
             {getTasksForDate(selectedDate).map((task) => (
-              <div key={task.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card">
-                <span className={task.is_completed ? 'line-through text-muted-foreground' : ''}>
+              <Card key={task.id} className="flex items-center gap-3 p-3 shadow-none border-accent/20">
+                <Checkbox checked={task.is_completed} disabled />
+                <span className={cn("text-sm flex-1", task.is_completed && "line-through text-muted-foreground")}>
                   {task.title}
                 </span>
                 {task.view_group_id && groups.find(g => g.id === task.view_group_id) && (
-                  <span className="text-xs bg-muted px-2 py-0.5 rounded">
+                  <span className="text-[10px] font-semibold bg-muted px-2 py-0.5 rounded-full uppercase text-muted-foreground">
                     {groups.find(g => g.id === task.view_group_id)?.title}
                   </span>
                 )}
-              </div>
+              </Card>
             ))}
             {getTasksForDate(selectedDate).length === 0 && (
-              <p className="text-muted-foreground text-sm">Nenhuma tarefa neste dia.</p>
+              <div className="text-center py-8 bg-muted/20 rounded-xl border border-dashed border-accent/20">
+                <p className="text-muted-foreground text-sm">Nenhuma tarefa neste dia.</p>
+              </div>
             )}
           </div>
         </div>
       )}
 
-      {showModal && selectedDate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card p-6 rounded-lg w-full max-w-md space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold">
-                Adicionar Tarefa - {selectedDate.toLocaleDateString('pt-BR')}
-              </h2>
-              <button onClick={() => setShowModal(false)}>
-                <X className="w-5 h-5" />
-              </button>
+      <Dialog open={showModal} onOpenChange={(open) => !open && setShowModal(false)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Adicionar Tarefa - {selectedDate?.toLocaleDateString('pt-BR')}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="task-title">Título da tarefa</Label>
+              <Input
+                id="task-title"
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addTask()}
+                placeholder="Ex: Reunião de planejamento"
+                autoFocus
+              />
             </div>
 
-            <input
-              type="text"
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addTask()}
-              placeholder="Título da tarefa"
-              className="w-full px-4 py-2 rounded-lg border border-input bg-background"
-              autoFocus
-            />
-
-            <select
-              value={selectedGroupId ?? ''}
-              onChange={(e) => setSelectedGroupId(e.target.value ? parseInt(e.target.value) : null)}
-              className="w-full px-4 py-2 rounded-lg border border-input bg-background"
-            >
-              <option value="">Sem grupo</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>{g.title}</option>
-              ))}
-            </select>
-
-            <div className="flex gap-2">
-              <button
-                onClick={addTask}
-                className="flex-1 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+            <div className="space-y-2">
+              <Label htmlFor="task-group">Grupo (opcional)</Label>
+              <Select
+                value={selectedGroupId?.toString() || "none"}
+                onValueChange={(val: string | null) => setSelectedGroupId(val === "none" || !val ? null : parseInt(val))}
               >
-                Adicionar
-              </button>
-              <button
-                onClick={() => setShowModal(false)}
-                className="flex-1 px-4 py-2 rounded-lg border border-input hover:bg-accent"
-              >
-                Cancelar
-              </button>
+                <SelectTrigger id="task-group">
+                  <SelectValue placeholder="Sem grupo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem grupo</SelectItem>
+                  {groups.map((g) => (
+                    <SelectItem key={g.id} value={g.id.toString()}>{g.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
-        </div>
-      )}
+
+          <DialogFooter className="sm:justify-start gap-2">
+            <Button onClick={addTask} className="flex-1">
+              Adicionar
+            </Button>
+            <Button variant="outline" onClick={() => setShowModal(false)} className="flex-1">
+              Cancelar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

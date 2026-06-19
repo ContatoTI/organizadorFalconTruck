@@ -3,7 +3,11 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
-import { LogIn, Mail, Lock, UserPlus } from 'lucide-react';
+import { LogIn, Mail, Lock, UserPlus, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -118,116 +122,124 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md space-y-8 p-8 border rounded-lg shadow-lg bg-card text-card-foreground">
-        <div className="text-center">
-          <h2 className="text-3xl font-bold tracking-tight">
+    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
+      <Card className="w-full max-w-md shadow-xl border-accent/20">
+        <CardHeader className="text-center space-y-1">
+          <CardTitle className="text-3xl font-bold tracking-tight">
             {isSignUp ? 'Criar Conta' : 'Entrar'}
-          </h2>
-          <p className="mt-2 text-sm text-muted-foreground">
+          </CardTitle>
+          <CardDescription>
             {isSignUp ? 'Crie sua conta para gerenciar tarefas' : 'Acesse sua conta para ver suas tarefas'}
-          </p>
-        </div>
+          </CardDescription>
+        </CardHeader>
 
-        <div className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                id="login-email"
+              <Input
+                id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                required
-                className="pl-10 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 placeholder="seu@email.com"
+                className="pl-10"
+                required
               />
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">
+          <div className="space-y-2">
+            <Label htmlFor="password">
               {isSignUp ? 'Senha' : 'Senha (Opcional se usar Magic Link)'}
-            </label>
+            </Label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                id="login-password"
+              <Input
+                id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="pl-10 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="pl-10"
+                required={isSignUp}
               />
             </div>
           </div>
 
           {isSignUp && (
-            <div>
-              <label className="block text-sm font-medium mb-1">Confirmar Senha</label>
+            <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+              <Label htmlFor="confirm-password">Confirmar Senha</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
+                <Input
                   id="confirm-password"
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="pl-10 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   placeholder="Repita a senha"
+                  className="pl-10"
+                  required
                 />
               </div>
             </div>
           )}
 
           {errorMsg && (
-            <div className="text-red-500 text-sm">{errorMsg}</div>
+            <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium animate-in fade-in zoom-in-95 duration-200">
+              {errorMsg}
+            </div>
           )}
 
           {message && (
-            <div className="text-green-500 text-sm">{message}</div>
+            <div className="p-3 rounded-lg bg-green-500/10 text-green-600 text-sm font-medium animate-in fade-in zoom-in-95 duration-200">
+              {message}
+            </div>
+          )}
+        </CardContent>
+
+        <CardFooter className="flex flex-col gap-3">
+          {isSignUp ? (
+            <Button
+              className="w-full h-11"
+              onClick={handleSignUp}
+              disabled={loading || !email || !password || !confirmPassword}
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4 mr-2" />}
+              Criar Conta
+            </Button>
+          ) : (
+            <>
+              <Button
+                className="w-full h-11"
+                onClick={handleLogin}
+                disabled={loading || !email || !password}
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4 mr-2" />}
+                Entrar com Email
+              </Button>
+
+              <Button
+                variant="outline"
+                className="w-full h-11"
+                onClick={handleMagicLink}
+                disabled={loading || !email}
+              >
+                <Mail className="w-4 h-4 mr-2" />
+                Enviar Link Mágico
+              </Button>
+            </>
           )}
 
-          <div className="space-y-2">
-            {isSignUp ? (
-              <button
-                onClick={handleSignUp}
-                disabled={loading || !email || !password || !confirmPassword}
-                className="w-full flex items-center justify-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-              >
-                <UserPlus className="w-4 h-4" />
-                Criar Conta
-              </button>
-            ) : (
-              <>
-                <button
-                  onClick={handleLogin}
-                  disabled={loading || !email || !password}
-                  className="w-full flex items-center justify-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-                >
-                  <LogIn className="w-4 h-4" />
-                  Entrar com Email
-                </button>
-
-                <button
-                  onClick={handleMagicLink}
-                  disabled={loading || !email}
-                  className="w-full flex items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent transition-colors disabled:opacity-50"
-                >
-                  <Mail className="w-4 h-4" />
-                  Enviar Link Mágico
-                </button>
-              </>
-            )}
-
-            <button
-              onClick={toggleMode}
-              className="w-full flex items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent transition-colors"
-            >
-              {isSignUp ? 'Já tem conta? Entrar' : 'Não tem conta? Criar'}
-            </button>
-          </div>
-        </div>
-      </div>
+          <Button
+            variant="ghost"
+            className="w-full text-muted-foreground hover:text-primary"
+            onClick={toggleMode}
+          >
+            {isSignUp ? 'Já tem conta? Entrar' : 'Não tem conta? Criar'}
+          </Button>
+        </CardFooter>
+      </Card>
     </div>
   );
 }

@@ -113,6 +113,37 @@ class NotificationAPI {
 
     return { pendingInvites, declineNotifications };
   }
+
+  async getPendingInvites(userId: string): Promise<PendingInvite[]> {
+    const { pendingInvites } = await this.getUserNotifications(userId);
+    return pendingInvites;
+  }
+
+  async acceptInvite(inviteId: number, projectId: number, userId: string): Promise<boolean> {
+    const client = createClient();
+    
+    // Update invite status
+    await client
+      .from('project_invites')
+      .update({ status: 'accepted' })
+      .eq('id', inviteId);
+
+    // Add member
+    await client
+      .from('project_members')
+      .insert({ project_id: projectId, user_id: userId });
+
+    return true;
+  }
+
+  async declineInvite(inviteId: number): Promise<boolean> {
+    const client = createClient();
+    await client
+      .from('project_invites')
+      .update({ status: 'declined' })
+      .eq('id', inviteId);
+    return true;
+  }
 }
 
 export const notificationAPI = new NotificationAPI();

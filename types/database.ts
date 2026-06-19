@@ -7,181 +7,293 @@ export type Json =
   | Json[]
 
 export interface Tables {
-  tasks: {
+  todos: {
     Row: {
-      id: string
+      id: number
       user_id: string
       title: string
-      description: string | null
-      completed: boolean
+      is_completed: boolean
+      goal_id: number | null
+      view_group_id: number | null
+      project_id: number | null
+      section_id: number | null
       due_date: string | null
-      group_id: string | null
-      order: number
       created_at: string
-      updated_at: string
     }
     Insert: {
-      id?: string
+      id?: number
       user_id: string
       title: string
-      description?: string | null
-      completed?: boolean
+      is_completed?: boolean
+      goal_id?: number | null
+      view_group_id?: number | null
+      project_id?: number | null
+      section_id?: number | null
       due_date?: string | null
-      group_id?: string | null
-      order?: number
       created_at?: string
-      updated_at?: string
     }
     Update: {
-      id?: string
+      id?: number
       user_id?: string
       title?: string
-      description?: string | null
-      completed?: boolean
+      is_completed?: boolean
+      goal_id?: number | null
+      view_group_id?: number | null
+      project_id?: number | null
+      section_id?: number | null
       due_date?: string | null
-      group_id?: string | null
-      order?: number
       created_at?: string
-      updated_at?: string
     }
   }
-  groups: {
+  view_groups: {
     Row: {
-      id: string
+      id: number
       user_id: string
       title: string
-      icon: string | null
-      color: string | null
-      type: 'time' | 'list'
       start_time: string | null
       end_time: string | null
-      recurrence_type: string | null
-      recurrence_days: number[] | null
+      type: string | null
+      icon: string | null
+      color: string | null
+      project_id: number | null
       created_at: string
-      updated_at: string
     }
     Insert: {
-      id?: string
+      id?: number
       user_id: string
       title: string
-      icon?: string | null
-      color?: string | null
-      type: 'time' | 'list'
       start_time?: string | null
       end_time?: string | null
-      recurrence_type?: string | null
-      recurrence_days?: number[] | null
+      type?: string | null
+      icon?: string | null
+      color?: string | null
+      project_id?: number | null
       created_at?: string
-      updated_at?: string
     }
     Update: {
-      id?: string
+      id?: number
       user_id?: string
       title?: string
-      icon?: string | null
-      color?: string | null
-      type?: 'time' | 'list'
       start_time?: string | null
       end_time?: string | null
-      recurrence_type?: string | null
-      recurrence_days?: number[] | null
+      type?: string | null
+      icon?: string | null
+      color?: string | null
+      project_id?: number | null
       created_at?: string
-      updated_at?: string
     }
   }
-  finances: {
+  finance_transactions: {
     Row: {
-      id: string
+      id: number
       user_id: string
       description: string
       amount: number
-      type: 'income' | 'expense'
-      category: string | null
       date: string
+      type: 'payable' | 'receivable'
+      status: 'pending' | 'paid' | 'overdue'
+      category: string | null
       created_at: string
     }
     Insert: {
-      id?: string
+      id?: number
       user_id: string
       description: string
       amount: number
-      type: 'income' | 'expense'
-      category?: string | null
       date: string
+      type: 'payable' | 'receivable'
+      status?: 'pending' | 'paid' | 'overdue'
+      category?: string | null
       created_at?: string
     }
     Update: {
-      id?: string
+      id?: number
       user_id?: string
       description?: string
       amount?: number
-      type?: 'income' | 'expense'
-      category?: string | null
       date?: string
+      type?: 'payable' | 'receivable'
+      status?: 'pending' | 'paid' | 'overdue'
+      category?: string | null
       created_at?: string
     }
   }
   goals: {
     Row: {
-      id: string
+      id: number
       user_id: string
       title: string
       description: string | null
       target_date: string | null
-      completed: boolean
+      is_completed: boolean
       created_at: string
-      updated_at: string
     }
     Insert: {
-      id?: string
+      id?: number
       user_id: string
       title: string
       description?: string | null
       target_date?: string | null
-      completed?: boolean
+      is_completed?: boolean
       created_at?: string
-      updated_at?: string
     }
     Update: {
-      id?: string
+      id?: number
       user_id?: string
       title?: string
       description?: string | null
       target_date?: string | null
-      completed?: boolean
+      is_completed?: boolean
       created_at?: string
-      updated_at?: string
     }
   }
   projects: {
     Row: {
-      id: string
+      id: number
       owner_id: string
-      title: string
-      description: string | null
+      name: string
       color: string | null
-      icon: string | null
-      status: string | null
+      shared_with: string[] | null
       created_at: string
     }
     Insert: {
-      id?: string
+      id?: number
       owner_id: string
-      title: string
-      description?: string | null
+      name: string
       color?: string | null
-      icon?: string | null
-      status?: string | null
+      shared_with?: string[] | null
+      created_at?: string
+    }
+    Update: {
+      id?: number
+      owner_id?: string
+      name?: string
+      color?: string | null
+      shared_with?: string[] | null
+      created_at?: string
+    }
+  }
+  sections: {
+    Row: {
+      id: number
+      user_id: string
+      project_id: number
+      title: string
+      order: number | null
+      created_at: string
+    }
+    Insert: {
+      id?: number
+      user_id: string
+      project_id: number
+      title: string
+      order?: number | null
+      created_at?: string
+    }
+    Update: {
+      id?: number
+      user_id?: string
+      project_id?: number
+      title?: string
+      order?: number | null
+      created_at?: string
+    }
+  }
+  profiles: {
+    Row: {
+      id: string
+      email: string | null
+      full_name: string | null
+      avatar_url: string | null
+      created_at: string
+    }
+    Insert: {
+      id: string
+      email?: string | null
+      full_name?: string | null
+      avatar_url?: string | null
       created_at?: string
     }
     Update: {
       id?: string
-      owner_id?: string
+      email?: string | null
+      full_name?: string | null
+      avatar_url?: string | null
+      created_at?: string
+    }
+  }
+  project_members: {
+    Row: {
+      id: number
+      project_id: number
+      user_id: string
+      created_at: string
+    }
+    Insert: {
+      id?: number
+      project_id: number
+      user_id: string
+      created_at?: string
+    }
+    Update: {
+      id?: number
+      project_id?: number
+      user_id?: string
+      created_at?: string
+    }
+  }
+  project_invites: {
+    Row: {
+      id: number
+      project_id: number
+      invited_user_id: string
+      invited_by_user_id: string
+      status: 'pending' | 'accepted' | 'declined'
+      created_at: string
+    }
+    Insert: {
+      id?: number
+      project_id: number
+      invited_user_id: string
+      invited_by_user_id: string
+      status?: 'pending' | 'accepted' | 'declined'
+      created_at?: string
+    }
+    Update: {
+      id?: number
+      project_id?: number
+      invited_user_id?: string
+      invited_by_user_id?: string
+      status?: 'pending' | 'accepted' | 'declined'
+      created_at?: string
+    }
+  }
+  events: {
+    Row: {
+      id: number
+      user_id: string
+      title: string
+      description: string | null
+      start_date: string
+      end_date: string | null
+      created_at: string
+    }
+    Insert: {
+      id?: number
+      user_id: string
+      title: string
+      description?: string | null
+      start_date: string
+      end_date?: string | null
+      created_at?: string
+    }
+    Update: {
+      id?: number
+      user_id?: string
       title?: string
       description?: string | null
-      color?: string | null
-      icon?: string | null
-      status?: string | null
+      start_date?: string
+      end_date?: string | null
       created_at?: string
     }
   }

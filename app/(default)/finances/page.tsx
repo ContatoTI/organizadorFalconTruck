@@ -4,13 +4,20 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
 import { Plus, X, Edit2, Trash2, Wallet, TrendingUp, TrendingDown } from 'lucide-react';
+import type { Finance } from '@/types/index';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 
 export default function FinancesPage() {
   const [user, setUser] = useState<any>(null);
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<Finance[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editingTransaction, setEditingTransaction] = useState<any>(null);
+  const [editingTransaction, setEditingTransaction] = useState<Finance | null>(null);
   const [formData, setFormData] = useState({
     description: '',
     amount: '',
@@ -44,12 +51,12 @@ export default function FinancesPage() {
     setLoading(true);
 
     const { data } = await client
-      .from('finances')
+      .from('finance_transactions')
       .select('*')
       .eq('user_id', user.id)
       .order('date', { ascending: false });
 
-    if (data) setTransactions(data);
+    if (data) setTransactions(data as Finance[]);
     setLoading(false);
   };
 
@@ -66,22 +73,22 @@ export default function FinancesPage() {
     };
 
     if (editingTransaction) {
-      await client.from('finances').update(transactionData).eq('id', editingTransaction.id);
-      setTransactions(transactions.map(t => t.id === editingTransaction.id ? { ...t, ...transactionData } : t));
+      await client.from('finance_transactions').update(transactionData).eq('id', editingTransaction.id);
+      setTransactions(transactions.map(t => t.id === editingTransaction.id ? { ...t, ...transactionData } as Finance : t));
     } else {
-      const { data } = await client.from('finances').insert(transactionData).select().single();
-      if (data) setTransactions([data, ...transactions]);
+      const { data } = await client.from('finance_transactions').insert(transactionData).select().single();
+      if (data) setTransactions([data as Finance, ...transactions]);
     }
 
     resetForm();
   };
 
   const deleteTransaction = async (id: number) => {
-    await client.from('finances').delete().eq('id', id);
+    await client.from('finance_transactions').delete().eq('id', id);
     setTransactions(transactions.filter(t => t.id !== id));
   };
 
-  const editTransaction = (transaction: any) => {
+  const editTransaction = (transaction: Finance) => {
     setEditingTransaction(transaction);
     setFormData({
       description: transaction.description,
@@ -126,17 +133,14 @@ export default function FinancesPage() {
           <Wallet className="w-8 h-8" />
           Finanças
         </h1>
-        <button
-          onClick={() => { resetForm(); setShowForm(true); }}
-          className="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-2"
-        >
+        <Button onClick={() => { resetForm(); setShowForm(true); }} className="flex items-center gap-2">
           <Plus className="w-5 h-5" />
           Nova Transação
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-8">
-        <div className="p-4 rounded-lg border bg-card">
+        <Card className="p-4">
           <div className="flex items-center gap-2 text-green-600 mb-2">
             <TrendingUp className="w-5 h-5" />
             <span className="text-sm font-medium">Receitas</span>
@@ -144,8 +148,8 @@ export default function FinancesPage() {
           <p className="text-2xl font-bold text-green-600">
             {totalIncome.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </p>
-        </div>
-        <div className="p-4 rounded-lg border bg-card">
+        </Card>
+        <Card className="p-4">
           <div className="flex items-center gap-2 text-red-600 mb-2">
             <TrendingDown className="w-5 h-5" />
             <span className="text-sm font-medium">Despesas</span>
@@ -153,8 +157,8 @@ export default function FinancesPage() {
           <p className="text-2xl font-bold text-red-600">
             {totalExpense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </p>
-        </div>
-        <div className="p-4 rounded-lg border bg-card">
+        </Card>
+        <Card className="p-4">
           <div className="flex items-center gap-2 text-primary mb-2">
             <Wallet className="w-5 h-5" />
             <span className="text-sm font-medium">Saldo</span>
@@ -162,7 +166,7 @@ export default function FinancesPage() {
           <p className={`text-2xl font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
             {balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </p>
-        </div>
+        </Card>
       </div>
 
       <div className="space-y-2">
@@ -175,7 +179,7 @@ export default function FinancesPage() {
           </div>
         ) : (
           transactions.map((transaction) => (
-            <div key={transaction.id} className="flex items-center gap-4 p-4 rounded-lg border bg-card">
+            <Card key={transaction.id} className="flex items-center gap-4 p-4">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
                 transaction.type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
               }`}>
@@ -196,96 +200,88 @@ export default function FinancesPage() {
                 {transaction.type === 'income' ? '+' : '-'}
                 {transaction.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </p>
-              <button onClick={() => editTransaction(transaction)} className="p-2 text-muted-foreground hover:text-primary">
+              <Button variant="ghost" size="sm" onClick={() => editTransaction(transaction)} className="text-muted-foreground hover:text-primary">
                 <Edit2 className="w-4 h-4" />
-              </button>
-              <button onClick={() => deleteTransaction(transaction.id)} className="p-2 text-muted-foreground hover:text-destructive">
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => deleteTransaction(transaction.id)} className="text-muted-foreground hover:text-destructive">
                 <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
+              </Button>
+            </Card>
           ))
         )}
       </div>
 
-      {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-card p-6 rounded-lg w-full max-w-md space-y-4">
-            <h2 className="text-xl font-bold">{editingTransaction ? 'Editar' : 'Nova'} Transação</h2>
+      <Dialog open={showForm} onOpenChange={(open) => !open && resetForm()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingTransaction ? 'Editar' : 'Nova'} Transação</DialogTitle>
+          </DialogHeader>
 
+          <div className="space-y-4 py-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Descrição</label>
-              <input
+              <Label>Descrição</Label>
+              <Input
                 type="text"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="w-full px-4 py-2 rounded-lg border border-input bg-background"
                 placeholder="Descrição da transação"
                 autoFocus
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Valor</label>
-              <input
+              <Label>Valor</Label>
+              <Input
                 type="number"
                 step="0.01"
                 value={formData.amount}
                 onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                className="w-full px-4 py-2 rounded-lg border border-input bg-background"
                 placeholder="0.00"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Tipo</label>
-              <select
+              <Label>Tipo</Label>
+              <Select
                 value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value as 'income' | 'expense' })}
-                className="w-full px-4 py-2 rounded-lg border border-input bg-background"
+                onValueChange={(val) => setFormData({ ...formData, type: val as 'income' | 'expense' })}
               >
-                <option value="expense">Despesa</option>
-                <option value="income">Receita</option>
-              </select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="expense">Despesa</SelectItem>
+                  <SelectItem value="income">Receita</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Categoria (opcional)</label>
-              <input
+              <Label>Categoria (opcional)</Label>
+              <Input
                 type="text"
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="w-full px-4 py-2 rounded-lg border border-input bg-background"
                 placeholder="Ex: Alimentação, Transporte..."
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Data</label>
-              <input
+              <Label>Data</Label>
+              <Input
                 type="date"
                 value={formData.date}
                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                className="w-full px-4 py-2 rounded-lg border border-input bg-background"
               />
             </div>
-
-            <div className="flex gap-2 pt-4">
-              <button
-                onClick={saveTransaction}
-                className="flex-1 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                {editingTransaction ? 'Salvar' : 'Adicionar'}
-              </button>
-              <button
-                onClick={resetForm}
-                className="flex-1 px-4 py-2 rounded-lg border border-input hover:bg-accent"
-              >
-                Cancelar
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={resetForm}>Cancelar</Button>
+            <Button onClick={saveTransaction}>{editingTransaction ? 'Salvar' : 'Adicionar'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

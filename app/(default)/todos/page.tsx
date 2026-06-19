@@ -3,16 +3,25 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Edit, Trash2, Check } from 'lucide-react';
+import { taskAPI } from '@/app/lib/taskAPI';
+import type { Task, Group } from '@/types/index';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Card } from '@/components/ui/card';
 
 export default function TodosPage() {
   const [user, setUser] = useState<any>(null);
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [groups, setGroups] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
-  const [editingTask, setEditingTask] = useState<any>(null);
+  const [editingTask, setEditingTask] = useState<Partial<Task> | null>(null);
   const router = useRouter();
   const client = createClient();
 
@@ -41,9 +50,9 @@ export default function TodosPage() {
           { event: '*', schema: 'public', table: 'todos', filter: `user_id=eq.${user.id}` },
           (payload) => {
             if (payload.eventType === 'INSERT') {
-              setTasks((prev) => [payload.new, ...prev.filter(t => t.id !== payload.new.id)]);
+              setTasks((prev) => [payload.new as Task, ...prev.filter(t => t.id !== payload.new.id)]);
             } else if (payload.eventType === 'UPDATE') {
-              setTasks((prev) => prev.map(t => t.id === payload.new.id ? payload.new : t));
+              setTasks((prev) => prev.map(t => t.id === payload.new.id ? (payload.new as Task) : t));
             } else if (payload.eventType === 'DELETE') {
               setTasks((prev) => prev.filter(t => t.id !== payload.old.id));
             }
@@ -74,65 +83,45 @@ export default function TodosPage() {
     if (!user) return;
     setLoading(true);
 
-    const { data } = await client
-      .from('todos')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (data) setTasks(data);
+    const data = await taskAPI.getUserTasks(user.id, { showCompleted: true });
+    setTasks(data);
     setLoading(false);
   };
 
   const addTask = async () => {
     if (!newTaskTitle.trim() || !user) return;
 
-    const { data, error } = await client
-      .from('todos')
-      .insert({
-        user_id: user.id,
-        title: newTaskTitle,
-        is_completed: false,
-        view_group_id: selectedGroupId,
-      })
-      .select()
-      .single();
+    const result = await taskAPI.createTask(
+      user.id,
+      newTaskTitle,
+      undefined,
+      undefined,
+      selectedGroupId || undefined
+    );
 
-    if (!error && data) {
-      setTasks([data, ...tasks]);
+    if (result.success && result.data) {
+      // realtime should pick it up, but we can do it optimistically
       setNewTaskTitle('');
     }
   };
 
-  const toggleTask = async (task: any) => {
-    const newCompleted = !task.is_completed;
-
-    await client
-      .from('todos')
-      .update({ is_completed: newCompleted })
-      .eq('id', task.id);
-
-    setTasks(tasks.map(t => t.id === task.id ? { ...t, is_completed: newCompleted } : t));
+  const toggleTask = async (task: Task) => {
+    await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
   };
 
   const deleteTask = async (taskId: number) => {
-    await client.from('todos').delete().eq('id', taskId);
-    setTasks(tasks.filter(t => t.id !== taskId));
+    await taskAPI.deleteTask(taskId);
   };
 
   const updateTask = async () => {
-    if (!editingTask) return;
+    if (!editingTask || !editingTask.id) return;
 
-    await client
-      .from('todos')
-      .update({
-        title: editingTask.title,
-        description: editingTask.description,
-        view_group_id: editingTask.view_group_id,
-      })
-      .eq('id', editingTask.id);
+    await taskAPI.updateTask(editingTask.id, {
+      title: editingTask.title,
+      view_group_id: editingTask.view_group_id,
+      due_date: editingTask.due_date
+    });
 
-    setTasks(tasks.map(t => t.id === editingTask.id ? editingTask : t));
     setEditingTask(null);
   };
 
@@ -145,30 +134,31 @@ export default function TodosPage() {
       <h1 className="text-3xl font-bold mb-8">Todas as Tarefas</h1>
 
       <div className="flex gap-2 mb-8">
-        <input
+        <Input
           type="text"
           value={newTaskTitle}
           onChange={(e) => setNewTaskTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && addTask()}
           placeholder="Adicionar nova tarefa..."
-          className="flex-1 px-4 py-2 rounded-lg border border-input bg-background text-sm"
+          className="flex-1"
         />
-        <select
-          value={selectedGroupId ?? ''}
-          onChange={(e) => setSelectedGroupId(e.target.value ? parseInt(e.target.value) : null)}
-          className="px-4 py-2 rounded-lg border border-input bg-background text-sm"
+        <Select
+          value={selectedGroupId?.toString() || "none"}
+          onValueChange={(val: string | null) => setSelectedGroupId(val === "none" || !val ? null : parseInt(val))}
         >
-          <option value="">Sem grupo</option>
-          {groups.map((g) => (
-            <option key={g.id} value={g.id}>{g.title}</option>
-          ))}
-        </select>
-        <button
-          onClick={addTask}
-          className="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
-        >
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Sem grupo" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Sem grupo</SelectItem>
+            {groups.map((g) => (
+              <SelectItem key={g.id} value={g.id.toString()}>{g.title}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button onClick={addTask}>
           <Plus className="w-5 h-5" />
-        </button>
+        </Button>
       </div>
 
       <div className="space-y-2">
@@ -180,20 +170,14 @@ export default function TodosPage() {
           </div>
         ) : (
           tasks.map((task) => (
-            <div
+            <Card
               key={task.id}
-              className="flex items-center gap-3 p-4 rounded-lg border bg-card hover:bg-accent/5 transition-colors group"
+              className="flex items-center gap-3 p-4 hover:bg-accent/5 transition-colors group"
             >
-              <button
-                onClick={() => toggleTask(task)}
-                className={`w-5 h-5 rounded border flex items-center justify-center ${
-                  task.is_completed
-                    ? 'bg-primary border-primary text-primary-foreground'
-                    : 'border-input hover:border-primary'
-                }`}
-              >
-                {task.is_completed && <span>✓</span>}
-              </button>
+              <Checkbox
+                checked={task.is_completed}
+                onCheckedChange={() => toggleTask(task)}
+              />
               <div className="flex-1">
                 <span className={task.is_completed ? 'line-through text-muted-foreground' : ''}>
                   {task.title}
@@ -204,73 +188,67 @@ export default function TodosPage() {
                   </span>
                 )}
               </div>
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setEditingTask(task)}
-                className="text-sm text-muted-foreground hover:text-primary"
+                className="text-muted-foreground hover:text-primary"
               >
-                Editar
-              </button>
-              <button
+                <Edit className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => deleteTask(task.id)}
-                className="p-2 text-muted-foreground hover:text-destructive"
+                className="text-muted-foreground hover:text-destructive"
               >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </Card>
           ))
         )}
       </div>
 
-      {editingTask && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card p-6 rounded-lg w-full max-w-md space-y-4">
-            <h2 className="text-xl font-bold">Editar Tarefa</h2>
-            <input
-              type="text"
-              value={editingTask.title}
-              onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
-              className="w-full px-4 py-2 rounded-lg border border-input bg-background"
-            />
-            <textarea
-              value={editingTask.description || ''}
-              onChange={(e) => setEditingTask({ ...editingTask, description: e.target.value })}
-              placeholder="Descrição (opcional)"
-              className="w-full px-4 py-2 rounded-lg border border-input bg-background"
-              rows={3}
-            />
-            <input
-              type="date"
-              value={editingTask.due_date || ''}
-              onChange={(e) => setEditingTask({ ...editingTask, due_date: e.target.value })}
-              className="w-full px-4 py-2 rounded-lg border border-input bg-background"
-            />
-            <select
-              value={editingTask.group_id ?? ''}
-              onChange={(e) => setEditingTask({ ...editingTask, group_id: e.target.value ? parseInt(e.target.value) : null })}
-              className="w-full px-4 py-2 rounded-lg border border-input bg-background"
-            >
-              <option value="">Sem grupo</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>{g.title}</option>
-              ))}
-            </select>
-            <div className="flex gap-2">
-              <button
-                onClick={updateTask}
-                className="flex-1 px-4 py-2 rounded-lg bg-primary text-primary-foreground"
+      <Dialog open={!!editingTask} onOpenChange={(open) => !open && setEditingTask(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Tarefa</DialogTitle>
+          </DialogHeader>
+          {editingTask && (
+            <div className="space-y-4 py-4">
+              <Input
+                type="text"
+                value={editingTask.title || ''}
+                onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
+                placeholder="Título da tarefa"
+              />
+              <Input
+                type="date"
+                value={editingTask.due_date || ''}
+                onChange={(e) => setEditingTask({ ...editingTask, due_date: e.target.value })}
+              />
+              <Select
+                value={editingTask.view_group_id?.toString() || "none"}
+                onValueChange={(val: string | null) => setEditingTask({ ...editingTask, view_group_id: val === "none" || !val ? null : parseInt(val) })}
               >
-                Salvar
-              </button>
-              <button
-                onClick={() => setEditingTask(null)}
-                className="flex-1 px-4 py-2 rounded-lg border border-input"
-              >
-                Cancelar
-              </button>
+                <SelectTrigger>
+                  <SelectValue placeholder="Sem grupo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem grupo</SelectItem>
+                  {groups.map((g) => (
+                    <SelectItem key={g.id} value={g.id.toString()}>{g.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-        </div>
-      )}
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingTask(null)}>Cancelar</Button>
+            <Button onClick={updateTask}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

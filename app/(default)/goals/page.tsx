@@ -3,14 +3,21 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
-import { Plus, X, Edit2, Trash2, Target } from 'lucide-react';
+import { Plus, Edit2, Trash2, Target, Check } from 'lucide-react';
+import type { Goal } from '@/types/index';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 
 export default function GoalsPage() {
   const [user, setUser] = useState<any>(null);
-  const [goals, setGoals] = useState<any[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editingGoal, setEditingGoal] = useState<any>(null);
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -59,15 +66,15 @@ export default function GoalsPage() {
       title: formData.title,
       description: formData.description || null,
       target_date: formData.target_date || null,
-      completed: false,
+      is_completed: false,
     };
 
     if (editingGoal) {
       await client.from('goals').update(goalData).eq('id', editingGoal.id);
-      setGoals(goals.map(g => g.id === editingGoal.id ? { ...g, ...goalData } : g));
+      setGoals(goals.map(g => g.id === editingGoal.id ? { ...g, ...goalData } as Goal : g));
     } else {
       const { data } = await client.from('goals').insert(goalData).select().single();
-      if (data) setGoals([data, ...goals]);
+      if (data) setGoals([data as Goal, ...goals]);
     }
 
     resetForm();
@@ -78,13 +85,13 @@ export default function GoalsPage() {
     setGoals(goals.filter(g => g.id !== goalId));
   };
 
-  const toggleGoal = async (goal: any) => {
-    const newCompleted = !goal.completed;
-    await client.from('goals').update({ completed: newCompleted }).eq('id', goal.id);
-    setGoals(goals.map(g => g.id === goal.id ? { ...g, completed: newCompleted } : g));
+  const toggleGoal = async (goal: Goal) => {
+    const newCompleted = !goal.is_completed;
+    await client.from('goals').update({ is_completed: newCompleted }).eq('id', goal.id);
+    setGoals(goals.map(g => g.id === goal.id ? { ...g, is_completed: newCompleted } : g));
   };
 
-  const editGoal = (goal: any) => {
+  const editGoal = (goal: Goal) => {
     setEditingGoal(goal);
     setFormData({
       title: goal.title,
@@ -111,13 +118,10 @@ export default function GoalsPage() {
           <Target className="w-8 h-8" />
           Metas
         </h1>
-        <button
-          onClick={() => { resetForm(); setShowForm(true); }}
-          className="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-2"
-        >
+        <Button onClick={() => { resetForm(); setShowForm(true); }} className="flex items-center gap-2">
           <Plus className="w-5 h-5" />
           Nova Meta
-        </button>
+        </Button>
       </div>
 
       <div className="space-y-4">
@@ -130,20 +134,20 @@ export default function GoalsPage() {
           </div>
         ) : (
           goals.map((goal) => (
-            <div key={goal.id} className="p-4 rounded-lg border bg-card">
+            <Card key={goal.id} className="p-4">
               <div className="flex items-start gap-4">
                 <button
                   onClick={() => toggleGoal(goal)}
                   className={`mt-1 w-6 h-6 rounded-full border flex items-center justify-center ${
-                    goal.completed
+                    goal.is_completed
                       ? 'bg-green-500 border-green-500 text-white'
                       : 'border-input hover:border-primary'
                   }`}
                 >
-                  {goal.completed && '✓'}
+                  {goal.is_completed && <Check className="w-4 h-4" />}
                 </button>
                 <div className="flex-1">
-                  <h3 className={`font-medium ${goal.completed ? 'line-through text-muted-foreground' : ''}`}>
+                  <h3 className={`font-medium ${goal.is_completed ? 'line-through text-muted-foreground' : ''}`}>
                     {goal.title}
                   </h3>
                   {goal.description && (
@@ -156,74 +160,63 @@ export default function GoalsPage() {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => editGoal(goal)} className="p-2 text-muted-foreground hover:text-primary">
+                  <Button variant="ghost" size="sm" onClick={() => editGoal(goal)} className="text-muted-foreground hover:text-primary">
                     <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button onClick={() => deleteGoal(goal.id)} className="p-2 text-muted-foreground hover:text-destructive">
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => deleteGoal(goal.id)} className="text-muted-foreground hover:text-destructive">
                     <Trash2 className="w-4 h-4" />
-                  </button>
+                  </Button>
                 </div>
               </div>
-            </div>
+            </Card>
           ))
         )}
       </div>
 
-      {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-card p-6 rounded-lg w-full max-w-md space-y-4">
-            <h2 className="text-xl font-bold">{editingGoal ? 'Editar' : 'Nova'} Meta</h2>
+      <Dialog open={showForm} onOpenChange={(open) => !open && resetForm()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingGoal ? 'Editar' : 'Nova'} Meta</DialogTitle>
+          </DialogHeader>
 
+          <div className="space-y-4 py-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Título</label>
-              <input
+              <Label>Título</Label>
+              <Input
                 type="text"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="w-full px-4 py-2 rounded-lg border border-input bg-background"
                 placeholder="Minha meta"
                 autoFocus
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Descrição (opcional)</label>
-              <textarea
+              <Label>Descrição (opcional)</Label>
+              <Textarea
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="w-full px-4 py-2 rounded-lg border border-input bg-background"
                 placeholder="Descrição da meta"
                 rows={3}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Data alvo (opcional)</label>
-              <input
+              <Label>Data alvo (opcional)</Label>
+              <Input
                 type="date"
                 value={formData.target_date}
                 onChange={(e) => setFormData({ ...formData, target_date: e.target.value })}
-                className="w-full px-4 py-2 rounded-lg border border-input bg-background"
               />
             </div>
-
-            <div className="flex gap-2 pt-4">
-              <button
-                onClick={saveGoal}
-                className="flex-1 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                {editingGoal ? 'Salvar' : 'Criar'}
-              </button>
-              <button
-                onClick={resetForm}
-                className="flex-1 px-4 py-2 rounded-lg border border-input hover:bg-accent"
-              >
-                Cancelar
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={resetForm}>Cancelar</Button>
+            <Button onClick={saveGoal}>{editingGoal ? 'Salvar' : 'Criar'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

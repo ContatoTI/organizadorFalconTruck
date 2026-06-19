@@ -9,6 +9,7 @@ interface GroupsContextType {
   loading: boolean;
   refreshGroups: () => void;
   addGroup: (group: Group) => void;
+  deleteGroup: (groupId: number) => void;
 }
 
 const GroupsContext = createContext<GroupsContextType>({
@@ -16,6 +17,7 @@ const GroupsContext = createContext<GroupsContextType>({
   loading: true,
   refreshGroups: () => {},
   addGroup: () => {},
+  deleteGroup: () => {},
 });
 
 export function useGroups() {
@@ -58,8 +60,12 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     setGroups(prev => [group, ...prev]);
   };
 
+  const deleteGroup = (groupId: number) => {
+    setGroups(prev => prev.filter(g => g.id !== groupId));
+  };
+
   return (
-    <GroupsContext.Provider value={{ groups, loading, refreshGroups, addGroup }}>
+    <GroupsContext.Provider value={{ groups, loading, refreshGroups, addGroup, deleteGroup }}>
       {children}
     </GroupsContext.Provider>
   );

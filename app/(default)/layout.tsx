@@ -8,6 +8,7 @@ import { cn } from '@/app/lib/utils';
 import { useGroups } from '@/app/lib/GroupsContext';
 import { projectAPI } from '@/app/lib/projectAPI';
 import { notificationAPI } from '@/app/lib/notificationAPI';
+import { taskAPI } from '@/app/lib/taskAPI';
 import { NotificationBell, NotificationsPanel } from '@/app/components/NotificationsPanel';
 import {
   LayoutDashboard,
@@ -23,8 +24,9 @@ import {
   ChevronRight,
   Folder,
   X,
-    Bell,
+  Bell,
   Check,
+  Trash2,
 } from 'lucide-react';
 
 interface Notification {
@@ -48,7 +50,8 @@ interface Project {
 export default function DefaultLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [user, setUser] = useState<any>(null);
-  const { groups, loading: loadingGroups } = useGroups();
+  const { groups, loading: loadingGroups, deleteGroup: deleteGroupFromState } = useGroups();
+  const client = createClient();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -61,7 +64,6 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const [showNotifications, setShowNotifications] = useState(false);
   const [pendingInvites, setPendingInvites] = useState<any[]>([]);
   const [declineNotifications, setDeclineNotifications] = useState<any[]>([]);
-  const client = createClient();
 
   useEffect(() => {
     const getUser = async () => {
@@ -239,6 +241,21 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     }));
   };
 
+  const deleteGroup = async (group: any) => {
+    if (!user || !confirm(`Excluir "${group.title}"? As tarefas associadas voltarão para a Caixa de Entrada.`)) return;
+
+    try {
+      // Garante que as tarefas voltem para a Caixa de Entrada (sem bloco/lista).
+      // O banco já tem ON DELETE SET NULL, mas limpamos explicitamente como defesa em profundidade.
+      await taskAPI.clearTasksFromGroup(group.id);
+      await client.from('view_groups').delete().eq('id', group.id);
+      deleteGroupFromState(group.id);
+      window.dispatchEvent(new CustomEvent('tasks-updated'));
+    } catch (error) {
+      console.error('Erro ao excluir grupo:', error);
+    }
+  };
+
   const createProject = async () => {
     if (!newProjectName.trim() || !user) return;
 
@@ -246,14 +263,14 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       .from('projects')
       .insert({
         owner_id: user.id,
-        title: newProjectName,
+        name: newProjectName,
         color: newProjectColor,
       })
       .select()
       .single();
 
     if (error) {
-      console.error('Error creating project:', error);
+      console.error('Error creating project:', error?.message || JSON.stringify(error) || 'Erro desconhecido');
       return;
     }
 
@@ -269,6 +286,46 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const handleLogout = async () => {
     await client.auth.signOut();
     window.location.href = '/login';
+  };
+
+  const [isDragOver, setIsDragOver] = useState<number | null>(null);
+
+  const handleDragOver = (e: React.DragEvent, id: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (isDragOver !== id) {
+      setIsDragOver(id);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(null);
+  };
+
+  const handleDropOnGroup = async (e: React.DragEvent, groupId: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(null);
+    
+    const taskId = parseInt(e.dataTransfer.getData('taskId'));
+    if (!taskId || isNaN(taskId)) return;
+    
+    await taskAPI.moveTaskToGroup(taskId, groupId);
+    
+    window.dispatchEvent(new CustomEvent('tasks-updated'));
+  };
+
+  const handleDropOnProject = async (e: React.DragEvent, projectId: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(null);
+    
+    const taskId = parseInt(e.dataTransfer.getData('taskId'));
+    if (!taskId || isNaN(taskId)) return;
+    
+    await taskAPI.moveTaskToProject(taskId, projectId);
+    
+    window.dispatchEvent(new CustomEvent('tasks-updated'));
   };
 
   const timeGroups = groups.filter((g) => g.type === 'time');
@@ -409,14 +466,33 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                 ) : (
                   <div className="space-y-1">
                     {timeGroups.map((group) => (
-                      <Link
+                      <div
                         key={group.id}
-                        href={`/?group=${group.id}`}
-                        className="flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-accent/50 transition-colors"
+                        onDragOver={(e) => handleDragOver(e, group.id)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDropOnGroup(e, group.id)}
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
+                          isDragOver === group.id ? "bg-primary/20 ring-2 ring-primary" : "hover:bg-accent/50"
+                        )}
                       >
-                        {group.icon && <span style={{ color: group.color ?? undefined }}>{group.icon}</span>}
-                        <span className="truncate">{group.title}</span>
-                      </Link>
+                        <Link
+                          href={`/?group=${group.id}`}
+                          className="flex-1 flex items-center gap-2"
+                        >
+                          {group.icon && <span style={{ color: group.color ?? undefined }}>{group.icon}</span>}
+                          <span className="truncate">{group.title}</span>
+                        </Link>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            deleteGroup(group);
+                          }}
+                          className="p-1 hover:bg-destructive/20 hover:text-destructive rounded opacity-0 group-hover/link:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     ))}
                     {timeGroups.length === 0 && (
                       <div className="px-3 text-xs text-muted-foreground italic">
@@ -446,14 +522,33 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                 ) : (
                   <div className="space-y-1">
                     {listGroups.map((group) => (
-                      <Link
+                      <div
                         key={group.id}
-                        href={`/?group=${group.id}`}
-                        className="flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-accent/50 transition-colors"
+                        onDragOver={(e) => handleDragOver(e, group.id)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDropOnGroup(e, group.id)}
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
+                          isDragOver === group.id ? "bg-primary/20 ring-2 ring-primary" : "hover:bg-accent/50"
+                        )}
                       >
-                        {group.icon && <span style={{ color: group.color ?? undefined }}>{group.icon}</span>}
-                        <span className="truncate">{group.title}</span>
-                      </Link>
+                        <Link
+                          href={`/?group=${group.id}`}
+                          className="flex-1 flex items-center gap-2"
+                        >
+                          {group.icon && <span style={{ color: group.color ?? undefined }}>{group.icon}</span>}
+                          <span className="truncate">{group.title}</span>
+                        </Link>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            deleteGroup(group);
+                          }}
+                          className="p-1 hover:bg-destructive/20 hover:text-destructive rounded opacity-0 group-hover/link:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     ))}
                     {listGroups.length === 0 && (
                       <div className="px-3 text-xs text-muted-foreground italic">
@@ -502,20 +597,30 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                       projects.map((project) => {
                         const isOwner = project.owner_id === user?.id;
                         return (
-                        <Link
+                        <div
                           key={project.id}
-                          href={`/?project=${project.id}`}
-                          className="flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-accent/50 transition-colors"
-                        >
-                          <div
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: project.color }}
-                          />
-                          <span className="truncate">{project.name}</span>
-                          {!isOwner && (
-                            <span className="text-xs text-muted-foreground ml-auto">compartilhado</span>
+                          onDragOver={(e) => handleDragOver(e, project.id)}
+                          onDragLeave={handleDragLeave}
+                          onDrop={(e) => handleDropOnProject(e, project.id)}
+                          className={cn(
+                            "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors",
+                            isDragOver === project.id ? "bg-primary/20 ring-2 ring-primary" : "hover:bg-accent/50"
                           )}
-                        </Link>
+                        >
+                          <Link
+                            href={`/?project=${project.id}`}
+                            className="flex-1 flex items-center gap-2"
+                          >
+                            <div
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: project.color }}
+                            />
+                            <span className="truncate">{project.name}</span>
+                            {!isOwner && (
+                              <span className="text-xs text-muted-foreground ml-auto">compartilhado</span>
+                            )}
+                          </Link>
+                        </div>
                       )})
                     )}
                   </div>

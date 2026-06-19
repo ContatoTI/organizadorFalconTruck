@@ -4,6 +4,9 @@ import { X, Search, Plus, Check, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { cn } from '@/app/lib/utils';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -51,8 +54,6 @@ export function ShareModal({
     fetchUsers();
   }, [isOpen, currentUserId]);
 
-  if (!isOpen) return null;
-
   const filteredUsers = users.filter(
     (u) =>
       u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -62,35 +63,31 @@ export function ShareModal({
   const isOwner = projectOwnerId === currentUserId;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-card rounded-xl p-6 w-96 shadow-xl max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">Compartilhar projeto</h3>
-          <button onClick={onClose} className="p-1 hover:bg-accent rounded">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {!isOwner && (
-          <p className="text-sm text-muted-foreground mb-3">
-            Apenas o dono pode compartilhar este projeto.
-          </p>
-        )}
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Compartilhar projeto</DialogTitle>
+          {!isOwner && (
+            <DialogDescription>
+              Apenas o dono pode compartilhar este projeto.
+            </DialogDescription>
+          )}
+        </DialogHeader>
 
         {isOwner && (
           <>
             <div className="relative mb-3">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
+              <Input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar usuários..."
-                className="w-full pl-9 pr-4 py-2 rounded-lg border border-input bg-background text-sm"
+                className="pl-9"
               />
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2">
+            <div className="flex-1 overflow-y-auto space-y-2 max-h-[50vh]">
               {loading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -117,13 +114,13 @@ export function ShareModal({
                           </p>
                         )}
                       </div>
-                      <button
+                      <Button
+                        size="sm"
+                        variant={isShared ? "secondary" : "default"}
                         onClick={() => onToggleShare(u.id)}
                         className={cn(
-                          'flex items-center gap-1 px-3 py-1 rounded-full text-xs transition-colors flex-shrink-0',
-                          isShared
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                            : 'bg-primary/10 text-primary hover:bg-primary/20'
+                          'flex items-center gap-1 h-8 rounded-full',
+                          isShared && 'bg-green-100 text-green-700 hover:bg-green-200 hover:text-green-800'
                         )}
                       >
                         {isShared ? (
@@ -137,7 +134,7 @@ export function ShareModal({
                             Convidar
                           </>
                         )}
-                      </button>
+                      </Button>
                     </div>
                   );
                 })
@@ -145,7 +142,7 @@ export function ShareModal({
             </div>
           </>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
