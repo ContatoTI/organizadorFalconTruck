@@ -119,21 +119,66 @@ class NotificationAPI {
     return pendingInvites;
   }
 
-  async acceptInvite(inviteId: number, projectId: number, userId: string): Promise<boolean> {
+  async acceptInvite(
+    inviteId: number,
+    projectId: number,
+    userId: string
+  ): Promise<{ success: boolean; project?: Project; error?: string }> {
     const client = createClient();
-    
-    // Update invite status
-    await client
-      .from('project_invites')
-      .update({ status: 'accepted' })
-      .eq('id', inviteId);
 
-    // Add member
-    await client
-      .from('project_members')
-      .insert({ project_id: projectId, user_id: userId });
+    try {
+      // 1. Verificar se já é membro (evita duplicação)
+      const { data: existingMember } = await client
+        .from('project_members')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('user_id', userId)
+        .maybeSingle();
 
-    return true;
+      if (!existingMember) {
+        // 2. Insere o membro PRIMEIRO. Se falhar, o convite continua pendente.
+        const { error: insertError } = await client
+          .from('project_members')
+          .insert({ project_id: projectId, user_id: userId });
+
+        if (insertError) {
+          console.error('[NotificationAPI] Erro ao inserir membro:', insertError);
+          throw insertError;
+        }
+      }
+
+      // 3. Pequeno delay para garantir que o RLS do Supabase pegue a nova permissão
+      // (evita race condition entre inserção e leitura)
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // 4. Buscar dados completos do projeto (para inserir no estado local)
+      const { data: project, error: projectError } = await client
+        .from('projects')
+        .select('*')
+        .eq('id', projectId)
+        .maybeSingle();
+
+      if (projectError) {
+        console.error('[NotificationAPI] Erro ao buscar projeto:', projectError);
+        throw projectError;
+      }
+
+      // 5. Atualizar status do convite
+      const { error: updateError } = await client
+        .from('project_invites')
+        .update({ status: 'accepted' })
+        .eq('id', inviteId);
+
+      if (updateError) {
+        console.error('[NotificationAPI] Erro ao atualizar convite:', updateError);
+        throw updateError;
+      }
+
+      return { success: true, project: project as Project | undefined };
+    } catch (error: any) {
+      console.error('[NotificationAPI] Erro ao aceitar convite:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   async declineInvite(inviteId: number): Promise<boolean> {

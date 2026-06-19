@@ -79,6 +79,19 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     return () => subscription.unsubscribe();
   }, []);
 
+  // Listener sempre ativo (não depende de user) - garante que eventos sejam ouvidos
+  useEffect(() => {
+    const handleProjectsUpdated = () => {
+      fetchProjects();
+    };
+
+    window.addEventListener('projects_updated', handleProjectsUpdated);
+
+    return () => {
+      window.removeEventListener('projects_updated', handleProjectsUpdated);
+    };
+  }, []);
+
   useEffect(() => {
     if (user) {
       fetchProjects();
@@ -91,15 +104,8 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       setDeclineNotifications([]);
     }
 
-    const handleProjectsUpdated = () => {
-      fetchProjects();
-    };
-
-    window.addEventListener('projects_updated', handleProjectsUpdated);
-
     return () => {
       client.channel('sidebar-changes').unsubscribe();
-      window.removeEventListener('projects_updated', handleProjectsUpdated);
     };
   }, [user]);
 
@@ -121,8 +127,9 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   };
 
   const subscribeToChanges = () => {
-    client
-      .channel('sidebar-changes')
+    const channel = client.channel('sidebar-changes');
+
+    channel
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'project_invites' },
@@ -132,49 +139,50 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'project_members', filter: `user_id=eq.${user.id}` },
-        () => {
-          fetchProjects();
+        { event: '*', schema: 'public', table: 'project_members' },
+        (payload) => {
+          const data = payload.new as any || payload.old as any;
+          if (data && data.user_id === user?.id) {
+            fetchProjects();
+          }
         }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'projects' },
-        () => {
-          fetchProjects();
+        (payload) => {
+          const data = payload.new as any || payload.old as any;
+          if (data && (data.owner_id === user?.id || projects.some(p => p.id === data.id))) {
+            fetchProjects();
+          }
         }
       )
       .subscribe();
   };
 
   const acceptInviteFromBell = async (inviteId: number, projectId: number) => {
-    // Buscar user atual diretamente para garantir que está atualizado
-    const { data: { user: currentUser } } = await client.auth.getUser();
-    if (!currentUser) return;
+    if (!user) return;
 
-    await client
-      .from('project_invites')
-      .update({ status: 'accepted' })
-      .eq('id', inviteId);
+    const result = await notificationAPI.acceptInvite(inviteId, projectId, user.id);
 
-    // Verificar se já é membro antes de inserir
-    const { data: existingMember } = await client
-      .from('project_members')
-      .select('id')
-      .eq('project_id', projectId)
-      .eq('user_id', currentUser.id)
-      .maybeSingle();
+    if (result.success) {
+      // Insere o projeto recém-aceito diretamente no estado local (igual à criação de projeto).
+      // Garante atualização imediata no menu lateral, independente do timing do fetchProjects().
+      if (result.project) {
+        setProjects((prev) => {
+          if (prev.some((p) => p.id === result.project!.id)) return prev;
+          return [...prev, result.project!];
+        });
+      }
 
-    // Só insere se não for membro ainda
-    if (!existingMember) {
-      await client
-        .from('project_members')
-        .insert({ project_id: projectId, user_id: currentUser.id });
+      // fetchProjects agora faz MERGE, então o item local não é sobrescrito,
+      // mesmo que o servidor ainda não enxergue o novo vínculo (cache de RLS).
+      await fetchProjects();
+      await fetchNotifications();
+      window.dispatchEvent(new CustomEvent('projects_updated'));
+    } else {
+      console.error('Erro ao aceitar convite pelo sino:', result.error);
     }
-
-    await fetchProjects();
-    fetchNotifications();
-    window.dispatchEvent(new CustomEvent('projects_updated'));
   };
 
   const declineInviteFromBell = async (inviteId: number) => {
@@ -218,6 +226,19 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
   const totalNotifications = pendingInvites.length + declineNotifications.length;
 
+  // Faz merge dos projetos retornados pelo servidor com o estado local.
+  // - Projetos vindos do servidor sobrescrevem entradas locais com mesmo id (atualização).
+  // - Projetos que existem apenas localmente (ex: recém-aceito, ainda não visível por RLS) são MANTIDOS.
+  // Isso evita que um fetch com cache de RLS obsoleto apague o projeto que acabou de ser aceito.
+  const mergeProjects = (serverProjects: Project[]) => {
+    setProjects((prev) => {
+      const byId = new Map<number, Project>();
+      prev.forEach((p) => byId.set(p.id, p));
+      serverProjects.forEach((p) => byId.set(p.id, p));
+      return Array.from(byId.values());
+    });
+  };
+
   const fetchProjects = async () => {
     setLoadingProjects(true);
     const { data: { user } } = await client.auth.getUser();
@@ -225,10 +246,10 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
     try {
       const allProjects = await projectAPI.getUserProjects(user.id);
-      setProjects(allProjects);
+      mergeProjects(allProjects);
     } catch (error) {
       console.error('Erro ao buscar projetos:', error);
-      setProjects([]);
+      // Em caso de erro, NÃO sobrescreve o estado local — preserva o que já existe.
     } finally {
       setLoadingProjects(false);
     }

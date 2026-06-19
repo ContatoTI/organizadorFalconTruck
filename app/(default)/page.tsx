@@ -131,10 +131,26 @@ function DashboardContent() {
     if (data) setGroups(data as Group[]);
   };
 
+  // Faz merge dos projetos retornados pelo servidor com o estado local.
+  // Preserva projetos recém-adicionados que o servidor ainda não enxerga (cache de RLS).
+  const mergeProjects = (serverProjects: Project[]) => {
+    setProjects((prev) => {
+      const byId = new Map<number, Project>();
+      prev.forEach((p) => byId.set(p.id, p));
+      serverProjects.forEach((p) => byId.set(p.id, p));
+      return Array.from(byId.values());
+    });
+  };
+
   const fetchProjects = async () => {
     if (!user) return;
-    const allProjects = await projectAPI.getUserProjects(user.id);
-    setProjects(allProjects);
+    try {
+      const allProjects = await projectAPI.getUserProjects(user.id);
+      mergeProjects(allProjects);
+    } catch (error) {
+      console.error('Erro ao buscar projetos:', error);
+      // Em caso de erro, NÃO sobrescreve o estado local.
+    }
   };
 
   const fetchSections = async () => {
@@ -234,11 +250,34 @@ function DashboardContent() {
 
   const acceptInvite = async (inviteId: number, projectId: number) => {
     if (!user) return;
-    await notificationAPI.acceptInvite(inviteId, projectId, user.id);
-    fetchProjects();
-    window.dispatchEvent(new CustomEvent('projects_updated'));
-    setPendingInvites(pendingInvites.filter(inv => inv.id !== inviteId));
-    if (pendingInvites.length <= 1) setShowInviteModal(false);
+
+    const result = await notificationAPI.acceptInvite(inviteId, projectId, user.id);
+
+    if (result.success) {
+      // Insere o projeto recém-aceito diretamente no estado local (igual à criação de projeto).
+      if (result.project) {
+        setProjects((prev) => {
+          if (prev.some((p) => p.id === result.project!.id)) return prev;
+          return [...prev, result.project!];
+        });
+      }
+
+      // Refaz o fetch em background para sincronizar com qualquer mudança paralela.
+      await fetchProjects();
+
+      // Notifica outros componentes (como o layout/sidebar) para atualizarem
+      window.dispatchEvent(new CustomEvent('projects_updated'));
+
+      // Remove o convite da lista local
+      setPendingInvites(prev => prev.filter(inv => inv.id !== inviteId));
+
+      // Fecha o modal se não houver mais convites
+      if (pendingInvites.length <= 1) {
+        setShowInviteModal(false);
+      }
+    } else {
+      alert(`Erro ao aceitar convite: ${result.error}`);
+    }
   };
 
   const declineInvite = async (inviteId: number) => {

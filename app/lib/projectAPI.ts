@@ -17,46 +17,70 @@ class ProjectAPI {
     const client = createClient();
 
     try {
-      // Buscar projetos próprios
-      const { data: ownProjects, error: ownError } = await client
+      // 1. Buscar projetos onde o usuário é DONO
+      const { data: ownedProjects, error: ownedError } = await client
         .from('projects')
         .select('*')
         .eq('owner_id', userId);
 
-      if (ownError) throw ownError;
+      if (ownedError) throw ownedError;
 
-      // Buscar IDs dos projetos onde é membro
-      const { data: memberProjects, error: memberError } = await client
+      // 2. Buscar IDs dos projetos onde o usuário é MEMBRO
+      const { data: membershipData, error: memberError } = await client
         .from('project_members')
         .select('project_id')
         .eq('user_id', userId);
 
       if (memberError) throw memberError;
 
-      // Se não tem projetos compartilhados, retornar apenas os próprios
-      if (!memberProjects || memberProjects.length === 0) {
-        return ownProjects || [];
+      const memberProjectIds = membershipData
+        ?.map(m => m.project_id)
+        .filter(id => id != null) || [];
+
+      // 3. Buscar projetos onde é MEMBRO (excluindo os que já é dono)
+      let memberProjects: Project[] = [];
+      if (memberProjectIds.length > 0) {
+        const ownedIds = new Set((ownedProjects || []).map(p => p.id));
+        const onlyMemberIds = memberProjectIds.filter(id => !ownedIds.has(id));
+
+        if (onlyMemberIds.length > 0) {
+          // Tenta buscar com IN() primeiro (mais performático)
+          let { data: memberProjectsData, error: memberProjectsError } = await client
+            .from('projects')
+            .select('*')
+            .in('id', onlyMemberIds);
+
+          // Se o IN() falhar ou retornar menos projetos que o esperado, tenta individualmente
+          // (resolve problemas de RLS recém-aplicado ou race conditions)
+          if (memberProjectsError || !memberProjectsData || memberProjectsData.length < onlyMemberIds.length) {
+            const individualResults: Project[] = [];
+            for (const projectId of onlyMemberIds) {
+              const { data, error } = await client
+                .from('projects')
+                .select('*')
+                .eq('id', projectId)
+                .maybeSingle();
+
+              if (!error && data) {
+                individualResults.push(data as Project);
+              }
+            }
+            memberProjects = individualResults;
+          } else {
+            memberProjects = memberProjectsData as Project[];
+          }
+        }
       }
 
-      // Buscar dados dos projetos compartilhados
-      const memberProjectIds = memberProjects
-        .map(m => m.project_id)
-        .filter(id => id !== null && id !== undefined);
+      // 4. Combina e remove duplicatas
+      const allProjects = [...(ownedProjects || []), ...memberProjects];
+      const uniqueProjects = allProjects.filter(
+        (project, index, self) => index === self.findIndex(p => p.id === project.id)
+      );
 
-      const { data: sharedProjects, error: sharedError } = await client
-        .from('projects')
-        .select('*')
-        .in('id', memberProjectIds);
-
-      if (sharedError) throw sharedError;
-
-      // Combinar e remover duplicatas
-      const allProjects = [...(ownProjects || []), ...(sharedProjects || [])];
-      const uniqueMap = new Map(allProjects.map(p => [p.id, p]));
-
-      return Array.from(uniqueMap.values());
+      return uniqueProjects;
     } catch (error) {
-      console.error('Erro ao buscar projetos do usuário:', error);
+      console.error('[ProjectAPI] Erro em getUserProjects:', error);
       return [];
     }
   }

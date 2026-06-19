@@ -10,6 +10,11 @@ const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 export const metadata: Metadata = {
   title: 'Organizador',
   description: 'Seu organizador pessoal de tarefas, finanças e metas',
+  icons: {
+    icon: '/favicon.ico',
+    apple: '/pwa-192x192.png',
+  },
+  manifest: undefined,
 };
 
 export default function RootLayout({
