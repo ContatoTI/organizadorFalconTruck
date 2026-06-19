@@ -3,14 +3,16 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
-import { LogIn, Mail, Lock } from 'lucide-react';
+import { LogIn, Mail, Lock, UserPlus } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [message, setMessage] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
   const router = useRouter();
   const client = createClient();
 
@@ -74,13 +76,56 @@ export default function LoginPage() {
     }
   };
 
+  const handleSignUp = async () => {
+    setLoading(true);
+    setErrorMsg('');
+    setMessage('');
+
+    if (password !== confirmPassword) {
+      setErrorMsg('As senhas não coincidem');
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 6) {
+      setErrorMsg('A senha deve ter pelo menos 6 caracteres');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { error } = await client.auth.signUp({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+      setMessage('Conta criada! Verifique seu email para confirmar.');
+      setIsSignUp(false);
+    } catch (e: any) {
+      setErrorMsg(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleMode = () => {
+    setIsSignUp(!isSignUp);
+    setErrorMsg('');
+    setMessage('');
+    setPassword('');
+    setConfirmPassword('');
+  };
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-md space-y-8 p-8 border rounded-lg shadow-lg bg-card text-card-foreground">
         <div className="text-center">
-          <h2 className="text-3xl font-bold tracking-tight">Entrar</h2>
+          <h2 className="text-3xl font-bold tracking-tight">
+            {isSignUp ? 'Criar Conta' : 'Entrar'}
+          </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Acesse sua conta para ver suas tarefas
+            {isSignUp ? 'Crie sua conta para gerenciar tarefas' : 'Acesse sua conta para ver suas tarefas'}
           </p>
         </div>
 
@@ -102,7 +147,9 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Senha (Opcional se usar Magic Link)</label>
+            <label className="block text-sm font-medium mb-1">
+              {isSignUp ? 'Senha' : 'Senha (Opcional se usar Magic Link)'}
+            </label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
@@ -115,6 +162,23 @@ export default function LoginPage() {
             </div>
           </div>
 
+          {isSignUp && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Confirmar Senha</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="pl-10 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  placeholder="Repita a senha"
+                />
+              </div>
+            </div>
+          )}
+
           {errorMsg && (
             <div className="text-red-500 text-sm">{errorMsg}</div>
           )}
@@ -124,22 +188,42 @@ export default function LoginPage() {
           )}
 
           <div className="space-y-2">
-            <button
-              onClick={handleLogin}
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-            >
-              <LogIn className="w-4 h-4" />
-              Entrar com Email
-            </button>
+            {isSignUp ? (
+              <button
+                onClick={handleSignUp}
+                disabled={loading || !email || !password || !confirmPassword}
+                className="w-full flex items-center justify-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                <UserPlus className="w-4 h-4" />
+                Criar Conta
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={handleLogin}
+                  disabled={loading || !email || !password}
+                  className="w-full flex items-center justify-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  <LogIn className="w-4 h-4" />
+                  Entrar com Email
+                </button>
+
+                <button
+                  onClick={handleMagicLink}
+                  disabled={loading || !email}
+                  className="w-full flex items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent transition-colors disabled:opacity-50"
+                >
+                  <Mail className="w-4 h-4" />
+                  Enviar Link Mágico
+                </button>
+              </>
+            )}
 
             <button
-              onClick={handleMagicLink}
-              disabled={loading || !email}
-              className="w-full flex items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent transition-colors disabled:opacity-50"
+              onClick={toggleMode}
+              className="w-full flex items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent transition-colors"
             >
-              <Mail className="w-4 h-4" />
-              Enviar Link Mágico
+              {isSignUp ? 'Já tem conta? Entrar' : 'Não tem conta? Criar'}
             </button>
           </div>
         </div>
