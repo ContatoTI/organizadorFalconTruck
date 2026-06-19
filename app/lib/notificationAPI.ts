@@ -39,7 +39,7 @@ class NotificationAPI {
 
     // 1. Buscar IDs de projetos do usuário em paralelo
     const [ownProjectsRes, memberProjectsRes, pendingInvitesRes, declinedInvitesRes] = await Promise.all([
-      client.from('projects').select('id, title, color').eq('owner_id', userId),
+      client.from('projects').select('id, name, color').eq('owner_id', userId),
       client.from('project_members').select('project_id').eq('user_id', userId),
       client
         .from('project_invites')
@@ -76,7 +76,7 @@ class NotificationAPI {
         ? client.from('profiles').select('id, full_name, email').in('id', Array.from(allUserIds))
         : { data: [] },
       allProjectIds.size > 0
-        ? client.from('projects').select('id, title, color').in('id', Array.from(allProjectIds))
+        ? client.from('projects').select('id, name, color').in('id', Array.from(allProjectIds))
         : { data: [] },
     ]);
 
@@ -91,7 +91,7 @@ class NotificationAPI {
     const pendingInvites: PendingInvite[] = (pendingInvitesRes.data || []).map((inv: any) => ({
       id: inv.id,
       project_id: inv.project_id,
-      project_title: projectsMap.get(inv.project_id)?.title || 'Projeto',
+      project_title: projectsMap.get(inv.project_id)?.name || 'Projeto',
       project_color: projectsMap.get(inv.project_id)?.color || '#6366f1',
       inviter_name: profilesMap.get(inv.invited_by_user_id)?.full_name || 'Usuário',
       inviter_email: profilesMap.get(inv.invited_by_user_id)?.email || '',
@@ -104,7 +104,7 @@ class NotificationAPI {
       .map((dec: any) => ({
         id: dec.id,
         project_id: dec.project_id,
-        project_title: projectsMap.get(dec.project_id)?.title || 'Projeto',
+        project_title: projectsMap.get(dec.project_id)?.name || 'Projeto',
         project_color: projectsMap.get(dec.project_id)?.color || '#6366f1',
         declined_user_name: profilesMap.get(dec.invited_user_id)?.full_name || 'Usuário',
         invited_user_id: dec.invited_user_id,

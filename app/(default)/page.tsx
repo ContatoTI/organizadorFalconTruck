@@ -31,7 +31,7 @@ interface Group {
 interface Project {
   id: number;
   owner_id: string;
-  title: string;
+  name: string;
   color: string;
 }
 
@@ -321,7 +321,7 @@ function DashboardContent() {
       const inviterIds = [...new Set(invites.map(i => i.invited_by_user_id))];
 
       const [{ data: projects }, { data: profiles }] = await Promise.all([
-        client.from('projects').select('id, title, color').in('id', projectIds),
+        client.from('projects').select('id, name, color').in('id', projectIds),
         client.from('profiles').select('id, full_name, email').in('id', inviterIds),
       ]);
 
@@ -334,7 +334,7 @@ function DashboardContent() {
       const formattedInvites: PendingInvite[] = invites.map((inv: any) => ({
         id: inv.id,
         project_id: inv.project_id,
-        project_title: projectsMap[inv.project_id]?.title || 'Projeto',
+        project_title: projectsMap[inv.project_id]?.name || 'Projeto',
         project_color: projectsMap[inv.project_id]?.color || '#6366f1',
         inviter_name: profilesMap[inv.invited_by_user_id]?.full_name || 'Usuário',
         inviter_email: profilesMap[inv.invited_by_user_id]?.email || '',
@@ -487,7 +487,7 @@ function DashboardContent() {
 
   const deleteProject = async () => {
     if (!selectedProject || !user || selectedProject.owner_id !== user.id) return;
-    if (!confirm(`Tem certeza que deseja excluir o projeto "${selectedProject.title}"? Esta ação não pode ser desfeita.`)) return;
+    if (!confirm(`Tem certeza que deseja excluir o projeto "${selectedProject.name}"? Esta ação não pode ser desfeita.`)) return;
 
     const projectId = selectedProject.id;
 
@@ -752,7 +752,7 @@ function DashboardContent() {
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
           <h1 className="text-3xl font-bold text-foreground">
-            {selectedProject ? selectedProject.title : selectedGroup ? selectedGroup.title : 'Dashboard'}
+            {selectedProject ? selectedProject.name : selectedGroup ? selectedGroup.title : 'Dashboard'}
           </h1>
           {(selectedGroup || selectedProject) && (
             <button

@@ -60,7 +60,7 @@ export async function fetchUserProjects(userId: string): Promise<Project[]> {
   // Projetos próprios
   const { data: ownProjects } = await client
     .from('projects')
-    .select('id, owner_id, title, color, created_at, updated_at')
+    .select('id, owner_id, name, color, created_at, updated_at')
     .eq('owner_id', userId);
 
   // Projetos compartilhados (via project_members)
@@ -75,7 +75,7 @@ export async function fetchUserProjects(userId: string): Promise<Project[]> {
   if (memberProjectIds.length > 0) {
     const { data } = await client
       .from('projects')
-      .select('id, owner_id, title, color, created_at, updated_at')
+      .select('id, owner_id, name, color, created_at, updated_at')
       .in('id', memberProjectIds);
     sharedProjects = data || [];
   }
@@ -268,7 +268,7 @@ export async function fetchPendingInvites(
       invited_by_user_id,
       status,
       created_at,
-      projects(id, title, color),
+      projects(id, name, color),
       profiles!invited_by_user_id(id, full_name, email)
     `
     )
@@ -281,7 +281,7 @@ export async function fetchPendingInvites(
   return invites.map((invite: any) => ({
     id: invite.id,
     project_id: invite.project_id,
-    project_title: invite.projects?.title || 'Projeto Desconhecido',
+    project_title: invite.projects?.name || 'Projeto Desconhecido',
     project_color: invite.projects?.color || '#6366f1',
     inviter_name: invite.profiles?.full_name || 'Usuário',
     inviter_email: invite.profiles?.email || '',

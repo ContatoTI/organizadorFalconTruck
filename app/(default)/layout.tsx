@@ -41,7 +41,7 @@ interface Notification {
 interface Project {
   id: number;
   owner_id: string;
-  title: string;
+  name: string;
   color: string;
 }
 
@@ -511,7 +511,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                             className="w-3 h-3 rounded-full"
                             style={{ backgroundColor: project.color }}
                           />
-                          <span className="truncate">{project.title}</span>
+                          <span className="truncate">{project.name}</span>
                           {!isOwner && (
                             <span className="text-xs text-muted-foreground ml-auto">compartilhado</span>
                           )}

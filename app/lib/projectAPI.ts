@@ -79,7 +79,7 @@ class ProjectAPI {
         .from('projects')
         .insert({
           owner_id: userId,
-          title: title.trim(),
+          name: title.trim(),
           color,
         })
         .select()

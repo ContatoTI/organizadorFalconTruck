@@ -43,7 +43,7 @@ export interface Task {
 export interface Project {
   id: number;
   owner_id: string;
-  title: string;
+  name: string;
   color: string;
   created_at?: string;
   updated_at?: string;
