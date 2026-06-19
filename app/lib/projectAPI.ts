@@ -41,7 +41,7 @@ class ProjectAPI {
       // Buscar dados dos projetos compartilhados
       const memberProjectIds = memberProjects
         .map(m => m.project_id)
-        .filter((id): id is number => typeof id === 'number');
+        .filter(id => id !== null && id !== undefined);
 
       const { data: sharedProjects, error: sharedError } = await client
         .from('projects')

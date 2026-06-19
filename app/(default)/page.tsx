@@ -3,68 +3,21 @@
 import { useState, useEffect, Suspense } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, X, GripVertical, Star, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search } from 'lucide-react';
+import { Check, X, GripVertical, Star, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search, Target, Wallet } from 'lucide-react';
 import { cn } from '@/app/lib/utils';
-
-interface Task {
-  id: number;
-  user_id: string;
-  title: string;
-  is_completed: boolean;
-  due_date: string | null;
-  view_group_id: number | null;
-  project_id: number | null;
-  section_id: number | null;
-  created_at: string;
-}
-
-interface Group {
-  id: number;
-  user_id: string;
-  title: string;
-  type: 'time' | 'list';
-  color: string | null;
-  start_time: string | null;
-  end_time: string | null;
-}
-
-interface Project {
-  id: number;
-  owner_id: string;
-  name: string;
-  color: string;
-}
-
-interface Section {
-  id: number;
-  user_id: string;
-  project_id: number;
-  title: string;
-  order: number;
-}
-
-interface ProjectInvite {
-  id: number;
-  project_id: number;
-  invited_user_id: string;
-  invited_by_user_id: string;
-  status: 'pending' | 'accepted' | 'declined';
-  created_at: string;
-  project?: { id: number; title: string; color: string };
-  inviter?: { full_name: string; email: string };
-}
-
-interface PendingInvite {
-  id: number;
-  project_id: number;
-  project_title: string;
-  project_color: string;
-  inviter_name: string;
-  inviter_email: string;
-}
+import { taskAPI } from '@/app/lib/taskAPI';
+import { projectAPI } from '@/app/lib/projectAPI';
+import { notificationAPI } from '@/app/lib/notificationAPI';
+import type { Task, Group, Project, Section, ProjectInviteNotification, User as AppUser } from '@/types/index';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 
 function DashboardContent() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -79,12 +32,14 @@ function DashboardContent() {
   const [editingSectionTitle, setEditingSectionTitle] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
   const [searchUsers, setSearchUsers] = useState('');
-  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<AppUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [projectMembers, setProjectMembers] = useState<{userId: string; memberId: number}[]>([]);
-  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+  const [projectPendingInvites, setProjectPendingInvites] = useState<string[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<ProjectInviteNotification[]>([]);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [invitesLoaded, setInvitesLoaded] = useState(false);
+  const [draggingTaskId, setDraggingTaskId] = useState<number | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
   const client = createClient();
@@ -96,12 +51,12 @@ function DashboardContent() {
 
   useEffect(() => {
     const getUser = async () => {
-      const { data: { user } } = await client.auth.getUser();
-      if (!user) {
+      const { data: { user: authUser } } = await client.auth.getUser();
+      if (!authUser) {
         router.push('/login');
         return;
       }
-      setUser(user);
+      setUser(authUser as any);
     };
     getUser();
   }, []);
@@ -141,11 +96,16 @@ function DashboardContent() {
       const handleProjectsUpdated = () => {
         fetchProjects();
       };
+      const handleTasksUpdated = () => {
+        fetchTasks();
+      };
       window.addEventListener('projects_updated', handleProjectsUpdated);
+      window.addEventListener('tasks-updated', handleTasksUpdated);
 
       return () => {
         client.removeChannel(channel);
         window.removeEventListener('projects_updated', handleProjectsUpdated);
+        window.removeEventListener('tasks-updated', handleTasksUpdated);
       };
     }
   }, [user]);
@@ -168,34 +128,13 @@ function DashboardContent() {
       .eq('user_id', user.id)
       .order('created_at');
 
-    if (data) setGroups(data);
+    if (data) setGroups(data as Group[]);
   };
 
   const fetchProjects = async () => {
-    const { data: { user } } = await client.auth.getUser();
     if (!user) return;
-
-    // Buscar projetos próprios
-    const { data: ownProjects, error } = await client
-      .from('projects')
-      .select('*')
-      .eq('owner_id', user.id);
-
-    // Buscar projetos dos quais é membro
-    const { data: memberProjects } = await client
-      .from('project_members')
-      .select('project_id')
-      .eq('user_id', user.id);
-
-    const memberProjectIds: number[] = memberProjects?.map(m => m.project_id).filter((id): id is number => typeof id === 'number') || [];
-    const { data: sharedProjects } = memberProjectIds.length > 0
-      ? await client.from('projects').select('*').in('id', memberProjectIds)
-      : { data: [] };
-
-    const allProjects = [...(ownProjects || []), ...(sharedProjects || [])];
-
-    if (error) console.error('Erro fetchProjects:', error);
-    if (allProjects) setProjects(allProjects);
+    const allProjects = await projectAPI.getUserProjects(user.id);
+    setProjects(allProjects);
   };
 
   const fetchSections = async () => {
@@ -208,7 +147,7 @@ function DashboardContent() {
       .order('order');
 
     if (data) {
-      setSections(data);
+      setSections(data as Section[]);
       const initialExpanded: Record<number, boolean> = {};
       data.forEach((s: Section) => { initialExpanded[s.id] = true; });
       setExpandedSections(initialExpanded);
@@ -218,238 +157,127 @@ function DashboardContent() {
   const openShareModal = async () => {
     setShowShareModal(true);
     setLoadingUsers(true);
-    // Buscar todos os usuários (exceto o atual)
-    const { data: usersData } = await client
+    const usersData = await client
       .from('profiles')
       .select('id, email, full_name, avatar_url')
-      .neq('id', user.id)
+      .neq('id', user?.id)
       .limit(50);
-    if (usersData) setAllUsers(usersData);
+    if (usersData.data) setAllUsers(usersData.data as AppUser[]);
 
-    // Buscar membros atuais do projeto com IDs
     if (selectedProject) {
-      const { data: members } = await client
-        .from('project_members')
-        .select('id, user_id')
-        .eq('project_id', selectedProject.id);
-      setProjectMembers(members?.map(m => ({ userId: m.user_id, memberId: m.id })) || []);
+      const members = await projectAPI.getProjectMembers(selectedProject.id);
+      setProjectMembers(members.map(m => ({ userId: m.user_id, memberId: m.id })));
+      
+      const { data: invites } = await client
+        .from('project_invites')
+        .select('invited_user_id')
+        .eq('project_id', selectedProject.id)
+        .eq('status', 'pending');
+      
+      setProjectPendingInvites(invites?.map(i => i.invited_user_id) || []);
     } else {
       setProjectMembers([]);
+      setProjectPendingInvites([]);
     }
     setLoadingUsers(false);
   };
 
   const toggleShareUser = async (targetUserId: string) => {
-    if (!selectedProject || selectedProject.owner_id !== user.id) return;
+    if (!selectedProject || !user || selectedProject.owner_id !== user.id) return;
+    
+    const isMember = projectMembers.some(m => m.userId === targetUserId);
+    const isPending = projectPendingInvites.includes(targetUserId);
 
-    // Verificar se já é membro
-    const { data: existingMember } = await client
-      .from('project_members')
-      .select('id')
-      .eq('project_id', selectedProject.id)
-      .eq('user_id', targetUserId)
-      .maybeSingle();
-
-    if (existingMember) {
-      // Remover membro
-      await client
-        .from('project_members')
-        .delete()
-        .eq('id', existingMember.id);
-    } else {
-      // Verificar se já existe convite pendente
-      const { data: existingInvite } = await client
+    if (isMember) {
+      const member = projectMembers.find(m => m.userId === targetUserId);
+      if (member) {
+        await projectAPI.removeProjectMember(selectedProject.id, targetUserId, user.id);
+        setProjectMembers(prev => prev.filter(m => m.userId !== targetUserId));
+      }
+    } else if (isPending) {
+      const { error } = await client
         .from('project_invites')
-        .select('id')
+        .delete()
         .eq('project_id', selectedProject.id)
         .eq('invited_user_id', targetUserId)
-        .eq('status', 'pending')
-        .maybeSingle();
-
-      if (existingInvite) return;
-
-      // Criar convite
-      await client
-        .from('project_invites')
-        .insert({
-          project_id: selectedProject.id,
-          invited_user_id: targetUserId,
-          invited_by_user_id: user.id,
-          status: 'pending'
-        });
-    }
-  };
-
-  const removeMember = async (memberId: number, memberUserId: string) => {
-    if (!selectedProject || selectedProject.owner_id !== user.id) return;
-
-    await client.from('project_members').delete().eq('id', memberId);
-    setProjectMembers(projectMembers.filter(m => m.memberId !== memberId));
-
-    // Se o usuário atual é o membro removido, tirar da lista de projetos
-    if (user.id === memberUserId) {
-      setProjects(projects.filter(p => p.id !== selectedProject.id));
+        .eq('status', 'pending');
+      if (!error) {
+        setProjectPendingInvites(prev => prev.filter(id => id !== targetUserId));
+      }
+    } else {
+      const result = await projectAPI.inviteUserToProject(selectedProject.id, targetUserId, user.id);
+      if (result.success) {
+        setProjectPendingInvites(prev => [...prev, targetUserId]);
+      } else {
+        alert(result.error);
+      }
     }
   };
 
   const fetchTasks = async () => {
     if (!user) return;
     setLoading(true);
-
-    const { data } = await client
-      .from('todos')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at');
-
-    if (data) setTasks(data);
+    const data = await taskAPI.getUserTasks(user.id, { showCompleted: true });
+    setTasks(data);
     setLoading(false);
   };
 
   const fetchPendingInvites = async () => {
     if (!user) return;
-
-    const { data: invites } = await client
-      .from('project_invites')
-      .select('id, project_id, invited_by_user_id, status, created_at')
-      .eq('invited_user_id', user.id)
-      .eq('status', 'pending');
-
-    if (invites && invites.length > 0) {
-      // Buscar dados dos projetos e inviters separadamente
-      const projectIds = [...new Set(invites.map(i => i.project_id))];
-      const inviterIds = [...new Set(invites.map(i => i.invited_by_user_id))];
-
-      const [{ data: projects }, { data: profiles }] = await Promise.all([
-        client.from('projects').select('id, name, color').in('id', projectIds),
-        client.from('profiles').select('id, full_name, email').in('id', inviterIds),
-      ]);
-
-      const projectsMap: any = {};
-      projects?.forEach(p => { projectsMap[p.id] = p; });
-
-      const profilesMap: any = {};
-      profiles?.forEach(p => { profilesMap[p.id] = p; });
-
-      const formattedInvites: PendingInvite[] = invites.map((inv: any) => ({
-        id: inv.id,
-        project_id: inv.project_id,
-        project_title: projectsMap[inv.project_id]?.name || 'Projeto',
-        project_color: projectsMap[inv.project_id]?.color || '#6366f1',
-        inviter_name: profilesMap[inv.invited_by_user_id]?.full_name || 'Usuário',
-        inviter_email: profilesMap[inv.invited_by_user_id]?.email || '',
-      }));
-
-      setPendingInvites(formattedInvites);
-      if (formattedInvites.length > 0) {
-        setShowInviteModal(true);
-      }
+    const invites = await notificationAPI.getPendingInvites(user.id);
+    setPendingInvites(invites);
+    if (invites.length > 0) {
+      setShowInviteModal(true);
     }
     setInvitesLoaded(true);
   };
 
   const acceptInvite = async (inviteId: number, projectId: number) => {
     if (!user) return;
-
-    // Atualizar status do convite para aceito
-    await client
-      .from('project_invites')
-      .update({ status: 'accepted' })
-      .eq('id', inviteId);
-
-    // Adicionar como membro do projeto
-    await client
-      .from('project_members')
-      .insert({ project_id: projectId, user_id: user.id });
-
-    // Atualizar lista de projetos
-    const { data: project } = await client
-      .from('projects')
-      .select('*')
-      .eq('id', projectId)
-      .maybeSingle();
-
-    if (project) {
-      setProjects([...projects, project]);
-      window.dispatchEvent(new CustomEvent('projects_updated'));
-    }
-
-    // Remover do modal
+    await notificationAPI.acceptInvite(inviteId, projectId, user.id);
+    fetchProjects();
+    window.dispatchEvent(new CustomEvent('projects_updated'));
     setPendingInvites(pendingInvites.filter(inv => inv.id !== inviteId));
-    if (pendingInvites.length <= 1) {
-      setShowInviteModal(false);
-    }
+    if (pendingInvites.length <= 1) setShowInviteModal(false);
   };
 
   const declineInvite = async (inviteId: number) => {
-    if (!user) return;
-
-    await client
-      .from('project_invites')
-      .update({ status: 'declined' })
-      .eq('id', inviteId);
-
+    await notificationAPI.declineInvite(inviteId);
     setPendingInvites(pendingInvites.filter(inv => inv.id !== inviteId));
-    if (pendingInvites.length <= 1) {
-      setShowInviteModal(false);
-    }
+    if (pendingInvites.length <= 1) setShowInviteModal(false);
   };
 
   const handleAddTask = async (sectionId?: number) => {
     const title = newTaskTitle.trim();
     if (!title || !user) return;
 
-    const taskData: any = {
-      user_id: user.id,
-      title: title,
-      is_completed: false,
-    };
+    const result = await taskAPI.createTask(
+      user.id,
+      title,
+      selectedProjectId ? parseInt(selectedProjectId) : undefined,
+      sectionId,
+      selectedGroupId && !selectedProjectId ? parseInt(selectedGroupId) : undefined
+    );
 
-    if (selectedProjectId) {
-      taskData.project_id = parseInt(selectedProjectId);
-      if (sectionId !== undefined) {
-        taskData.section_id = sectionId;
-      }
-    }
-
-    if (selectedGroupId && !selectedProjectId) {
-      taskData.view_group_id = parseInt(selectedGroupId);
-    }
-
-    const { data, error } = await client
-      .from('todos')
-      .insert(taskData)
-      .select()
-      .single();
-
-    if (!error && data) {
-      setTasks(prev => [data, ...prev]);
+    if (result.success) {
       setNewTaskTitle('');
+      await fetchTasks();
     }
   };
 
   const toggleTask = async (task: Task) => {
-    const newCompleted = !task.is_completed;
-
-    await client
-      .from('todos')
-      .update({ is_completed: newCompleted })
-      .eq('id', task.id);
-
-    setTasks(tasks.map(t => t.id === task.id ? { ...t, is_completed: newCompleted } : t));
+    await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
+    await fetchTasks();
   };
 
   const deleteTask = async (taskId: number) => {
-    await client.from('todos').delete().eq('id', taskId);
-    setTasks(tasks.filter(t => t.id !== taskId));
+    await taskAPI.deleteTask(taskId);
+    await fetchTasks();
   };
 
   const createSection = async (title: string) => {
     if (!title.trim() || !user || !selectedProjectId) return;
-    // Only project owner can create sections
-    if (selectedProject && selectedProject.owner_id !== user.id) return;
-
-    const { data, error } = await client
+    const { data } = await client
       .from('sections')
       .insert({
         user_id: user.id,
@@ -460,43 +288,39 @@ function DashboardContent() {
       .select()
       .single();
 
-    if (!error && data) {
-      setSections(prev => [...prev, data]);
+    if (data) {
+      setSections(prev => [...prev, data as Section]);
       setExpandedSections(prev => ({ ...prev, [data.id]: true }));
     }
   };
 
   const updateSection = async (sectionId: number, newTitle: string) => {
     if (!newTitle.trim()) return;
-
-    await client
-      .from('sections')
-      .update({ title: newTitle.trim() })
-      .eq('id', sectionId);
-
+    await client.from('sections').update({ title: newTitle.trim() }).eq('id', sectionId);
     setSections(sections.map(s => s.id === sectionId ? { ...s, title: newTitle.trim() } : s));
     setEditingSection(null);
-    setEditingSectionTitle('');
   };
 
   const deleteSection = async (sectionId: number) => {
+    // Garante que as tarefas voltem para a Caixa de Entrada (sem seção).
+    // O banco já tem ON DELETE SET NULL, mas limpamos explicitamente como defesa em profundidade.
+    await taskAPI.clearTasksFromSection(sectionId);
     await client.from('sections').delete().eq('id', sectionId);
     setSections(sections.filter(s => s.id !== sectionId));
-    setTasks(tasks.map(t => t.section_id === sectionId ? { ...t, section_id: null } : t));
+    await fetchTasks();
+    window.dispatchEvent(new CustomEvent('tasks-updated'));
   };
 
   const deleteProject = async () => {
     if (!selectedProject || !user || selectedProject.owner_id !== user.id) return;
-    if (!confirm(`Tem certeza que deseja excluir o projeto "${selectedProject.name}"? Esta ação não pode ser desfeita.`)) return;
-
-    const projectId = selectedProject.id;
-
-    // Excluir o projeto (cascade remove members e sections automaticamente)
-    await client.from('projects').delete().eq('id', projectId);
-
-    // Atualizar UI
-    setProjects(projects.filter(p => p.id !== projectId));
+    if (!confirm(`Excluir "${selectedProject.name}"? As tarefas associadas voltarão para a Caixa de Entrada.`)) return;
+    // Garante que as tarefas voltem para a Caixa de Entrada (sem projeto e sem seção).
+    await taskAPI.clearTasksFromProject(selectedProject.id);
+    await client.from('projects').delete().eq('id', selectedProject.id);
+    setProjects(projects.filter(p => p.id !== selectedProject.id));
     window.dispatchEvent(new CustomEvent('projects_updated'));
+    await fetchTasks();
+    window.dispatchEvent(new CustomEvent('tasks-updated'));
     router.push('/');
   };
 
@@ -525,65 +349,132 @@ function DashboardContent() {
     return projectTasks.filter(t => sectionId === null ? t.section_id == null : t.section_id === sectionId);
   };
 
-  const filteredShareUsers = allUsers.filter((u: any) => {
-    const searchLower = searchUsers.toLowerCase();
-    const name = (u.full_name || '').toLowerCase();
-    const email = (u.email || '').toLowerCase();
-    return name.includes(searchLower) || email.includes(searchLower);
-  });
-
-  const filteredTasks = tasks.filter(task => {
-    if (selectedGroupId && task.view_group_id !== parseInt(selectedGroupId)) return false;
-    if (selectedProjectId && task.project_id !== parseInt(selectedProjectId)) return false;
-    if (!showCompleted && task.is_completed) return false;
-    if (onlyToday && !isToday(task.due_date)) return false;
+  const filteredTasks = tasks.filter(t => {
+    if (onlyToday) {
+      const today = new Date().toISOString().split('T')[0];
+      if (t.due_date !== today) return false;
+    }
+    if (!showCompleted && t.is_completed) return false;
+    if (selectedProjectId) return t.project_id === parseInt(selectedProjectId);
+    if (selectedGroupId) return t.view_group_id === parseInt(selectedGroupId);
     return true;
   });
 
-  const groupedTasks = filteredTasks.reduce((acc, task) => {
-    const groupId = task.view_group_id ?? 'inbox';
-    if (!acc[groupId]) {
-      acc[groupId] = [];
-    }
-    acc[groupId].push(task);
-    return acc;
-  }, {} as Record<string | number, Task[]>);
+  const filteredShareUsers = allUsers.filter(u =>
+    u.full_name?.toLowerCase().includes(searchUsers.toLowerCase()) ||
+    u.email?.toLowerCase().includes(searchUsers.toLowerCase())
+  );
 
-  const getGroupInfo = (groupId: string | number): { title: string; color: string | null } => {
-    if (groupId === 'inbox') return { title: 'Caixa de Entrada', color: null };
-    const group = groups.find(g => g.id === groupId);
-    return { title: group?.title ?? 'Sem Categoria', color: group?.color ?? null };
+  // Tipos de agrupamento para o Dashboard
+  type GroupKey = string; // Pode ser 'inbox' | 'group:<id>' | 'project:<id>'
+
+  // Chave única e estável para cada tarefa com base em sua associação real no banco
+  const getTaskGroupKey = (task: Task): GroupKey => {
+    if (task.project_id != null) return `project:${task.project_id}`;
+    if (task.view_group_id != null) return `group:${task.view_group_id}`;
+    return 'inbox';
+  };
+
+  const groupedTasks = filteredTasks.reduce((acc: Record<string, Task[]>, task) => {
+    const key = getTaskGroupKey(task);
+    if (!acc[key]) {
+      acc[key] = [];
+    }
+    acc[key].push(task);
+    return acc;
+  }, {} as Record<string, Task[]>);
+
+  const getGroupInfo = (groupId: string | number): { title: string; color: string | null; link: string | null } => {
+    const key = String(groupId);
+    if (key === 'inbox') return { title: 'Caixa de Entrada', color: null, link: null };
+
+    if (key.startsWith('project:')) {
+      const id = parseInt(key.split(':')[1]);
+      const project = projects.find(p => p.id === id);
+      return {
+        title: project?.name ?? 'Projeto sem nome',
+        color: project?.color ?? null,
+        link: `/?project=${id}`,
+      };
+    }
+
+    if (key.startsWith('group:')) {
+      const id = parseInt(key.split(':')[1]);
+      const group = groups.find(g => g.id === id);
+      return {
+        title: group?.title ?? 'Sem Categoria',
+        color: group?.color ?? null,
+        link: `/?group=${id}`,
+      };
+    }
+
+    return { title: 'Sem Categoria', color: null, link: null };
+  };
+
+  // Ordena as seções: Caixa de Entrada primeiro, depois projetos, depois blocos/listas
+  const sortedGroupKeys = (Object.keys(groupedTasks) as GroupKey[]).sort((a, b) => {
+    if (a === 'inbox') return -1;
+    if (b === 'inbox') return 1;
+    if (a.startsWith('project:') && !b.startsWith('project:')) return -1;
+    if (!a.startsWith('project:') && b.startsWith('project:')) return 1;
+    return a.localeCompare(b);
+  });
+
+  const handleDragStart = (e: React.DragEvent, task: Task) => {
+    setDraggingTaskId(task.id);
+    e.dataTransfer.setData('taskId', task.id.toString());
+    e.dataTransfer.setData('taskTitle', task.title);
+    e.dataTransfer.effectAllowed = 'move';
+    
+    // Pequeno atraso para a classe de opacidade ser aplicada após o início do drag
+    setTimeout(() => {
+      if (e.target instanceof HTMLElement) {
+        e.target.style.opacity = '0.4';
+      }
+    }, 0);
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    setDraggingTaskId(null);
+    if (e.target instanceof HTMLElement) {
+      e.target.style.opacity = '1';
+    }
   };
 
   const renderTaskItem = (task: Task, sectionId?: number) => (
     <div
       key={task.id}
-      className="flex items-center gap-3 p-3 rounded-lg hover:bg-accent/5 transition-colors group"
+      draggable
+      onDragStart={(e) => handleDragStart(e, task)}
+      onDragEnd={handleDragEnd}
+      className={cn(
+        "flex items-center gap-3 py-2 px-2 hover:bg-accent/5 transition-all group border-b border-accent/10 last:border-b-0 cursor-grab active:cursor-grabbing",
+        draggingTaskId === task.id && "opacity-40 bg-accent/10 scale-[0.98] shadow-inner"
+      )}
     >
-      <GripVertical className="w-4 h-4 text-muted-foreground/50 cursor-move flex-shrink-0" />
-      <button
-        onClick={() => toggleTask(task)}
-        className={cn(
-          'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0',
-          task.is_completed
-            ? 'bg-primary border-primary text-primary-foreground'
-            : 'border-muted-foreground/30 hover:border-primary hover:bg-primary/10'
-        )}
-      >
-        {task.is_completed && <Check className="w-3 h-3" />}
-      </button>
+      <GripVertical className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
+      <Checkbox
+        checked={task.is_completed}
+        onCheckedChange={() => toggleTask(task)}
+      />
       <span className={cn('flex-1 text-sm', task.is_completed && 'line-through text-muted-foreground')}>
         {task.title}
       </span>
-      <button className="p-1 text-muted-foreground/50 hover:text-yellow-500 transition-colors">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 text-muted-foreground/50 hover:text-yellow-500"
+      >
         <Star className="w-4 h-4" />
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
         onClick={() => deleteTask(task.id)}
-        className="p-1 text-muted-foreground/50 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
+        className="h-7 w-7 text-muted-foreground/50 hover:text-destructive opacity-0 group-hover:opacity-100"
       >
         <X className="w-4 h-4" />
-      </button>
+      </Button>
     </div>
   );
 
@@ -594,159 +485,156 @@ function DashboardContent() {
   return (
     <div className="p-6 w-full max-w-4xl mx-auto">
       {/* Modal de Convites */}
-      {showInviteModal && pendingInvites.length > 0 && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-xl p-6 w-96 shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Convites de Projeto</h3>
-              <button onClick={() => setShowInviteModal(false)} className="p-1 hover:bg-accent rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              {pendingInvites.map((invite) => (
-                <div key={invite.id} className="p-4 rounded-lg border bg-accent/20">
-                  <div className="flex items-center gap-3 mb-3">
+      <Dialog open={showInviteModal && pendingInvites.length > 0} onOpenChange={(open) => !open && setShowInviteModal(false)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Convites de Projeto</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {pendingInvites.map((invite) => (
+              <Card key={invite.id} className="p-4">
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-3">
                     <div
-                      className="w-10 h-10 rounded-full flex items-center justify-center"
+                      className="w-10 h-10 rounded-lg flex items-center justify-center text-white"
                       style={{ backgroundColor: invite.project_color }}
                     >
-                      <Folder className="w-5 h-5 text-white" />
+                      <Folder className="w-6 h-6" />
                     </div>
                     <div>
-                      <p className="font-medium">{invite.project_title}</p>
+                      <p className="text-sm font-semibold">{invite.project_title}</p>
                       <p className="text-xs text-muted-foreground">
-                        Convidado por {invite.inviter_name}
+                        Convidado por <span className="font-medium text-foreground">{invite.inviter_name}</span>
                       </p>
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="flex-1 bg-green-500 hover:bg-green-600"
                       onClick={() => acceptInvite(invite.id, invite.project_id)}
-                      className="flex-1 py-2 rounded-lg bg-green-500 text-white hover:bg-green-600 transition-colors text-sm font-medium"
                     >
                       Aceitar
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
                       onClick={() => declineInvite(invite.id)}
-                      className="flex-1 py-2 rounded-lg border border-input hover:bg-accent transition-colors text-sm"
                     >
                       Recusar
-                    </button>
+                    </Button>
                   </div>
                 </div>
-              ))}
-            </div>
+              </Card>
+            ))}
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de Compartilhamento */}
-      {showShareModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowShareModal(false)}>
-          <div className="bg-card rounded-xl p-6 w-96 shadow-xl max-h-96 flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Compartilhar projeto</h3>
-              <button onClick={() => setShowShareModal(false)} className="p-1 hover:bg-accent rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            {/* Membros atuais */}
-            {projectMembers.length > 0 && (
-              <div className="mb-4 pb-4 border-b border-border">
-                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Membros atuais</p>
-                <div className="space-y-2">
-                  {projectMembers.map((member) => {
-                    const memberProfile = allUsers.find(u => u.id === member.userId);
-                    return (
-                      <div key={member.memberId} className="flex items-center justify-between p-2 rounded-lg hover:bg-accent/50 transition-colors">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
-                            {memberProfile?.avatar_url ? (
-                              <img src={memberProfile.avatar_url} className="w-7 h-7 rounded-full" />
-                            ) : (
-                              <User className="w-3 h-3 text-primary" />
-                            )}
-                          </div>
-                          <span className="text-sm">{memberProfile?.full_name || memberProfile?.email || 'Usuário'}</span>
-                        </div>
-                        <button
-                          onClick={() => removeMember(member.memberId, member.userId)}
-                          className="p-1 text-muted-foreground hover:text-destructive transition-colors"
-                          title="Remover membro"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            {/* Busca */}
-            <div className="relative mb-4">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                type="text"
-                value={searchUsers}
-                onChange={(e) => setSearchUsers(e.target.value)}
-                placeholder="Buscar usuário para adicionar..."
-                className="w-full pl-9 pr-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-            {/* Lista de usuários */}
-            <div className="flex-1 overflow-y-auto space-y-2">
-              {loadingUsers ? (
-                <div className="text-center py-4 text-muted-foreground text-sm">Carregando...</div>
-              ) : filteredShareUsers.length === 0 ? (
-                <div className="text-center py-4 text-muted-foreground text-sm">Nenhum usuário encontrado</div>
-              ) : (
-                filteredShareUsers.map((u: any) => {
-                  const isShared = projectMembers.some(m => m.userId === u.id);
+      <Dialog open={showShareModal} onOpenChange={(open) => !open && setShowShareModal(false)}>
+        <DialogContent className="sm:max-w-md flex flex-col max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Compartilhar projeto</DialogTitle>
+          </DialogHeader>
+
+          {/* Membros atuais */}
+          {projectMembers.length > 0 && (
+            <div className="mb-4 pb-4 border-b">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Membros atuais</p>
+              <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                {projectMembers.map((member) => {
+                  const memberProfile = allUsers.find(u => u.id === member.userId);
                   return (
-                    <div key={u.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                          {u.avatar_url ? (
-                            <img src={u.avatar_url} className="w-8 h-8 rounded-full" />
+                    <div key={member.memberId} className="flex items-center justify-between p-2 rounded-lg hover:bg-accent/50 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
+                          {memberProfile?.avatar_url ? (
+                            <img src={memberProfile.avatar_url} className="w-full h-full object-cover" />
                           ) : (
                             <User className="w-4 h-4 text-primary" />
                           )}
                         </div>
-                        <div>
-                          <p className="text-sm font-medium">{u.full_name || u.email}</p>
-                          <p className="text-xs text-muted-foreground">{u.email}</p>
-                        </div>
+                        <span className="text-sm font-medium">{memberProfile?.full_name || memberProfile?.email || 'Usuário'}</span>
                       </div>
-                      <button
-                        onClick={() => toggleShareUser(u.id)}
-                        className={cn(
-                          'flex items-center gap-1 px-3 py-1 rounded-full text-xs transition-colors',
-                          isShared
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                            : 'bg-primary/10 text-primary hover:bg-primary/20'
-                        )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => toggleShareUser(member.userId)}
                       >
-                        {isShared ? (
-                          <>
-                            <Check className="w-3 h-3" />
-                            Membro
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="w-3 h-3" />
-                            Convidar
-                          </>
-                        )}
-                      </button>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   );
-                })
-              )}
+                })}
+              </div>
             </div>
+          )}
+
+          {/* Busca */}
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              value={searchUsers}
+              onChange={(e) => setSearchUsers(e.target.value)}
+              placeholder="Buscar usuário..."
+              className="pl-9"
+            />
           </div>
-        </div>
-      )}
+
+          {/* Lista de usuários */}
+          <div className="flex-1 overflow-y-auto space-y-2 pr-2">
+            {loadingUsers ? (
+              <div className="text-center py-4 text-muted-foreground text-sm">Carregando...</div>
+            ) : filteredShareUsers.length === 0 ? (
+              <div className="text-center py-4 text-muted-foreground text-sm">Nenhum usuário encontrado</div>
+            ) : (
+              filteredShareUsers.map((u: AppUser) => {
+                const isShared = projectMembers.some(m => m.userId === u.id);
+                const isPending = projectPendingInvites.includes(u.id);
+                return (
+                  <div key={u.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-accent/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
+                        {u.avatar_url ? (
+                          <img src={u.avatar_url} className="w-full h-full object-cover" />
+                        ) : (
+                          <User className="w-4 h-4 text-primary" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium leading-none">{u.full_name || u.email}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{u.email}</p>
+                      </div>
+                    </div>
+                    <Button
+                      variant={isShared ? "secondary" : isPending ? "outline" : "default"}
+                      size="sm"
+                      onClick={() => toggleShareUser(u.id)}
+                      className={cn(
+                        "rounded-full h-8",
+                        isShared && "bg-green-100 text-green-700 hover:bg-green-200",
+                        isPending && "bg-yellow-100 text-yellow-700 hover:bg-yellow-200 border-yellow-200"
+                      )}
+                    >
+                      {isShared ? (
+                        <><Check className="w-3 h-3 mr-1" /> Membro</>
+                      ) : isPending ? (
+                        <><Check className="w-3 h-3 mr-1" /> Pendente</>
+                      ) : (
+                        <><Plus className="w-3 h-3 mr-1" /> Convidar</>
+                      )}
+                    </Button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
@@ -755,74 +643,60 @@ function DashboardContent() {
             {selectedProject ? selectedProject.name : selectedGroup ? selectedGroup.title : 'Dashboard'}
           </h1>
           {(selectedGroup || selectedProject) && (
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => router.push('/')}
-              className="flex items-center gap-1 px-3 py-1 rounded-full bg-accent hover:bg-accent/70 text-sm transition-colors"
+              className="rounded-full h-8"
             >
-              <XCircle className="w-4 h-4" />
+              <XCircle className="w-4 h-4 mr-2" />
               Limpar filtro
-            </button>
+            </Button>
           )}
           {selectedProject && user && selectedProject.owner_id === user.id && (
-            <>
-              <button
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={openShareModal}
-                className="flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 hover:bg-primary/20 text-primary text-sm transition-colors"
+                className="rounded-full"
               >
-                <Share className="w-4 h-4" />
+                <Share className="w-4 h-4 mr-2" />
                 Compartilhar
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
                 onClick={deleteProject}
-                className="flex items-center gap-1 px-3 py-1 rounded-full bg-destructive/10 hover:bg-destructive/20 text-destructive text-sm transition-colors"
+                className="rounded-full"
               >
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="w-4 h-4 mr-2" />
                 Excluir
-              </button>
-            </>
+              </Button>
+            </div>
           )}
         </div>
         <div className="flex items-center gap-6">
-          <label className="flex items-center gap-2 cursor-pointer">
+          <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Mostrar Concluídas</span>
-            <div
-              onClick={() => setShowCompleted(!showCompleted)}
-              className={cn(
-                'w-11 h-6 rounded-full transition-colors relative cursor-pointer',
-                showCompleted ? 'bg-primary' : 'bg-muted'
-              )}
-            >
-              <div
-                className={cn(
-                  'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                  showCompleted ? 'translate-x-6' : 'translate-x-1'
-                )}
-              />
-            </div>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
+            <Checkbox
+              checked={showCompleted}
+              onCheckedChange={(checked) => setShowCompleted(!!checked)}
+            />
+          </div>
+          <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Apenas Atuais</span>
-            <div
-              onClick={() => setOnlyToday(!onlyToday)}
-              className={cn(
-                'w-11 h-6 rounded-full transition-colors relative cursor-pointer',
-                onlyToday ? 'bg-primary' : 'bg-muted'
-              )}
-            >
-              <div
-                className={cn(
-                  'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                  onlyToday ? 'translate-x-6' : 'translate-x-1'
-                )}
-              />
-            </div>
-          </label>
+            <Checkbox
+              checked={onlyToday}
+              onCheckedChange={(checked) => setOnlyToday(!!checked)}
+            />
+          </div>
         </div>
       </div>
 
       {/* Input adicionar tarefa */}
       <div className="relative mb-8">
-        <input
+        <Input
           type="text"
           value={newTaskTitle}
           onChange={(e) => setNewTaskTitle(e.target.value)}
@@ -833,12 +707,16 @@ function DashboardContent() {
             }
           }}
           placeholder="O que precisa ser feito?"
-          className="w-full px-4 py-3 pr-12 rounded-xl border border-input bg-background text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-shadow"
+          className="pr-12 h-12 text-base shadow-sm"
         />
-        <ArrowRight
-          className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground cursor-pointer hover:text-primary transition-colors"
+        <Button
+          size="icon"
+          variant="ghost"
+          className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary"
           onClick={() => handleAddTask()}
-        />
+        >
+          <ArrowRight className="w-5 h-5" />
+        </Button>
       </div>
 
       {/* MODO PROJETO: Seções expansíveis */}
@@ -855,10 +733,10 @@ function DashboardContent() {
             <>
               {/* Lista de Seções */}
               {sections.map((section) => (
-                <div key={section.id} className="bg-accent/10 rounded-xl border border-accent/20 overflow-hidden">
+                <Card key={section.id} className="bg-accent/5 border-accent/20 overflow-hidden shadow-none">
                   {/* Header da seção */}
                   <div
-                    className="flex items-center justify-between px-4 py-3 border-b border-accent/20 cursor-pointer hover:bg-accent/20 transition-colors"
+                    className="flex items-center justify-between px-4 py-2 border-b border-accent/20 cursor-pointer hover:bg-accent/10 transition-colors"
                     onClick={() => toggleSectionExpand(section.id)}
                   >
                     <div className="flex items-center gap-3">
@@ -870,8 +748,7 @@ function DashboardContent() {
                       />
                       <Folder className="w-4 h-4 text-primary" />
                       {editingSection === section.id ? (
-                        <input
-                          type="text"
+                        <Input
                           value={editingSectionTitle}
                           onChange={(e) => setEditingSectionTitle(e.target.value)}
                           onBlur={() => updateSection(section.id, editingSectionTitle)}
@@ -879,7 +756,7 @@ function DashboardContent() {
                             if (e.key === 'Enter') updateSection(section.id, editingSectionTitle);
                             if (e.key === 'Escape') { setEditingSection(null); setEditingSectionTitle(''); }
                           }}
-                          className="px-2 py-1 text-sm font-semibold bg-background border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+                          className="h-8 py-1 text-sm font-semibold w-40"
                           autoFocus
                           onClick={(e) => e.stopPropagation()}
                         />
@@ -891,31 +768,34 @@ function DashboardContent() {
                       </span>
                     </div>
                     <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => { setEditingSection(section.id); setEditingSectionTitle(section.title); }}
-                        className="p-1 text-muted-foreground/50 hover:text-primary transition-colors"
+                        className="h-8 w-8 text-muted-foreground/50 hover:text-primary"
                       >
                         <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => deleteSection(section.id)}
-                        className="p-1 text-muted-foreground/50 hover:text-destructive transition-colors"
+                        className="h-8 w-8 text-muted-foreground/50 hover:text-destructive"
                       >
                         <Trash2 className="w-4 h-4" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
 
                   {/* Tarefas da seção */}
                   {expandedSections[section.id] && (
-                    <div className="p-2">
+                    <div className="border-t border-accent/20">
                       {getTasksBySection(section.id).map((task) => renderTaskItem(task, section.id))}
                       {/* Input para nova tarefa na seção */}
-                      <div className="flex items-center gap-2 mt-2">
-                        <input
-                          type="text"
+                      <div className="px-10 py-2">
+                        <Input
                           placeholder="Adicionar tarefa..."
-                          className="flex-1 px-3 py-2 text-sm bg-transparent border-0 focus:outline-none focus:ring-0"
+                          className="h-8 text-sm bg-transparent border-none shadow-none focus-visible:ring-0 px-0"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && e.currentTarget.value.trim()) {
                               setNewTaskTitle(e.currentTarget.value.trim());
@@ -927,13 +807,13 @@ function DashboardContent() {
                       </div>
                     </div>
                   )}
-                </div>
+                </Card>
               ))}
 
               {/* Tarefas sem seção */}
               {getTasksBySection(null).length > 0 && (
-                <div className="bg-accent/10 rounded-xl border border-accent/20 overflow-hidden">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-accent/20">
+                <Card className="bg-accent/5 border-accent/20 overflow-hidden shadow-none">
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-accent/20">
                     <div className="flex items-center gap-3">
                       <Folder className="w-4 h-4 text-muted-foreground" />
                       <span className="text-sm font-semibold text-muted-foreground">Sem seção</span>
@@ -942,31 +822,31 @@ function DashboardContent() {
                       </span>
                     </div>
                   </div>
-                  <div className="p-2">
-                    {getTasksBySection(null).map((task) => renderTaskItem(task))}
-                  </div>
-                </div>
+                  {getTasksBySection(null).map((task) => renderTaskItem(task))}
+                </Card>
               )}
 
               {/* Botão nova seção */}
               <div className="flex items-center gap-2">
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
                     const title = prompt('Nome da nova seção:');
                     if (title?.trim()) { createSection(title.trim()); }
                   }}
-                  className="flex items-center gap-2 px-4 py-2 text-sm text-primary hover:bg-accent/20 rounded-lg transition-colors"
+                  className="text-primary hover:bg-primary/10"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-4 h-4 mr-2" />
                   Nova seção
-                </button>
+                </Button>
               </div>
             </>
           )}
         </div>
       ) : (
-        /* MODO NORMAL: Tarefas agrupadas por grupo */
-        <div className="space-y-4">
+        /* MODO NORMAL: Lista única de tarefas */
+        <div className="space-y-0">
           {loading ? (
             <div className="text-center py-8 text-muted-foreground">Carregando...</div>
           ) : filteredTasks.length === 0 ? (
@@ -975,35 +855,46 @@ function DashboardContent() {
               <p className="text-sm mt-2">Adicione uma tarefa acima para começar.</p>
             </div>
           ) : (
-            Object.entries(groupedTasks).map(([groupId, groupTasks]) => {
-              const { title, color } = getGroupInfo(groupId);
-              return (
-                <div
-                  key={groupId}
-                  className="bg-accent/10 rounded-xl border border-accent/20 overflow-hidden"
-                >
-                  {!selectedGroup && (
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-accent/20">
+            /* Cabeçalho para cada grupo quando não tem grupo selecionado */
+            <>
+              {!selectedGroup && sortedGroupKeys.map((groupId) => {
+                const groupInfo = getGroupInfo(groupId);
+                const groupTasks = groupedTasks[groupId];
+                if (!groupTasks || groupTasks.length === 0) return null;
+                return (
+                  <div key={groupId} className="mb-4">
+                    <div className="flex items-center justify-between px-1 py-2">
                       <span
                         className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                        style={color ? { color } : undefined}
+                        style={groupInfo.color ? { color: groupInfo.color } : undefined}
                       >
-                        {title}
+                        {groupInfo.title}
                       </span>
-                      <button
-                        onClick={() => router.push(`/?group=${groupId}`)}
-                        className="text-xs text-primary hover:underline"
-                      >
-                        Selecionar
-                      </button>
+                      {groupInfo.link && (
+                        <Button
+                          variant="link"
+                          size="sm"
+                          onClick={() => router.push(groupInfo.link!)}
+                          className="h-auto p-0 text-xs"
+                        >
+                          Selecionar
+                        </Button>
+                      )}
                     </div>
-                  )}
-                  <div className="p-2">
-                    {groupTasks.map((task) => renderTaskItem(task))}
+                    <div className="border border-accent/20 rounded-lg overflow-hidden bg-accent/5">
+                      {groupTasks.map((task) => renderTaskItem(task))}
+                    </div>
                   </div>
+                );
+              })}
+
+              {/* Quando tem grupo selecionado: lista compacta única */}
+              {selectedGroup && (
+                <div className="border border-accent/20 rounded-lg overflow-hidden bg-accent/5">
+                  {filteredTasks.map((task) => renderTaskItem(task))}
                 </div>
-              );
-            })
+              )}
+            </>
           )}
         </div>
       )}
