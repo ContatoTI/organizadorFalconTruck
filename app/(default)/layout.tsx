@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { cn } from '@/app/lib/utils';
 import { useGroups } from '@/app/lib/GroupsContext';
@@ -64,6 +64,18 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const [showNotifications, setShowNotifications] = useState(false);
   const [pendingInvites, setPendingInvites] = useState<any[]>([]);
   const [declineNotifications, setDeclineNotifications] = useState<any[]>([]);
+  const userRef = useRef(user);
+  const projectsRef = useRef<Project[]>(projects);
+  const pendingInvitesRef = useRef(pendingInvites);
+  const declineNotificationsRef = useRef(declineNotifications);
+  userRef.current = user;
+  projectsRef.current = projects;
+  pendingInvitesRef.current = pendingInvites;
+  declineNotificationsRef.current = declineNotifications;
+
+  const fetchProjectsRef = useRef<() => Promise<void>>(async () => {});
+  const mergeProjectsRef = useRef<(serverProjects: Project[]) => void>(() => {});
+  const fetchNotificationsRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     const getUser = async () => {
@@ -81,14 +93,32 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
   // Listener sempre ativo (não depende de user) - garante que eventos sejam ouvidos
   useEffect(() => {
-    const handleProjectsUpdated = () => {
-      fetchProjects();
+    const handleProjectsUpdated = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      // Se o evento carregar dados do projeto recém-aceito, insere imediatamente no estado local
+      if (detail?.projectId) {
+        setProjects((prev) => {
+          if (prev.some((p) => p.id === detail.projectId)) return prev;
+          return [...prev, {
+            id: detail.projectId,
+            owner_id: '',
+            name: detail.name || 'Projeto',
+            color: detail.color || '#6366f1',
+          }];
+        });
+      }
+      fetchProjectsRef.current();
+    };
+    const handleInviteProcessed = () => {
+      fetchNotificationsRef.current();
     };
 
     window.addEventListener('projects_updated', handleProjectsUpdated);
+    window.addEventListener('invite_processed', handleInviteProcessed);
 
     return () => {
       window.removeEventListener('projects_updated', handleProjectsUpdated);
+      window.removeEventListener('invite_processed', handleInviteProcessed);
     };
   }, []);
 
@@ -110,12 +140,12 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   }, [user]);
 
   const fetchNotifications = async () => {
-    const { data: { user } } = await client.auth.getUser();
-    if (!user) return;
+    const curUser = userRef.current;
+    if (!curUser) return;
 
     try {
       const { pendingInvites: invites, declineNotifications: declined } =
-        await notificationAPI.getUserNotifications(user.id);
+        await notificationAPI.getUserNotifications(curUser.id);
 
       setPendingInvites(invites);
       setDeclineNotifications(declined);
@@ -142,8 +172,8 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
         { event: '*', schema: 'public', table: 'project_members' },
         (payload) => {
           const data = payload.new as any || payload.old as any;
-          if (data && data.user_id === user?.id) {
-            fetchProjects();
+          if (data && data.user_id === userRef.current?.id) {
+            fetchProjectsRef.current!();
           }
         }
       )
@@ -152,8 +182,13 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
         { event: '*', schema: 'public', table: 'projects' },
         (payload) => {
           const data = payload.new as any || payload.old as any;
-          if (data && (data.owner_id === user?.id || projects.some(p => p.id === data.id))) {
-            fetchProjects();
+          const curUser = userRef.current;
+          const curProjects = projectsRef.current;
+          if (data && curUser && (
+            data.owner_id === curUser.id ||
+            curProjects.some(p => p.id === data.id)
+          )) {
+            fetchProjectsRef.current!();
           }
         }
       )
@@ -161,37 +196,53 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   };
 
   const acceptInviteFromBell = async (inviteId: number, projectId: number) => {
-    if (!user) return;
+    const curUser = userRef.current;
+    if (!curUser) return;
 
-    const result = await notificationAPI.acceptInvite(inviteId, projectId, user.id);
+    const result = await notificationAPI.acceptInvite(inviteId, projectId, curUser.id);
 
     if (result.success) {
-      // Insere o projeto recém-aceito diretamente no estado local (igual à criação de projeto).
-      // Garante atualização imediata no menu lateral, independente do timing do fetchProjects().
-      if (result.project) {
-        setProjects((prev) => {
-          if (prev.some((p) => p.id === result.project!.id)) return prev;
-          return [...prev, result.project!];
-        });
-      }
+      // Adiciona o projeto ao estado local imediatamente (com ou sem dados da notificação)
+      const inviteNotification = pendingInvitesRef.current.find(inv => inv.id === inviteId);
+      setProjects((prev) => {
+        if (prev.some((p) => p.id === projectId)) return prev;
+        return [...prev, {
+          id: projectId,
+          owner_id: '',
+          name: inviteNotification?.project_title || 'Projeto',
+          color: inviteNotification?.project_color || '#6366f1',
+        }];
+      });
 
-      // fetchProjects agora faz MERGE, então o item local não é sobrescrito,
+      // fetchProjects faz MERGE, então o item local não é sobrescrito,
       // mesmo que o servidor ainda não enxergue o novo vínculo (cache de RLS).
-      await fetchProjects();
+      await fetchProjectsRef.current!();
       await fetchNotifications();
-      window.dispatchEvent(new CustomEvent('projects_updated'));
+      window.dispatchEvent(new CustomEvent('projects_updated', {
+        detail: {
+          projectId,
+          name: inviteNotification?.project_title || 'Projeto',
+          color: inviteNotification?.project_color || '#6366f1',
+        },
+      }));
+      window.dispatchEvent(new CustomEvent('invite_processed'));
     } else {
       console.error('Erro ao aceitar convite pelo sino:', result.error);
     }
   };
 
   const declineInviteFromBell = async (inviteId: number) => {
+    const curUser = userRef.current;
+    if (!curUser) return;
+
     await client
       .from('project_invites')
       .update({ status: 'declined' })
-      .eq('id', inviteId);
+      .eq('id', inviteId)
+      .eq('invited_user_id', curUser.id);
 
     fetchNotifications();
+    window.dispatchEvent(new CustomEvent('invite_processed'));
   };
 
   const dismissDeclineNotification = async (inviteId: number) => {
@@ -204,6 +255,9 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   };
 
   const reinviteUser = async (projectId: number, userId: string) => {
+    const curUser = userRef.current;
+    if (!curUser) return;
+
     // Deletar convite recusado
     await client
       .from('project_invites')
@@ -217,7 +271,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       .insert({
         project_id: projectId,
         invited_user_id: userId,
-        invited_by_user_id: user.id,
+        invited_by_user_id: curUser.id,
         status: 'pending'
       });
 
@@ -230,30 +284,35 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   // - Projetos vindos do servidor sobrescrevem entradas locais com mesmo id (atualização).
   // - Projetos que existem apenas localmente (ex: recém-aceito, ainda não visível por RLS) são MANTIDOS.
   // Isso evita que um fetch com cache de RLS obsoleto apague o projeto que acabou de ser aceito.
-  const mergeProjects = (serverProjects: Project[]) => {
+  const mergeProjects = useCallback((serverProjects: Project[]) => {
     setProjects((prev) => {
       const byId = new Map<number, Project>();
       prev.forEach((p) => byId.set(p.id, p));
       serverProjects.forEach((p) => byId.set(p.id, p));
       return Array.from(byId.values());
     });
-  };
+  }, []);
 
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     setLoadingProjects(true);
     const { data: { user } } = await client.auth.getUser();
     if (!user) return;
 
     try {
       const allProjects = await projectAPI.getUserProjects(user.id);
-      mergeProjects(allProjects);
+      mergeProjectsRef.current!(allProjects);
     } catch (error) {
       console.error('Erro ao buscar projetos:', error);
       // Em caso de erro, NÃO sobrescreve o estado local — preserva o que já existe.
     } finally {
       setLoadingProjects(false);
     }
-  };
+  }, []);
+
+  // Manter refs atualizadas para uso em event listeners e subscriptions
+  fetchProjectsRef.current = fetchProjects;
+  mergeProjectsRef.current = mergeProjects;
+  fetchNotificationsRef.current = fetchNotifications;
 
   const toggleSection = (section: string) => {
     setExpandedSections(prev => ({
@@ -296,11 +355,17 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     }
 
     if (data) {
-      setProjects([...projects, data]);
+      setProjects(prev => [...prev, data]);
       setNewProjectName('');
       setNewProjectColor('#6366f1');
       setShowProjectModal(false);
-      window.dispatchEvent(new CustomEvent('projects_updated'));
+      window.dispatchEvent(new CustomEvent('projects_updated', {
+        detail: {
+          projectId: data.id,
+          name: data.name,
+          color: data.color,
+        },
+      }));
     }
   };
 

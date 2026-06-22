@@ -24,51 +24,63 @@ class TaskAPI {
   ): Promise<Task[]> {
     try {
       const client = createClient();
-      let query = client.from('todos').select('*');
 
       if (filters?.projectId) {
-        // Se filtramos por um projeto específico, não precisa checar user_id se confiamos no RLS
-        // O RLS já garante que só vemos tarefas de projetos que somos membros
-        query = query.eq('project_id', filters.projectId);
-      } else {
-        // Buscar os projetos que o usuário tem acesso para poder ver todas as tarefas
-        const [memberProjects, ownProjects] = await Promise.all([
-          client.from('project_members').select('project_id').eq('user_id', userId),
-          client.from('projects').select('id').eq('owner_id', userId)
-        ]);
-        
-        const projectIds = new Set<number>();
-        memberProjects.data?.forEach(m => projectIds.add(m.project_id));
-        ownProjects.data?.forEach(p => projectIds.add(p.id));
-        
-        if (projectIds.size > 0) {
-          query = query.or(`user_id.eq.${userId},project_id.in.(${Array.from(projectIds).join(',')})`);
-        } else {
-          query = query.eq('user_id', userId);
-        }
+        // Filtro por projeto específico — RLS já garante acesso só se for membro
+        let q = client.from('todos').select('*').eq('project_id', filters.projectId);
+        if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
+        if (!filters?.showCompleted) q = q.eq('is_completed', false);
+        if (filters?.onlyToday) q = q.eq('due_date', new Date().toISOString().split('T')[0]);
+        const { data, error } = await q.order('created_at', { ascending: false });
+        if (error) throw error;
+        return (data as Task[]) || [];
       }
 
-      if (filters?.sectionId) {
-        query = query.eq('section_id', filters.sectionId);
+      // Buscar tarefas em 2 queries separadas (mais robusto que or() com RLS complexo)
+      const [memberProjects, ownProjects] = await Promise.all([
+        client.from('project_members').select('project_id').eq('user_id', userId),
+        client.from('projects').select('id').eq('owner_id', userId),
+      ]);
+
+      const projectIds = new Set<number>();
+      memberProjects.data?.forEach(m => projectIds.add(m.project_id));
+      ownProjects.data?.forEach(p => projectIds.add(p.id));
+
+      const allTasks: Task[] = [];
+
+      // Query 1: tarefas pessoais do usuário
+      {
+        let q = client.from('todos').select('*').eq('user_id', userId);
+        if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
+        if (filters?.groupId) q = q.eq('view_group_id', filters.groupId);
+        if (!filters?.showCompleted) q = q.eq('is_completed', false);
+        if (filters?.onlyToday) q = q.eq('due_date', new Date().toISOString().split('T')[0]);
+        const { data, error } = await q.order('created_at', { ascending: false });
+        if (!error && data) allTasks.push(...(data as Task[]));
       }
 
-      if (filters?.groupId) {
-        query = query.eq('view_group_id', filters.groupId);
+      // Query 2: tarefas de projetos que o usuário é membro (criadas por outros)
+      if (projectIds.size > 0) {
+        let q = client.from('todos').select('*')
+          .in('project_id', Array.from(projectIds))
+          .neq('user_id', userId); // evita duplicar as pessoais
+        if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
+        if (filters?.groupId) q = q.eq('view_group_id', filters.groupId);
+        if (!filters?.showCompleted) q = q.eq('is_completed', false);
+        if (filters?.onlyToday) q = q.eq('due_date', new Date().toISOString().split('T')[0]);
+        const { data, error } = await q.order('created_at', { ascending: false });
+        if (!error && data) allTasks.push(...(data as Task[]));
       }
 
-      if (!filters?.showCompleted) {
-        query = query.eq('is_completed', false);
+      // Deduplica por id
+      const seen = new Set<number>();
+      const unique: Task[] = [];
+      for (const t of allTasks) {
+        if (!seen.has(t.id)) { seen.add(t.id); unique.push(t); }
       }
+      unique.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-      if (filters?.onlyToday) {
-        const today = new Date().toISOString().split('T')[0];
-        query = query.eq('due_date', today);
-      }
-
-      const { data, error } = await query.order('created_at', { ascending: false });
-
-      if (error) throw error;
-      return (data as Task[]) || [];
+      return unique;
     } catch (error) {
       console.error('Erro ao buscar tarefas:', error);
       return [];

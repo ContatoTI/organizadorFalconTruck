@@ -17,7 +17,7 @@ class ProjectAPI {
     const client = createClient();
 
     try {
-      // 1. Buscar projetos onde o usuário é DONO
+      // Buscar projetos onde o usuário é DONO
       const { data: ownedProjects, error: ownedError } = await client
         .from('projects')
         .select('*')
@@ -25,7 +25,7 @@ class ProjectAPI {
 
       if (ownedError) throw ownedError;
 
-      // 2. Buscar IDs dos projetos onde o usuário é MEMBRO
+      // Buscar IDs dos projetos onde o usuário é MEMBRO
       const { data: membershipData, error: memberError } = await client
         .from('project_members')
         .select('project_id')
@@ -37,42 +37,18 @@ class ProjectAPI {
         ?.map(m => m.project_id)
         .filter(id => id != null) || [];
 
-      // 3. Buscar projetos onde é MEMBRO (excluindo os que já é dono)
+      // Buscar projetos onde é MEMBRO (excluindo os que já é dono)
       let memberProjects: Project[] = [];
       if (memberProjectIds.length > 0) {
         const ownedIds = new Set((ownedProjects || []).map(p => p.id));
         const onlyMemberIds = memberProjectIds.filter(id => !ownedIds.has(id));
 
         if (onlyMemberIds.length > 0) {
-          // Tenta buscar com IN() primeiro (mais performático)
-          let { data: memberProjectsData, error: memberProjectsError } = await client
-            .from('projects')
-            .select('*')
-            .in('id', onlyMemberIds);
-
-          // Se o IN() falhar ou retornar menos projetos que o esperado, tenta individualmente
-          // (resolve problemas de RLS recém-aplicado ou race conditions)
-          if (memberProjectsError || !memberProjectsData || memberProjectsData.length < onlyMemberIds.length) {
-            const individualResults: Project[] = [];
-            for (const projectId of onlyMemberIds) {
-              const { data, error } = await client
-                .from('projects')
-                .select('*')
-                .eq('id', projectId)
-                .maybeSingle();
-
-              if (!error && data) {
-                individualResults.push(data as Project);
-              }
-            }
-            memberProjects = individualResults;
-          } else {
-            memberProjects = memberProjectsData as Project[];
-          }
+          memberProjects = await this._fetchMemberProjects(client, onlyMemberIds);
         }
       }
 
-      // 4. Combina e remove duplicatas
+      // Combina e remove duplicatas
       const allProjects = [...(ownedProjects || []), ...memberProjects];
       const uniqueProjects = allProjects.filter(
         (project, index, self) => index === self.findIndex(p => p.id === project.id)
@@ -83,6 +59,76 @@ class ProjectAPI {
       console.error('[ProjectAPI] Erro em getUserProjects:', error);
       return [];
     }
+  }
+
+  /**
+   * Buscar projetos por IDs com retry para lidar com timing de RLS
+   */
+  async _fetchMemberProjects(
+    client: ReturnType<typeof createClient>,
+    projectIds: number[],
+    maxRetries = 3
+  ): Promise<Project[]> {
+    const expectedCount = projectIds.length;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      // Tenta IN() primeiro (mais performático)
+      const { data: projectsData, error: projectsError } = await client
+        .from('projects')
+        .select('*')
+        .in('id', projectIds);
+
+      if (!projectsError && projectsData) {
+        const found = projectsData as Project[];
+        if (found.length === expectedCount) {
+          return found;
+        }
+
+        // Tenta buscar os que faltam individualmente
+        const foundIds = new Set(found.map(p => p.id));
+        const missingIds = projectIds.filter(id => !foundIds.has(id));
+
+        if (missingIds.length > 0) {
+          const individualResults: Project[] = [...found];
+          for (const projectId of missingIds) {
+            const { data, error } = await client
+              .from('projects')
+              .select('*')
+              .eq('id', projectId)
+              .maybeSingle();
+
+            if (!error && data) {
+              individualResults.push(data as Project);
+            }
+          }
+
+          if (individualResults.length === expectedCount) {
+            return individualResults;
+          }
+        }
+
+        // Se ainda faltam projetos e temos retries, espera e tenta de novo
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 200 * (attempt + 1)));
+        }
+      } else if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 200 * (attempt + 1)));
+      }
+    }
+
+    // Última tentativa: busca individual sem filtro de IDs (pode pegar projetos
+    // recém-compartilhados que o cache de RLS ainda não expôs via IN())
+    const { data: allAccessible } = await client
+      .from('projects')
+      .select('*');
+
+    if (allAccessible) {
+      const allSet = new Set(projectIds);
+      const matched = (allAccessible as Project[]).filter(p => allSet.has(p.id));
+      if (matched.length > 0) return matched;
+    }
+
+    return [];
   }
 
   /**

@@ -73,13 +73,25 @@ function DashboardContent() {
         .channel('dashboard-changes')
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'project_invites', filter: `invited_user_id=eq.${user.id}` },
-          () => fetchPendingInvites()
+          { event: '*', schema: 'public', table: 'project_invites' },
+          () => {
+            fetchPendingInvites();
+            if (selectedProjectId) {
+              // Atualiza convites pendentes no ShareModal se estiver aberto
+              refreshShareModalData();
+            }
+          }
         )
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'project_members', filter: `user_id=eq.${user.id}` },
-          () => fetchProjects()
+          { event: '*', schema: 'public', table: 'project_members' },
+          () => {
+            fetchProjects();
+            if (selectedProjectId) {
+              // Atualiza membros no ShareModal se estiver aberto
+              refreshShareModalData();
+            }
+          }
         )
         .on(
           'postgres_changes',
@@ -88,8 +100,17 @@ function DashboardContent() {
         )
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'todos', filter: `user_id=eq.${user.id}` },
+          { event: '*', schema: 'public', table: 'todos' },
           () => fetchTasks()
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'sections' },
+          () => {
+            if (selectedProjectId) {
+              fetchSections();
+            }
+          }
         )
         .subscribe();
 
@@ -99,16 +120,36 @@ function DashboardContent() {
       const handleTasksUpdated = () => {
         fetchTasks();
       };
+      const handleInviteProcessed = () => {
+        fetchPendingInvites();
+      };
       window.addEventListener('projects_updated', handleProjectsUpdated);
       window.addEventListener('tasks-updated', handleTasksUpdated);
+      window.addEventListener('invite_processed', handleInviteProcessed);
 
       return () => {
         client.removeChannel(channel);
         window.removeEventListener('projects_updated', handleProjectsUpdated);
         window.removeEventListener('tasks-updated', handleTasksUpdated);
+        window.removeEventListener('invite_processed', handleInviteProcessed);
       };
     }
-  }, [user]);
+  }, [user, selectedProjectId]);
+
+  // Função para atualizar dados do ShareModal
+  const refreshShareModalData = async () => {
+    if (!selectedProject) return;
+    const members = await projectAPI.getProjectMembers(selectedProject.id);
+    setProjectMembers(members.map(m => ({ userId: m.user_id, memberId: m.id })));
+    
+    const { data: invites } = await client
+      .from('project_invites')
+      .select('invited_user_id')
+      .eq('project_id', selectedProject.id)
+      .eq('status', 'pending');
+    
+    setProjectPendingInvites(invites?.map(i => i.invited_user_id) || []);
+  };
 
   useEffect(() => {
     if (user && selectedProjectId) {
@@ -254,27 +295,39 @@ function DashboardContent() {
     const result = await notificationAPI.acceptInvite(inviteId, projectId, user.id);
 
     if (result.success) {
-      // Insere o projeto recém-aceito diretamente no estado local (igual à criação de projeto).
-      if (result.project) {
-        setProjects((prev) => {
-          if (prev.some((p) => p.id === result.project!.id)) return prev;
-          return [...prev, result.project!];
-        });
-      }
+      // Adiciona o projeto ao estado local imediatamente (com ou sem dados da notificação)
+      const inviteNotification = pendingInvites.find(inv => inv.id === inviteId);
+      setProjects((prev) => {
+        if (prev.some((p) => p.id === projectId)) return prev;
+        return [...prev, {
+          id: projectId,
+          owner_id: '',
+          name: inviteNotification?.project_title || 'Projeto',
+          color: inviteNotification?.project_color || '#6366f1',
+        }];
+      });
 
-      // Refaz o fetch em background para sincronizar com qualquer mudança paralela.
+      // fetchProjects faz MERGE, então o item local não é sobrescrito
       await fetchProjects();
 
       // Notifica outros componentes (como o layout/sidebar) para atualizarem
-      window.dispatchEvent(new CustomEvent('projects_updated'));
+      window.dispatchEvent(new CustomEvent('projects_updated', {
+        detail: {
+          projectId,
+          name: inviteNotification?.project_title || 'Projeto',
+          color: inviteNotification?.project_color || '#6366f1',
+        },
+      }));
+      window.dispatchEvent(new CustomEvent('invite_processed'));
 
-      // Remove o convite da lista local
-      setPendingInvites(prev => prev.filter(inv => inv.id !== inviteId));
-
-      // Fecha o modal se não houver mais convites
-      if (pendingInvites.length <= 1) {
-        setShowInviteModal(false);
-      }
+      // Remove o convite da lista local e fecha o modal se não houver mais
+      setPendingInvites(prev => {
+        const next = prev.filter(inv => inv.id !== inviteId);
+        if (next.length === 0) {
+          setShowInviteModal(false);
+        }
+        return next;
+      });
     } else {
       alert(`Erro ao aceitar convite: ${result.error}`);
     }
@@ -282,8 +335,12 @@ function DashboardContent() {
 
   const declineInvite = async (inviteId: number) => {
     await notificationAPI.declineInvite(inviteId);
-    setPendingInvites(pendingInvites.filter(inv => inv.id !== inviteId));
-    if (pendingInvites.length <= 1) setShowInviteModal(false);
+    setPendingInvites(prev => {
+      const next = prev.filter(inv => inv.id !== inviteId);
+      if (next.length === 0) setShowInviteModal(false);
+      return next;
+    });
+    window.dispatchEvent(new CustomEvent('invite_processed'));
   };
 
   const handleAddTask = async (sectionId?: number) => {

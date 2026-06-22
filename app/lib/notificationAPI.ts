@@ -4,7 +4,6 @@
  */
 
 import { createClient } from '@/app/lib/supabase/Client';
-import type { Project } from '@/types/index';
 
 export interface PendingInvite {
   id: number;
@@ -37,75 +36,62 @@ class NotificationAPI {
   }> {
     const client = createClient();
 
-    // 1. Buscar IDs de projetos do usuário em paralelo
-    const [ownProjectsRes, memberProjectsRes, pendingInvitesRes, declinedInvitesRes] = await Promise.all([
+    // 1. Buscar IDs de projetos do usuário primeiro
+    const [ownProjectsRes, memberProjectsRes] = await Promise.all([
       client.from('projects').select('id, name, color').eq('owner_id', userId),
       client.from('project_members').select('project_id').eq('user_id', userId),
-      client
-        .from('project_invites')
-        .select('id, project_id, invited_by_user_id, created_at')
-        .eq('invited_user_id', userId)
-        .eq('status', 'pending'),
-      client
-        .from('project_invites')
-        .select('id, project_id, invited_user_id, created_at')
-        .eq('status', 'declined'),
     ]);
 
-    // Combinar IDs de projetos do usuário
     const userProjectIds = new Set<number>();
     ownProjectsRes.data?.forEach((p: any) => userProjectIds.add(p.id));
     memberProjectsRes.data?.forEach((m: any) => userProjectIds.add(m.project_id));
 
-    // 2. Buscar profiles e projects em paralelo
-    const inviterIds = new Set<string>();
-    pendingInvitesRes.data?.forEach((i: any) => inviterIds.add(i.invited_by_user_id));
-
-    const declinedUserIds = new Set<string>();
-    declinedInvitesRes.data?.forEach((d: any) => declinedUserIds.add(d.invited_user_id));
-
-    const allUserIds = new Set([...inviterIds, ...declinedUserIds]);
-    const allProjectIds = new Set<number>();
-    pendingInvitesRes.data?.forEach((i: any) => allProjectIds.add(i.project_id));
-    declinedInvitesRes.data?.forEach((d: any) => {
-      if (userProjectIds.has(d.project_id)) allProjectIds.add(d.project_id);
-    });
-
-    const [profilesRes, projectsRes] = await Promise.all([
-      allUserIds.size > 0
-        ? client.from('profiles').select('id, full_name, email').in('id', Array.from(allUserIds))
-        : { data: [] },
-      allProjectIds.size > 0
-        ? client.from('projects').select('id, name, color').in('id', Array.from(allProjectIds))
+    // 2. Buscar convites pendentes com JOIN para obter nome/cor do projeto diretamente
+    const [pendingInvitesRes, declinedInvitesRes] = await Promise.all([
+      client
+        .from('project_invites')
+        .select('id, project_id, invited_by_user_id, created_at, projects(id, name, color)')
+        .eq('invited_user_id', userId)
+        .eq('status', 'pending'),
+      userProjectIds.size > 0
+        ? client
+            .from('project_invites')
+            .select('id, project_id, invited_user_id, created_at, projects(id, name, color)')
+            .in('project_id', Array.from(userProjectIds))
+            .eq('status', 'declined')
         : { data: [] },
     ]);
 
-    // 3. Montar maps para lookup O(1)
+    // 3. Buscar profiles dos invitantes
+    const allUserIds = new Set<string>();
+    pendingInvitesRes.data?.forEach((i: any) => allUserIds.add(i.invited_by_user_id));
+    declinedInvitesRes.data?.forEach((d: any) => allUserIds.add(d.invited_user_id));
+
+    const profilesRes = allUserIds.size > 0
+      ? await client.from('profiles').select('id, full_name, email').in('id', Array.from(allUserIds))
+      : { data: [] };
+
     const profilesMap = new Map<string, any>();
-    profilesRes.data?.forEach((p: any) => profilesMap.set(p.id, p));
+    (profilesRes.data || []).forEach((p: any) => profilesMap.set(p.id, p));
 
-    const projectsMap = new Map<number, any>();
-    projectsRes.data?.forEach((p: any) => projectsMap.set(p.id, p));
-
-    // 4. Formatar convites pendentes
+    // 4. Formatar convites pendentes (projeto vem do JOIN)
     const pendingInvites: PendingInvite[] = (pendingInvitesRes.data || []).map((inv: any) => ({
       id: inv.id,
       project_id: inv.project_id,
-      project_title: projectsMap.get(inv.project_id)?.name || 'Projeto',
-      project_color: projectsMap.get(inv.project_id)?.color || '#6366f1',
+      project_title: inv.projects?.name || 'Projeto',
+      project_color: inv.projects?.color || '#6366f1',
       inviter_name: profilesMap.get(inv.invited_by_user_id)?.full_name || 'Usuário',
       inviter_email: profilesMap.get(inv.invited_by_user_id)?.email || '',
       created_at: inv.created_at,
     }));
 
-    // 5. Formatar recusas (apenas dos projetos do usuário)
+    // 5. Formatar recusas (projeto vem do JOIN)
     const declineNotifications: DeclineNotification[] = (declinedInvitesRes.data || [])
-      .filter((d: any) => userProjectIds.has(d.project_id))
       .map((dec: any) => ({
         id: dec.id,
         project_id: dec.project_id,
-        project_title: projectsMap.get(dec.project_id)?.name || 'Projeto',
-        project_color: projectsMap.get(dec.project_id)?.color || '#6366f1',
+        project_title: dec.projects?.name || 'Projeto',
+        project_color: dec.projects?.color || '#6366f1',
         declined_user_name: profilesMap.get(dec.invited_user_id)?.full_name || 'Usuário',
         invited_user_id: dec.invited_user_id,
         created_at: dec.created_at,
@@ -123,11 +109,27 @@ class NotificationAPI {
     inviteId: number,
     projectId: number,
     userId: string
-  ): Promise<{ success: boolean; project?: Project; error?: string }> {
+  ): Promise<{ success: boolean; error?: string }> {
     const client = createClient();
 
     try {
-      // 1. Verificar se já é membro (evita duplicação)
+      // 1. Validar que o convite existe e pertence a este usuário
+      const { data: invite, error: inviteError } = await client
+        .from('project_invites')
+        .select('id, status')
+        .eq('id', inviteId)
+        .eq('invited_user_id', userId)
+        .single();
+
+      if (inviteError || !invite) {
+        return { success: false, error: 'Convite não encontrado ou não pertence a você' };
+      }
+
+      if (invite.status !== 'pending') {
+        return { success: false, error: 'Convite já foi processado' };
+      }
+
+      // 2. Verificar se já é membro (evita duplicação)
       const { data: existingMember } = await client
         .from('project_members')
         .select('id')
@@ -136,34 +138,18 @@ class NotificationAPI {
         .maybeSingle();
 
       if (!existingMember) {
-        // 2. Insere o membro PRIMEIRO. Se falhar, o convite continua pendente.
+        // 3. Insere o membro no projeto
         const { error: insertError } = await client
           .from('project_members')
           .insert({ project_id: projectId, user_id: userId });
 
         if (insertError) {
           console.error('[NotificationAPI] Erro ao inserir membro:', insertError);
-          throw insertError;
+          return { success: false, error: insertError.message };
         }
       }
 
-      // 3. Pequeno delay para garantir que o RLS do Supabase pegue a nova permissão
-      // (evita race condition entre inserção e leitura)
-      await new Promise(resolve => setTimeout(resolve, 300));
-
-      // 4. Buscar dados completos do projeto (para inserir no estado local)
-      const { data: project, error: projectError } = await client
-        .from('projects')
-        .select('*')
-        .eq('id', projectId)
-        .maybeSingle();
-
-      if (projectError) {
-        console.error('[NotificationAPI] Erro ao buscar projeto:', projectError);
-        throw projectError;
-      }
-
-      // 5. Atualizar status do convite
+      // 4. Atualizar status do convite para 'accepted'
       const { error: updateError } = await client
         .from('project_invites')
         .update({ status: 'accepted' })
@@ -171,10 +157,10 @@ class NotificationAPI {
 
       if (updateError) {
         console.error('[NotificationAPI] Erro ao atualizar convite:', updateError);
-        throw updateError;
+        return { success: false, error: updateError.message };
       }
 
-      return { success: true, project: project as Project | undefined };
+      return { success: true };
     } catch (error: any) {
       console.error('[NotificationAPI] Erro ao aceitar convite:', error);
       return { success: false, error: error.message };
