@@ -36,6 +36,7 @@ export interface Task {
   view_group_id: number | null;
   project_id: number | null;
   section_id: number | null;
+  position: number;
   created_at: string;
 }
 

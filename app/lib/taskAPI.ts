@@ -104,6 +104,38 @@ class TaskAPI {
       }
 
       const client = createClient();
+
+      // Calcula a próxima posição no escopo correto (projeto ou seção)
+      let nextPosition = 0;
+      if (sectionId) {
+        const { data, error: posErr } = await client
+          .from('todos')
+          .select('position')
+          .eq('section_id', sectionId)
+          .order('position', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (posErr) console.error('[taskAPI.createTask] erro query position (section):', JSON.stringify(posErr, null, 2));
+        nextPosition = ((data as { position: number } | null)?.position ?? -1) + 1;
+      } else if (projectId) {
+        const { data, error: posErr } = await client
+          .from('todos')
+          .select('position')
+          .eq('project_id', projectId)
+          .order('position', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (posErr) console.error('[taskAPI.createTask] erro query position (project):', JSON.stringify(posErr, null, 2));
+        nextPosition = ((data as { position: number } | null)?.position ?? -1) + 1;
+      } else {
+        // Tarefas pessoais: agrupa por view_group_id quando houver
+        let q = client.from('todos').select('position').eq('user_id', userId);
+        if (groupId) q = q.eq('view_group_id', groupId);
+        const { data, error: posErr } = await q.order('position', { ascending: false }).limit(1).maybeSingle();
+        if (posErr) console.error('[taskAPI.createTask] erro query position (personal):', JSON.stringify(posErr, null, 2));
+        nextPosition = ((data as { position: number } | null)?.position ?? -1) + 1;
+      }
+
       const { data, error } = await client
         .from('todos')
         .insert({
@@ -113,12 +145,27 @@ class TaskAPI {
           section_id: sectionId || null,
           view_group_id: groupId || null,
           due_date: dueDate || null,
+          position: nextPosition,
           is_completed: false,
         })
         .select()
         .single();
 
-      if (error) return { success: false, error: error.message };
+      if (error) {
+        // Log detalhado para diagnosticar 400 Bad Request do PostgREST
+        console.error('[taskAPI.createTask] payload enviado:', {
+          user_id: userId,
+          title: title.trim(),
+          project_id: projectId || null,
+          section_id: sectionId || null,
+          view_group_id: groupId || null,
+          due_date: dueDate || null,
+          position: nextPosition,
+          is_completed: false,
+        });
+        console.error('[taskAPI.createTask] erro Supabase:', JSON.stringify(error, null, 2));
+        return { success: false, error: error.message };
+      }
       return { success: true, data: data as Task };
     } catch (error) {
       return { success: false, error: (error as Error).message };

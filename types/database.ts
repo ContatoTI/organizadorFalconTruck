@@ -18,6 +18,7 @@ export interface Tables {
       project_id: number | null
       section_id: number | null
       due_date: string | null
+      position: number
       created_at: string
     }
     Insert: {
@@ -30,6 +31,7 @@ export interface Tables {
       project_id?: number | null
       section_id?: number | null
       due_date?: string | null
+      position?: number
       created_at?: string
     }
     Update: {
@@ -42,6 +44,7 @@ export interface Tables {
       project_id?: number | null
       section_id?: number | null
       due_date?: string | null
+      position?: number
       created_at?: string
     }
   }
