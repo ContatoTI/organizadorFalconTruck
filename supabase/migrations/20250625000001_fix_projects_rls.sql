@@ -44,7 +44,7 @@ returns boolean as $$
   ) or exists (
     select 1 from public.projects where id = p_project_id and owner_id = p_user_id
   );
-$$ language sql stable security definer security definer;
+$$ language sql stable security definer;
 
 -- Adiciona índice para melhorar performance da query de membros
 create index if not exists idx_project_members_user_id on public.project_members(user_id);

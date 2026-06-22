@@ -7,8 +7,6 @@ import { createClient } from '@/app/lib/supabase/Client';
 import type { Project, ProjectMember } from '@/types/index';
 
 class ProjectAPI {
-  private client = createClient();
-
   /**
    * Buscar todos os projetos do usuário (próprios + compartilhados)
    * Otimizado para evitar queries N+1

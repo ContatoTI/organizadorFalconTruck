@@ -93,8 +93,7 @@ export interface Tables {
       description: string
       amount: number
       date: string
-      type: 'payable' | 'receivable'
-      status: 'pending' | 'paid' | 'overdue'
+      type: 'income' | 'expense'
       category: string | null
       created_at: string
     }
@@ -104,8 +103,7 @@ export interface Tables {
       description: string
       amount: number
       date: string
-      type: 'payable' | 'receivable'
-      status?: 'pending' | 'paid' | 'overdue'
+      type: 'income' | 'expense'
       category?: string | null
       created_at?: string
     }
@@ -115,8 +113,7 @@ export interface Tables {
       description?: string
       amount?: number
       date?: string
-      type?: 'payable' | 'receivable'
-      status?: 'pending' | 'paid' | 'overdue'
+      type?: 'income' | 'expense'
       category?: string | null
       created_at?: string
     }
@@ -156,7 +153,6 @@ export interface Tables {
       owner_id: string
       name: string
       color: string | null
-      shared_with: string[] | null
       created_at: string
     }
     Insert: {
@@ -164,7 +160,6 @@ export interface Tables {
       owner_id: string
       name: string
       color?: string | null
-      shared_with?: string[] | null
       created_at?: string
     }
     Update: {
@@ -172,7 +167,6 @@ export interface Tables {
       owner_id?: string
       name?: string
       color?: string | null
-      shared_with?: string[] | null
       created_at?: string
     }
   }

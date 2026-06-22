@@ -66,7 +66,7 @@ function DashboardContent() {
       fetchGroups();
       fetchProjects();
       fetchTasks();
-      fetchPendingInvites();
+      fetchPendingInvites(true);
       
       // Inscrição para atualizações em tempo real
       const channel = client
@@ -100,12 +100,22 @@ function DashboardContent() {
         )
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'todos' },
+          {
+            event: '*',
+            schema: 'public',
+            table: 'todos',
+            ...(selectedProjectId ? { filter: `project_id=eq.${selectedProjectId}` } : {}),
+          },
           () => fetchTasks()
         )
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'sections' },
+          {
+            event: '*',
+            schema: 'public',
+            table: 'sections',
+            ...(selectedProjectId ? { filter: `project_id=eq.${selectedProjectId}` } : {}),
+          },
           () => {
             if (selectedProjectId) {
               fetchSections();
@@ -274,16 +284,19 @@ function DashboardContent() {
   const fetchTasks = async () => {
     if (!user) return;
     setLoading(true);
-    const data = await taskAPI.getUserTasks(user.id, { showCompleted: true });
+    const data = await taskAPI.getUserTasks(user.id, {
+      showCompleted: true,
+      ...(selectedProjectId ? { projectId: parseInt(selectedProjectId) } : {}),
+    });
     setTasks(data);
     setLoading(false);
   };
 
-  const fetchPendingInvites = async () => {
+  const fetchPendingInvites = async (isInitialLoad = false) => {
     if (!user) return;
     const invites = await notificationAPI.getPendingInvites(user.id);
     setPendingInvites(invites);
-    if (invites.length > 0) {
+    if (isInitialLoad && invites.length > 0) {
       setShowInviteModal(true);
     }
     setInvitesLoaded(true);
@@ -334,7 +347,12 @@ function DashboardContent() {
   };
 
   const declineInvite = async (inviteId: number) => {
-    await notificationAPI.declineInvite(inviteId);
+    if (!user) return;
+    const result = await notificationAPI.declineInvite(inviteId, user.id);
+    if (!result.success) {
+      console.error('Erro ao recusar convite:', result.error);
+      return;
+    }
     setPendingInvites(prev => {
       const next = prev.filter(inv => inv.id !== inviteId);
       if (next.length === 0) setShowInviteModal(false);
@@ -343,8 +361,8 @@ function DashboardContent() {
     window.dispatchEvent(new CustomEvent('invite_processed'));
   };
 
-  const handleAddTask = async (sectionId?: number) => {
-    const title = newTaskTitle.trim();
+  const handleAddTask = async (sectionId?: number, titleParam?: string) => {
+    const title = (titleParam ?? newTaskTitle).trim();
     if (!title || !user) return;
 
     const result = await taskAPI.createTask(
@@ -356,7 +374,7 @@ function DashboardContent() {
     );
 
     if (result.success) {
-      setNewTaskTitle('');
+      if (!titleParam) setNewTaskTitle('');
       await fetchTasks();
     }
   };
@@ -373,13 +391,14 @@ function DashboardContent() {
 
   const createSection = async (title: string) => {
     if (!title.trim() || !user || !selectedProjectId) return;
+    const nextOrder = sections.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
     const { data } = await client
       .from('sections')
       .insert({
         user_id: user.id,
         project_id: parseInt(selectedProjectId),
         title: title.trim(),
-        order: sections.length,
+        order: nextOrder,
       })
       .select()
       .single();
@@ -894,9 +913,9 @@ function DashboardContent() {
                           className="h-8 text-sm bg-transparent border-none shadow-none focus-visible:ring-0 px-0"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                              setNewTaskTitle(e.currentTarget.value.trim());
-                              handleAddTask(section.id);
+                              const title = e.currentTarget.value.trim();
                               e.currentTarget.value = '';
+                              handleAddTask(section.id, title);
                             }
                           }}
                         />

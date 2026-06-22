@@ -7,8 +7,6 @@ import { createClient } from '@/app/lib/supabase/Client';
 import type { Task } from '@/types/index';
 
 class TaskAPI {
-  private client = createClient();
-
   /**
    * Buscar tarefas do usuário com filtros opcionais
    */

@@ -11,6 +11,7 @@ import { notificationAPI } from '@/app/lib/notificationAPI';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { NotificationBell, NotificationsPanel } from '@/app/components/NotificationsPanel';
 import { ProjectsView } from '@/app/components/ProjectsView';
+import type { Project } from '@/types/index';
 import {
   LayoutDashboard,
   Calendar,
@@ -29,24 +30,6 @@ import {
   Check,
   Trash2,
 } from 'lucide-react';
-
-interface Notification {
-  id: number;
-  type: 'invite_received' | 'invite_declined';
-  project_id?: number;
-  project_title?: string;
-  project_color?: string;
-  invited_user_name?: string;
-  inviter_name?: string;
-  created_at: string;
-}
-
-interface Project {
-  id: number;
-  owner_id: string;
-  name: string;
-  color: string;
-}
 
 export default function DefaultLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -241,11 +224,11 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     const curUser = userRef.current;
     if (!curUser) return;
 
-    await client
-      .from('project_invites')
-      .update({ status: 'declined' })
-      .eq('id', inviteId)
-      .eq('invited_user_id', curUser.id);
+    const result = await notificationAPI.declineInvite(inviteId, curUser.id);
+    if (!result.success) {
+      console.error('[Layout] Erro ao recusar convite:', result.error);
+      return;
+    }
 
     fetchNotifications();
     window.dispatchEvent(new CustomEvent('invite_processed'));
@@ -264,22 +247,22 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     const curUser = userRef.current;
     if (!curUser) return;
 
-    // Deletar convite recusado
-    await client
+    const { error: deleteError } = await client
       .from('project_invites')
       .delete()
       .eq('project_id', projectId)
       .eq('invited_user_id', userId);
 
-    // Criar novo convite
-    await client
-      .from('project_invites')
-      .insert({
-        project_id: projectId,
-        invited_user_id: userId,
-        invited_by_user_id: curUser.id,
-        status: 'pending'
-      });
+    if (deleteError) {
+      console.error('[Layout] Erro ao remover convite recusado:', deleteError);
+      return;
+    }
+
+    const result = await projectAPI.inviteUserToProject(projectId, userId, curUser.id);
+    if (!result.success) {
+      console.error('[Layout] Erro ao re-convidar usuário:', result.error);
+      return;
+    }
 
     fetchNotifications();
   };
@@ -345,34 +328,24 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const createProject = async () => {
     if (!newProjectName.trim() || !user) return;
 
-    const { data, error } = await client
-      .from('projects')
-      .insert({
-        owner_id: user.id,
-        name: newProjectName,
-        color: newProjectColor,
-      })
-      .select()
-      .single();
+    const result = await projectAPI.createProject(user.id, newProjectName, newProjectColor);
 
-    if (error) {
-      console.error('Error creating project:', error?.message || JSON.stringify(error) || 'Erro desconhecido');
+    if (!result.success || !result.data) {
+      console.error('Erro ao criar projeto:', result.error);
       return;
     }
 
-    if (data) {
-      setProjects(prev => [...prev, data]);
-      setNewProjectName('');
-      setNewProjectColor('#6366f1');
-      setShowProjectModal(false);
-      window.dispatchEvent(new CustomEvent('projects_updated', {
-        detail: {
-          projectId: data.id,
-          name: data.name,
-          color: data.color,
-        },
-      }));
-    }
+    setProjects(prev => [...prev, result.data!]);
+    setNewProjectName('');
+    setNewProjectColor('#6366f1');
+    setShowProjectModal(false);
+    window.dispatchEvent(new CustomEvent('projects_updated', {
+      detail: {
+        projectId: result.data.id,
+        name: result.data.name,
+        color: result.data.color,
+      },
+    }));
   };
 
   const handleLogout = async () => {

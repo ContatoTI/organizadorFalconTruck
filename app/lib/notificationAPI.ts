@@ -167,13 +167,19 @@ class NotificationAPI {
     }
   }
 
-  async declineInvite(inviteId: number): Promise<boolean> {
+  async declineInvite(inviteId: number, userId: string): Promise<{ success: boolean; error?: string }> {
     const client = createClient();
-    await client
+    const { error } = await client
       .from('project_invites')
       .update({ status: 'declined' })
-      .eq('id', inviteId);
-    return true;
+      .eq('id', inviteId)
+      .eq('invited_user_id', userId);
+
+    if (error) {
+      console.error('[NotificationAPI] Erro ao recusar convite:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
   }
 }
 
