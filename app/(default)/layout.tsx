@@ -10,6 +10,7 @@ import { projectAPI } from '@/app/lib/projectAPI';
 import { notificationAPI } from '@/app/lib/notificationAPI';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { NotificationBell, NotificationsPanel } from '@/app/components/NotificationsPanel';
+import { ProjectsView } from '@/app/components/ProjectsView';
 import {
   LayoutDashboard,
   Calendar,
@@ -61,6 +62,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectColor, setNewProjectColor] = useState('#6366f1');
+  const [showProjectsView, setShowProjectsView] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [pendingInvites, setPendingInvites] = useState<any[]>([]);
   const [declineNotifications, setDeclineNotifications] = useState<any[]>([]);
@@ -76,6 +78,10 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const fetchProjectsRef = useRef<() => Promise<void>>(async () => {});
   const mergeProjectsRef = useRef<(serverProjects: Project[]) => void>(() => {});
   const fetchNotificationsRef = useRef<() => Promise<void>>(async () => {});
+
+  useEffect(() => {
+    setShowProjectsView(false);
+  }, [pathname]);
 
   useEffect(() => {
     const getUser = async () => {
@@ -441,8 +447,8 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
       {/* Modal para criar projeto */}
       {showProjectModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-xl p-6 w-80 shadow-xl">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-80 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Novo Projeto</h3>
               <button onClick={() => setShowProjectModal(false)} className="p-1 hover:bg-accent rounded">
@@ -648,7 +654,10 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
               {/* PROJETOS (Nova seção) */}
               <div>
                 <div
-                  onClick={() => toggleSection('projetos')}
+                  onClick={() => {
+                    toggleSection('projetos');
+                    setShowProjectsView(true);
+                  }}
                   className="flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:bg-accent/50 rounded-md transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-2">
@@ -695,6 +704,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                         >
                           <Link
                             href={`/?project=${project.id}`}
+                            onClick={() => setShowProjectsView(false)}
                             className="flex-1 flex items-center gap-2"
                           >
                             <div
@@ -785,7 +795,18 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto">{children}</main>
+      <main className="flex-1 overflow-y-auto">
+        {showProjectsView && user ? (
+          <ProjectsView
+            projects={projects}
+            userId={user.id}
+            onUpdateProjects={setProjects}
+            onClose={() => setShowProjectsView(false)}
+          />
+        ) : (
+          children
+        )}
+      </main>
     </div>
   );
 }
