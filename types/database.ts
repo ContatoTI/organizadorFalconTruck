@@ -274,6 +274,26 @@ export interface Tables {
       created_at?: string
     }
   }
+  task_view_groups: {
+    Row: {
+      id: number
+      task_id: number
+      view_group_id: number
+      created_at: string
+    }
+    Insert: {
+      id?: number
+      task_id: number
+      view_group_id: number
+      created_at?: string
+    }
+    Update: {
+      id?: number
+      task_id?: number
+      view_group_id?: number
+      created_at?: string
+    }
+  }
   events: {
     Row: {
       id: number

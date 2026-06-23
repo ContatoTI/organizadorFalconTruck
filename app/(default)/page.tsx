@@ -394,12 +394,14 @@ function DashboardContent() {
     window.dispatchEvent(new CustomEvent('invite_processed'));
   };
 
-  const handleAddTask = async (sectionId?: number, titleParam?: string) => {
+  const handleAddTask = async (sectionId?: number, titleParam?: string, groupOverrideId?: number) => {
     const raw = (titleParam ?? newTaskTitle).trim();
     if (!raw || !user) return;
 
     const titles = raw.split('\n').map(t => t.trim()).filter(Boolean);
     if (titles.length === 0) return;
+
+    const effectiveGroupId = groupOverrideId ?? (selectedGroupId && !selectedProjectId ? parseInt(selectedGroupId) : undefined);
 
     for (const title of titles) {
       await taskAPI.createTask(
@@ -407,7 +409,7 @@ function DashboardContent() {
         title,
         selectedProjectId ? parseInt(selectedProjectId) : undefined,
         sectionId,
-        selectedGroupId && !selectedProjectId ? parseInt(selectedGroupId) : undefined
+        effectiveGroupId
       );
     }
 
@@ -1293,8 +1295,7 @@ function DashboardContent() {
               ))}
 
               {/* Tarefas sem seção */}
-              {(getTasksBySection(null).length > 0 || draggingTaskId) && (
-                <Card
+              <Card
                   className={cn(
                     "bg-card border-border overflow-hidden shadow-card transition-all duration-200",
                     dragOverSectionId === 'unsectioned' && "ring-2 ring-primary/40 bg-primary/5 shadow-card-hover"
@@ -1321,9 +1322,21 @@ function DashboardContent() {
                         Solte tarefas aqui para removê-las da organização
                       </div>
                     )}
+                    <div className="px-4 py-2 border-t border-border/40">
+                      <Input
+                        placeholder="Adicionar tarefa..."
+                        className="h-8 text-sm bg-transparent border-none shadow-none focus-visible:ring-0 px-0"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                            const title = e.currentTarget.value.trim();
+                            e.currentTarget.value = '';
+                            handleAddTask(undefined, title);
+                          }
+                        }}
+                      />
+                    </div>
                   </div>
                 </Card>
-              )}
 
               {/* Botão nova seção */}
               <div className="flex items-center gap-2">
@@ -1394,6 +1407,21 @@ function DashboardContent() {
                     </div>
                     <div className="border border-border rounded-xl overflow-hidden bg-card shadow-card">
                       {groupTasks.map((task) => renderTaskItem(task, undefined, groupId.startsWith('group:') ? parseInt(groupId.split(':')[1]) : undefined))}
+                      {groupId.startsWith('group:') && (
+                        <div className="px-4 py-2 border-t border-border/40">
+                          <Input
+                            placeholder="Adicionar tarefa..."
+                            className="h-8 text-sm bg-transparent border-none shadow-none focus-visible:ring-0 px-0"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                                const title = e.currentTarget.value.trim();
+                                e.currentTarget.value = '';
+                                handleAddTask(undefined, title, parseInt(groupId.split(':')[1]));
+                              }
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -1403,6 +1431,19 @@ function DashboardContent() {
               {selectedGroup && (
                 <div className="border border-border rounded-xl overflow-hidden bg-card shadow-card">
                   {filteredTasks.map((task) => renderTaskItem(task, undefined, selectedGroup.id))}
+                  <div className="px-4 py-2 border-t border-border/40">
+                    <Input
+                      placeholder="Adicionar tarefa..."
+                      className="h-8 text-sm bg-transparent border-none shadow-none focus-visible:ring-0 px-0"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                          const title = e.currentTarget.value.trim();
+                          e.currentTarget.value = '';
+                          handleAddTask(undefined, title);
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
               )}
             </>

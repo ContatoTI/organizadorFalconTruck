@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
-import { Plus, X, Edit, Trash2, Check } from 'lucide-react';
+import { Plus, X, Edit, Trash2, Check, XCircle } from 'lucide-react';
 import { taskAPI } from '@/app/lib/taskAPI';
 import type { Task, Group } from '@/types/index';
 import { Button } from '@/components/ui/button';
@@ -205,11 +205,40 @@ export default function TodosPage() {
                 >
                   {task.title}
                 </button>
-                {task.view_group_id && groups.find(g => g.id === task.view_group_id) && (
-                  <span className="ml-2 text-xs bg-muted px-2 py-0.5 rounded">
-                    {groups.find(g => g.id === task.view_group_id)?.title}
-                  </span>
-                )}
+                {(() => {
+                  const allGroupIds: number[] = [];
+                  if (task.view_group_id) allGroupIds.push(task.view_group_id);
+                  if (task.linked_view_group_ids?.length) {
+                    task.linked_view_group_ids.forEach(id => {
+                      if (!allGroupIds.includes(id)) allGroupIds.push(id);
+                    });
+                  }
+                  return allGroupIds.map(gid => {
+                    const g = groups.find(g => g.id === gid);
+                    if (!g) return null;
+                    return (
+                      <span key={gid} className="ml-1 text-xs bg-muted px-2 py-0.5 rounded inline-flex items-center gap-1">
+                        {g.title}
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            await taskAPI.removeTaskFromGroup(task.id, gid);
+                            setTasks(prev => prev.map(t =>
+                              t.id === task.id ? {
+                                ...t,
+                                view_group_id: t.view_group_id === gid ? null : t.view_group_id,
+                                linked_view_group_ids: t.linked_view_group_ids?.filter(id => id !== gid) || []
+                              } : t
+                            ));
+                          }}
+                          className="hover:text-destructive"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    );
+                  });
+                })()}
               </div>
               <Button
                 variant="ghost"
