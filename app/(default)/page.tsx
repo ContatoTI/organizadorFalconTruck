@@ -18,6 +18,11 @@ import { Badge } from '@/components/ui/badge';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
 
 function DashboardContent() {
+  const STATUS_GROUPS = [
+    { key: 'a_fazer', label: 'A fazer', match: (s: string | null | undefined) => !s || s === 'a_fazer' },
+    { key: 'em_andamento', label: 'Em andamento', match: (s: string | null | undefined) => s === 'em_andamento' },
+    { key: 'concluida', label: 'Concluído', match: (s: string | null | undefined) => s === 'concluida' },
+  ] as const;
   const [user, setUser] = useState<AppUser | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -45,6 +50,7 @@ function DashboardContent() {
   const [dragOverTaskId, setDragOverTaskId] = useState<number | null>(null);
   const [dropPosition, setDropPosition] = useState<'before' | 'after' | null>(null);
   const [droppedTaskId, setDroppedTaskId] = useState<number | null>(null);
+  const [dragOverStatusGroup, setDragOverStatusGroup] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -479,6 +485,12 @@ function DashboardContent() {
     return projectTasks.filter(t => sectionId === null ? t.section_id == null : t.section_id === sectionId);
   };
 
+  const getTasksBySectionAndStatus = (sectionId: number | null, statusKey: string) => {
+    const group = STATUS_GROUPS.find(g => g.key === statusKey);
+    if (!group) return [];
+    return getTasksBySection(sectionId).filter(t => group.match(t.status));
+  };
+
   const filteredTasks = tasks.filter(t => {
     if (onlyToday) {
       const today = new Date().toISOString().split('T')[0];
@@ -582,6 +594,7 @@ function DashboardContent() {
     setDragOverSectionId(null);
     setDragOverTaskId(null);
     setDropPosition(null);
+    setDragOverStatusGroup(null);
   };
 
   const handleDragOverSection = (e: React.DragEvent, sectionId: number | 'unsectioned') => {
@@ -596,6 +609,21 @@ function DashboardContent() {
       setDragOverSectionId(null);
       setDragOverTaskId(null);
       setDropPosition(null);
+      setDragOverStatusGroup(null);
+    }
+  };
+
+  const handleDragOverStatusGroup = (e: React.DragEvent, sectionId: number | null, statusKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverSectionId(sectionId === null ? 'unsectioned' : sectionId);
+    setDragOverStatusGroup(statusKey);
+  };
+
+  const handleDragLeaveStatusGroup = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOverStatusGroup(null);
     }
   };
 
@@ -643,12 +671,63 @@ function DashboardContent() {
     setDroppedTaskId(taskId);
     setTimeout(() => setDroppedTaskId(null), 600);
 
+    // OPTIMISTIC UPDATE: move task to new section in local state immediately
+    setTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, section_id: sectionId } : t
+    ));
+
+    // Reset all drag state immediately (clears opacity/ghost styles)
     setDraggingTaskId(null);
     setDragOverSectionId(null);
     setDragOverTaskId(null);
     setDropPosition(null);
+    setDragOverStatusGroup(null);
+
+    // Persist to database and reconcile in background
+    await taskAPI.moveTaskAndReorder(taskId, sectionId, insertIndex, parseInt(selectedProjectId));
+    await fetchTasks();
+    window.dispatchEvent(new CustomEvent('tasks-updated'));
+  };
+
+  const handleDropOnStatusGroup = async (e: React.DragEvent, sectionId: number | null, statusKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const taskIdStr = e.dataTransfer.getData('taskId');
+    if (!taskIdStr || !user || !selectedProjectId) {
+      handleDragEnd();
+      return;
+    }
+
+    const taskId = parseInt(taskIdStr);
+
+    const targetTasks = getTasksBySectionAndStatus(sectionId, statusKey)
+      .filter(t => t.id !== taskId);
+
+    let insertIndex = targetTasks.length;
+    if (dragOverTaskId) {
+      const idx = targetTasks.findIndex(t => t.id === dragOverTaskId);
+      if (idx !== -1) {
+        insertIndex = dropPosition === 'before' ? idx : idx + 1;
+      }
+    }
+    insertIndex = Math.max(0, Math.min(insertIndex, targetTasks.length));
+
+    setDroppedTaskId(taskId);
+    setTimeout(() => setDroppedTaskId(null), 600);
+
+    setTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, section_id: sectionId, status: statusKey } : t
+    ));
+
+    setDraggingTaskId(null);
+    setDragOverSectionId(null);
+    setDragOverTaskId(null);
+    setDropPosition(null);
+    setDragOverStatusGroup(null);
 
     await taskAPI.moveTaskAndReorder(taskId, sectionId, insertIndex, parseInt(selectedProjectId));
+    await taskAPI.updateTask(taskId, { status: statusKey });
     await fetchTasks();
     window.dispatchEvent(new CustomEvent('tasks-updated'));
   };
@@ -670,7 +749,7 @@ function DashboardContent() {
           onDragOver={(e) => handleTaskDragOver(e, task)}
           onDragLeave={handleTaskDragLeave}
           className={cn(
-            "flex items-center gap-3 py-2 px-2 transition-all duration-200 group border-b border-accent/10 last:border-b-0 cursor-grab active:cursor-grabbing",
+            "flex items-center gap-3 py-2 px-2 group border-b border-accent/10 last:border-b-0 cursor-grab active:cursor-grabbing",
             draggingTaskId === task.id && "opacity-50 border-2 border-primary/30 ring-2 ring-primary/20 rounded-lg scale-[0.97] shadow-sm",
             droppedTaskId === task.id && "animate-in fade-in zoom-in-95 duration-500"
           )}
@@ -719,6 +798,36 @@ function DashboardContent() {
         )}
       </div>
     );
+  };
+
+  const renderStatusGroups = (sectionId: number | null) => {
+    return STATUS_GROUPS.flatMap(group => {
+      const groupTasks = getTasksBySectionAndStatus(sectionId, group.key);
+      if (groupTasks.length === 0) return [];
+
+      const isHovered = (sectionId === null ? dragOverSectionId === 'unsectioned' : dragOverSectionId === sectionId)
+        && dragOverStatusGroup === group.key;
+
+      return (
+        <div key={group.key}>
+          <div
+            className={cn(
+              "flex items-center gap-2 px-4 py-1.5 border-b border-accent/5 text-xs font-medium uppercase tracking-wider",
+              isHovered ? "bg-primary/[0.04] text-primary" : "text-muted-foreground/60 bg-accent/[0.02]"
+            )}
+            onDragOver={(e) => handleDragOverStatusGroup(e, sectionId, group.key)}
+            onDragLeave={handleDragLeaveStatusGroup}
+            onDrop={(e) => handleDropOnStatusGroup(e, sectionId, group.key)}
+          >
+            <span>{group.label}</span>
+            <span className="text-muted-foreground/40 font-normal normal-case ml-1">
+              ({groupTasks.length})
+            </span>
+          </div>
+          {groupTasks.map((task) => renderTaskItem(task, sectionId ?? undefined))}
+        </div>
+      );
+    });
   };
 
   if (!user) {
@@ -1061,7 +1170,7 @@ function DashboardContent() {
                       onDragLeave={handleDragLeaveSection}
                       onDrop={(e) => handleDropOnSection(e, section.id)}
                     >
-                      {getTasksBySection(section.id).map((task) => renderTaskItem(task, section.id))}
+                      {renderStatusGroups(section.id)}
                       {/* Input para nova tarefa na seção */}
                       <div className="px-10 py-2">
                         <Input
@@ -1121,7 +1230,7 @@ function DashboardContent() {
                     onDragLeave={handleDragLeaveSection}
                     onDrop={(e) => handleDropOnSection(e, null)}
                   >
-                    {getTasksBySection(null).map((task) => renderTaskItem(task))}
+                    {renderStatusGroups(null)}
                     {getTasksBySection(null).length === 0 && (
                       <div className="px-4 py-3 text-xs text-muted-foreground/50 text-center italic">
                         Solte tarefas aqui para removê-las da organização

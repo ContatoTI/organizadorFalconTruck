@@ -159,39 +159,48 @@ class TaskAPI {
         nextPosition = ((data as { position: number } | null)?.position ?? -1) + 1;
       }
 
+      // Monta payload apenas com colunas que existem na tabela
+      const insertPayload: Record<string, unknown> = {
+        user_id: userId,
+        title: title.trim(),
+        project_id: projectId || null,
+        section_id: sectionId || null,
+        view_group_id: groupId || null,
+        due_date: dueDate || null,
+        position: nextPosition,
+        is_completed: false,
+      };
+
+      // description, priority e status só são enviados se explicitamente fornecidos,
+      // pois as colunas podem não existir (migration 20250628000000 pendente).
+      // Se houver erro PGRST204, a requisição é repetida sem esses campos.
+      if (description !== undefined && description !== null) insertPayload.description = description;
+      if (priority !== undefined && priority !== null) insertPayload.priority = priority;
+      if (status !== undefined && status !== null) insertPayload.status = status;
+
       const { data, error } = await client
         .from('todos')
-        .insert({
-          user_id: userId,
-          title: title.trim(),
-          project_id: projectId || null,
-          section_id: sectionId || null,
-          view_group_id: groupId || null,
-          due_date: dueDate || null,
-          position: nextPosition,
-          is_completed: false,
-          description: description || null,
-          priority: priority || null,
-          status: status || 'a_fazer',
-        })
+        .insert(insertPayload)
         .select()
         .single();
 
       if (error) {
-        // Log detalhado para diagnosticar 400 Bad Request do PostgREST
-        console.error('[taskAPI.createTask] payload enviado:', {
-          user_id: userId,
-          title: title.trim(),
-          project_id: projectId || null,
-          section_id: sectionId || null,
-          view_group_id: groupId || null,
-          due_date: dueDate || null,
-          position: nextPosition,
-          is_completed: false,
-          description: description || null,
-          priority: priority || null,
-          status: status || 'a_fazer',
-        });
+        if (error.code === 'PGRST204') {
+          // Coluna não existe na tabela — tenta novamente sem campos opcionais
+          delete insertPayload.description;
+          delete insertPayload.priority;
+          delete insertPayload.status;
+          const { data: retryData, error: retryError } = await client
+            .from('todos')
+            .insert(insertPayload)
+            .select()
+            .single();
+          if (retryError) {
+            console.error('[taskAPI.createTask] erro Supabase (retry):', JSON.stringify(retryError, null, 2));
+            return { success: false, error: retryError.message };
+          }
+          return { success: true, data: retryData as Task };
+        }
         console.error('[taskAPI.createTask] erro Supabase:', JSON.stringify(error, null, 2));
         return { success: false, error: error.message };
       }
@@ -215,7 +224,22 @@ class TaskAPI {
         .update(updates)
         .eq('id', taskId);
 
-      if (error) return { success: false, error: error.message };
+      if (error) {
+        if (error.code === 'PGRST204') {
+          // Remove colunas que não existem e tenta novamente
+          const safeUpdates = { ...updates };
+          delete (safeUpdates as Record<string, unknown>).description;
+          delete (safeUpdates as Record<string, unknown>).priority;
+          delete (safeUpdates as Record<string, unknown>).status;
+          const { error: retryError } = await client
+            .from('todos')
+            .update(safeUpdates)
+            .eq('id', taskId);
+          if (retryError) return { success: false, error: retryError.message };
+          return { success: true };
+        }
+        return { success: false, error: error.message };
+      }
       return { success: true };
     } catch (error) {
       return { success: false, error: (error as Error).message };
