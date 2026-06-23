@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
-import { cn } from '@/app/lib/utils';
+import { cn, GroupIcon } from '@/app/lib/utils';
 import { useGroups } from '@/app/lib/GroupsContext';
 import { projectAPI } from '@/app/lib/projectAPI';
 import { notificationAPI } from '@/app/lib/notificationAPI';
@@ -28,6 +28,8 @@ import {
   X,
   Bell,
   Check,
+  Clock,
+  List,
   Trash2,
 } from 'lucide-react';
 
@@ -550,10 +552,12 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                           href={`/?group=${group.id}`}
                           className="flex-1 flex items-center gap-2"
                         >
-                          <span style={{ color: group.color ?? undefined }}>
-                            {group.icon || '🕐'}
-                          </span>
-                          <span className="truncate">{group.title}</span>
+                            <span className="flex items-center gap-2">
+                              <span style={{ color: group.color ?? undefined }}>
+                                <GroupIcon icon={group.icon} fallback={Clock} className="w-4 h-4" />
+                              </span>
+                              <span className="truncate">{group.title}</span>
+                            </span>
                         </Link>
                         <button
                           onClick={(e) => {
@@ -608,10 +612,12 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                           href={`/?group=${group.id}`}
                           className="flex-1 flex items-center gap-2"
                         >
-                          <span style={{ color: group.color ?? undefined }}>
-                            {group.icon || '📋'}
-                          </span>
-                          <span className="truncate">{group.title}</span>
+                            <span className="flex items-center gap-2">
+                              <span style={{ color: group.color ?? undefined }}>
+                                <GroupIcon icon={group.icon} fallback={List} className="w-4 h-4" />
+                              </span>
+                              <span className="truncate">{group.title}</span>
+                            </span>
                         </Link>
                         <button
                           onClick={(e) => {

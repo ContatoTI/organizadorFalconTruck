@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useGroups } from '@/app/lib/GroupsContext';
-import { Plus, X, Edit2, Trash2 } from 'lucide-react';
+import { Plus, X, Edit2, Trash2, Clock, List } from 'lucide-react';
 import { taskAPI } from '@/app/lib/taskAPI';
+import { GroupIcon } from '@/app/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -195,8 +196,8 @@ function GroupsContent() {
           groups.map((group) => (
             <Card key={group.id} className="p-4 shadow-card hover:shadow-card-hover transition-shadow">
               <div className="flex items-center gap-3">
-                <span className="text-2xl" style={{ color: group.color ?? undefined }}>
-                  {group.icon || (group.type === 'time' ? '🕐' : '📋')}
+                <span style={{ color: group.color ?? undefined }}>
+                  <GroupIcon icon={group.icon} fallback={group.type === 'time' ? Clock : List} className="w-6 h-6" />
                 </span>
                 <div className="flex-1">
                   <h3 className="font-medium">{group.title}</h3>
