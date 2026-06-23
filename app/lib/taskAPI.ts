@@ -589,6 +589,46 @@ class TaskAPI {
   }
 
   /**
+   * Remover tarefa de um grupo (bloco de tempo ou lista) sem excluí-la do projeto.
+   * Desfaz tanto o vínculo direto (view_group_id) quanto o vinculado (task_view_groups).
+   */
+  async removeTaskFromGroup(
+    taskId: number,
+    groupId: number
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const client = createClient();
+
+      // Se a tarefa tem view_group_id direto igual a este grupo, limpa
+      const { data: task } = await client
+        .from('todos')
+        .select('view_group_id')
+        .eq('id', taskId)
+        .single();
+
+      if (task && task.view_group_id === groupId) {
+        const { error: updateError } = await client
+          .from('todos')
+          .update({ view_group_id: null })
+          .eq('id', taskId);
+        if (updateError) return { success: false, error: updateError.message };
+      }
+
+      // Remove também qualquer vínculo via task_view_groups
+      const { error: deleteError } = await client
+        .from('task_view_groups')
+        .delete()
+        .eq('task_id', taskId)
+        .eq('view_group_id', groupId);
+
+      if (deleteError) return { success: false, error: deleteError.message };
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
    * Remover vínculo de tarefa com um grupo
    */
   async unlinkTaskFromGroup(

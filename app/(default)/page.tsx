@@ -149,6 +149,11 @@ function DashboardContent() {
             }
           }
         )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'task_view_groups' },
+          () => fetchTasks()
+        )
         .subscribe();
 
       const handleProjectsUpdated = () => {
@@ -783,7 +788,7 @@ function DashboardContent() {
     window.dispatchEvent(new CustomEvent('tasks-updated'));
   };
 
-  const renderTaskItem = (task: Task, sectionId?: number) => {
+  const renderTaskItem = (task: Task, sectionId?: number, currentGroupId?: number) => {
     const isDragOverTarget = dragOverTaskId === task.id && draggingTaskId !== task.id;
 
     return (
@@ -848,6 +853,20 @@ function DashboardContent() {
           >
             <Star className="w-4 h-4" />
           </Button>
+          {currentGroupId && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={async () => {
+                await taskAPI.removeTaskFromGroup(task.id, currentGroupId);
+                await fetchTasks();
+              }}
+              className="h-7 w-7 text-muted-foreground/50 hover:text-orange-500 opacity-0 group-hover:opacity-100"
+              title="Remover deste bloco/lista"
+            >
+              <XCircle className="w-4 h-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -1374,7 +1393,7 @@ function DashboardContent() {
                       )}
                     </div>
                     <div className="border border-border rounded-xl overflow-hidden bg-card shadow-card">
-                      {groupTasks.map((task) => renderTaskItem(task))}
+                      {groupTasks.map((task) => renderTaskItem(task, undefined, groupId.startsWith('group:') ? parseInt(groupId.split(':')[1]) : undefined))}
                     </div>
                   </div>
                 );
@@ -1383,7 +1402,7 @@ function DashboardContent() {
               {/* Quando tem grupo selecionado: lista compacta única */}
               {selectedGroup && (
                 <div className="border border-border rounded-xl overflow-hidden bg-card shadow-card">
-                  {filteredTasks.map((task) => renderTaskItem(task))}
+                  {filteredTasks.map((task) => renderTaskItem(task, undefined, selectedGroup.id))}
                 </div>
               )}
             </>

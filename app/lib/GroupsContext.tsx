@@ -52,6 +52,15 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     fetchGroups();
   }, []);
 
+  useEffect(() => {
+    const { data: { subscription } } = client.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        fetchGroups();
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   const refreshGroups = () => {
     fetchGroups();
   };
