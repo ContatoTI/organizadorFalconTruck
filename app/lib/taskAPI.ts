@@ -4,7 +4,7 @@
  */
 
 import { createClient } from '@/app/lib/supabase/Client';
-import type { Task } from '@/types/index';
+import type { Task, TaskViewGroup } from '@/types/index';
 
 class TaskAPI {
   /**
@@ -26,6 +26,34 @@ class TaskAPI {
     return tasks.map(t => ({
       ...t,
       creator_name: nameMap.get(t.user_id) || undefined,
+    }));
+  }
+
+  /**
+   * Enriquecer tarefas com IDs dos grupos vinculados via task_view_groups
+   */
+  private async enrichWithLinkedGroups(tasks: Task[]): Promise<Task[]> {
+    if (tasks.length === 0) return tasks;
+
+    const taskIds = tasks.map(t => t.id);
+    const client = createClient();
+    const { data: links } = await client
+      .from('task_view_groups')
+      .select('task_id, view_group_id')
+      .in('task_id', taskIds);
+
+    const linkMap = new Map<number, number[]>();
+    if (links) {
+      for (const link of links) {
+        const existing = linkMap.get(link.task_id) || [];
+        existing.push(link.view_group_id);
+        linkMap.set(link.task_id, existing);
+      }
+    }
+
+    return tasks.map(t => ({
+      ...t,
+      linked_view_group_ids: linkMap.get(t.id) || [],
     }));
   }
 
@@ -72,7 +100,19 @@ class TaskAPI {
       {
         let q = client.from('todos').select('*').eq('user_id', userId);
         if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
-        if (filters?.groupId) q = q.eq('view_group_id', filters.groupId);
+        if (filters?.groupId) {
+          // Inclui tarefas com view_group_id direto OU vinculadas via task_view_groups
+          const { data: linked } = await client
+            .from('task_view_groups')
+            .select('task_id')
+            .eq('view_group_id', filters.groupId);
+          const linkedIds = (linked || []).map(l => l.task_id);
+          if (linkedIds.length > 0) {
+            q = q.or(`view_group_id.eq.${filters.groupId},id.in.(${linkedIds.join(',')})`);
+          } else {
+            q = q.eq('view_group_id', filters.groupId);
+          }
+        }
         if (!filters?.showCompleted) q = q.eq('is_completed', false);
         if (filters?.onlyToday) q = q.eq('due_date', new Date().toISOString().split('T')[0]);
         const { data, error } = await q.order('created_at', { ascending: false });
@@ -85,12 +125,25 @@ class TaskAPI {
           .in('project_id', Array.from(projectIds))
           .neq('user_id', userId); // evita duplicar as pessoais
         if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
-        if (filters?.groupId) q = q.eq('view_group_id', filters.groupId);
+        if (filters?.groupId) {
+          const { data: linked } = await client
+            .from('task_view_groups')
+            .select('task_id')
+            .eq('view_group_id', filters.groupId);
+          const linkedIds = (linked || []).map(l => l.task_id);
+          if (linkedIds.length > 0) {
+            q = q.or(`view_group_id.eq.${filters.groupId},id.in.(${linkedIds.join(',')})`);
+          } else {
+            q = q.eq('view_group_id', filters.groupId);
+          }
+        }
         if (!filters?.showCompleted) q = q.eq('is_completed', false);
         if (filters?.onlyToday) q = q.eq('due_date', new Date().toISOString().split('T')[0]);
         const { data, error } = await q.order('created_at', { ascending: false });
         if (!error && data) allTasks.push(...(data as Task[]));
       }
+
+
 
       // Deduplica por id
       const seen = new Set<number>();
@@ -100,7 +153,10 @@ class TaskAPI {
       }
       unique.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-      return this.enrichWithCreatorNames(unique);
+      // Enriquecer com linked_view_group_ids para exibição em grupos
+      const tasksWithLinks = await this.enrichWithLinkedGroups(unique);
+
+      return this.enrichWithCreatorNames(tasksWithLinks);
     } catch (error) {
       console.error('Erro ao buscar tarefas:', error);
       return [];
@@ -497,6 +553,77 @@ class TaskAPI {
       return { success: true };
     } catch (error) {
       return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Vincular tarefa a um grupo (bloco de tempo ou lista) sem remover projeto.
+   * A tarefa aparece no grupo mas continua vinculada ao projeto de origem.
+   */
+  async linkTaskToGroup(
+    taskId: number,
+    groupId: number
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const client = createClient();
+
+      // Verifica se o vínculo já existe
+      const { data: existing } = await client
+        .from('task_view_groups')
+        .select('id')
+        .eq('task_id', taskId)
+        .eq('view_group_id', groupId)
+        .maybeSingle();
+
+      if (existing) return { success: true }; // já vinculado
+
+      const { error } = await client
+        .from('task_view_groups')
+        .insert({ task_id: taskId, view_group_id: groupId });
+
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Remover vínculo de tarefa com um grupo
+   */
+  async unlinkTaskFromGroup(
+    taskId: number,
+    groupId: number
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const client = createClient();
+      const { error } = await client
+        .from('task_view_groups')
+        .delete()
+        .eq('task_id', taskId)
+        .eq('view_group_id', groupId);
+
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Buscar IDs dos grupos vinculados a uma tarefa
+   */
+  async getLinkedGroupIds(taskId: number): Promise<number[]> {
+    try {
+      const client = createClient();
+      const { data } = await client
+        .from('task_view_groups')
+        .select('view_group_id')
+        .eq('task_id', taskId);
+
+      return (data || []).map(d => d.view_group_id);
+    } catch {
+      return [];
     }
   }
 }

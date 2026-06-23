@@ -42,6 +42,15 @@ export interface Task {
   status: string | null;
   created_at: string;
   creator_name?: string;
+  linked_view_group_ids?: number[];
+}
+
+// ============= VINCULO TAREFA-GRUPO (task_view_groups) =============
+export interface TaskViewGroup {
+  id: number;
+  task_id: number;
+  view_group_id: number;
+  created_at: string;
 }
 
 // ============= PROJETOS =============

@@ -23,6 +23,21 @@ function DashboardContent() {
     { key: 'em_andamento', label: 'Em andamento', match: (s: string | null | undefined) => s === 'em_andamento' },
     { key: 'concluida', label: 'Concluído', match: (s: string | null | undefined) => s === 'concluida' },
   ] as const;
+  const getInitials = (name: string) => {
+    const namePart = name.includes('@') ? name.split('@')[0] : name;
+    const parts = namePart.split(/[.\s_-]+/);
+    return parts.map(p => p[0]?.toUpperCase()).filter(Boolean).slice(0, 2).join('');
+  };
+
+  const getColorFromString = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash) % 360;
+    return `hsl(${hue}, 55%, 50%)`;
+  };
+
   const [user, setUser] = useState<AppUser | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -299,6 +314,7 @@ function DashboardContent() {
     const data = await taskAPI.getUserTasks(user.id, {
       showCompleted: true,
       ...(selectedProjectId ? { projectId: parseInt(selectedProjectId) } : {}),
+      ...(selectedGroupId && !selectedProjectId ? { groupId: parseInt(selectedGroupId) } : {}),
     });
     setTasks(data);
     setLoading(false);
@@ -498,7 +514,12 @@ function DashboardContent() {
     }
     if (!showCompleted && t.is_completed) return false;
     if (selectedProjectId) return t.project_id === parseInt(selectedProjectId);
-    if (selectedGroupId) return t.view_group_id === parseInt(selectedGroupId);
+    if (selectedGroupId) {
+      // Mostra tarefas com view_group_id direto OU vinculadas via task_view_groups
+      if (t.view_group_id === parseInt(selectedGroupId)) return true;
+      if (t.linked_view_group_ids?.includes(parseInt(selectedGroupId))) return true;
+      return false;
+    }
     return true;
   });
 
@@ -511,18 +532,46 @@ function DashboardContent() {
   type GroupKey = string; // Pode ser 'inbox' | 'group:<id>' | 'project:<id>'
 
   // Chave única e estável para cada tarefa com base em sua associação real no banco
-  const getTaskGroupKey = (task: Task): GroupKey => {
-    if (task.project_id != null) return `project:${task.project_id}`;
-    if (task.view_group_id != null) return `group:${task.view_group_id}`;
-    return 'inbox';
+  const getTaskGroupKeys = (task: Task): GroupKey[] => {
+    const keys: GroupKey[] = [];
+    
+    if (task.project_id == null && task.view_group_id == null && (!task.linked_view_group_ids || task.linked_view_group_ids.length === 0)) {
+      keys.push('inbox');
+      return keys;
+    }
+    
+    if (task.project_id != null) {
+      keys.push(`project:${task.project_id}`);
+    }
+    
+    if (task.view_group_id != null) {
+      keys.push(`group:${task.view_group_id}`);
+    }
+    
+    if (task.linked_view_group_ids && task.linked_view_group_ids.length > 0) {
+      task.linked_view_group_ids.forEach(gid => {
+        const key = `group:${gid}`;
+        if (!keys.includes(key)) {
+          keys.push(key);
+        }
+      });
+    }
+    
+    if (keys.length === 0) {
+      keys.push('inbox');
+    }
+    
+    return keys;
   };
 
   const groupedTasks = filteredTasks.reduce((acc: Record<string, Task[]>, task) => {
-    const key = getTaskGroupKey(task);
-    if (!acc[key]) {
-      acc[key] = [];
-    }
-    acc[key].push(task);
+    const keys = getTaskGroupKeys(task);
+    keys.forEach(key => {
+      if (!acc[key]) {
+        acc[key] = [];
+      }
+      acc[key].push(task);
+    });
     return acc;
   }, {} as Record<string, Task[]>);
 
@@ -567,6 +616,8 @@ function DashboardContent() {
     e.dataTransfer.setData('taskId', task.id.toString());
     e.dataTransfer.setData('taskTitle', task.title);
     e.dataTransfer.setData('sourceSectionId', (task.section_id ?? '').toString());
+    e.dataTransfer.setData('sourceProjectId', (task.project_id ?? '').toString());
+    e.dataTransfer.setData('sourceGroupId', (selectedGroupId || '').toString());
     e.dataTransfer.effectAllowed = 'move';
 
     // Custom drag ghost (imagem fantasma)
@@ -769,11 +820,26 @@ function DashboardContent() {
             >
               {task.title}
             </button>
-            {task.creator_name && task.creator_name !== user?.email && (
-              <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">
-                {task.creator_name.split('@')[0]}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {task.creator_name && task.creator_name !== user?.email && (
+                <div
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium text-white flex-shrink-0"
+                  style={{ backgroundColor: getColorFromString(task.creator_name) }}
+                  title={task.creator_name}
+                >
+                  {getInitials(task.creator_name)}
+                </div>
+              )}
+              <span className={cn(
+                "text-xs px-2 py-0.5 rounded-full whitespace-nowrap",
+                (!task.status || task.status === 'a_fazer') && "bg-muted text-muted-foreground",
+                task.status === 'em_andamento' && "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+                task.status === 'concluida' && "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+              )}>
+                {(!task.status || task.status === 'a_fazer') ? 'A fazer' :
+                 task.status === 'em_andamento' ? 'Em andamento' : 'Concluído'}
               </span>
-            )}
+            </div>
           </div>
           <Button
             variant="ghost"

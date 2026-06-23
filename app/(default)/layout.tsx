@@ -374,10 +374,26 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     e.stopPropagation();
     setIsDragOver(null);
     
-    const taskId = parseInt(e.dataTransfer.getData('taskId'));
+    const taskIdStr = e.dataTransfer.getData('taskId');
+    const taskId = parseInt(taskIdStr);
     if (!taskId || isNaN(taskId)) return;
     
-    await taskAPI.moveTaskToGroup(taskId, groupId);
+    const sourceProjectId = e.dataTransfer.getData('sourceProjectId');
+    const sourceGroupId = e.dataTransfer.getData('sourceGroupId');
+    
+    if (sourceProjectId) {
+      if (sourceGroupId) {
+        // Se a tarefa foi arrastada de um grupo (bloco de tempo) e tem projeto, move de um grupo para o outro (desvincula do antigo e vincula ao novo)
+        await taskAPI.unlinkTaskFromGroup(taskId, parseInt(sourceGroupId));
+        await taskAPI.linkTaskToGroup(taskId, groupId);
+      } else {
+        // Arrastada do projeto para o grupo: vincula ao grupo
+        await taskAPI.linkTaskToGroup(taskId, groupId);
+      }
+    } else {
+      // Tarefa sem projeto: move para o grupo
+      await taskAPI.moveTaskToGroup(taskId, groupId);
+    }
     
     window.dispatchEvent(new CustomEvent('tasks-updated'));
   };
