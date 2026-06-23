@@ -195,7 +195,9 @@ function GroupsContent() {
           groups.map((group) => (
             <Card key={group.id} className="p-4">
               <div className="flex items-center gap-3">
-                {group.icon && <span className="text-2xl" style={{ color: group.color ?? undefined }}>{group.icon}</span>}
+                <span className="text-2xl" style={{ color: group.color ?? undefined }}>
+                  {group.icon || (group.type === 'time' ? '🕐' : '📋')}
+                </span>
                 <div className="flex-1">
                   <h3 className="font-medium">{group.title}</h3>
                   <p className="text-xs text-muted-foreground capitalize">

@@ -136,21 +136,29 @@ export default function CalendarPage() {
   };
 
   const addTask = async () => {
-    if (!newTaskTitle.trim() || !user || !selectedDate) return;
+    const raw = newTaskTitle.trim();
+    if (!raw || !user || !selectedDate) return;
 
-    const result = await taskAPI.createTask(
-      user.id,
-      newTaskTitle,
-      undefined,
-      undefined,
-      selectedGroupId || undefined,
-      selectedDate.toISOString().split('T')[0]
-    );
+    const titles = raw.split('\n').map(t => t.trim()).filter(Boolean);
+    if (titles.length === 0) return;
 
-    if (result.success && result.data) {
-      setTasks([...tasks, result.data]);
-      setShowModal(false);
+    const newTasks: Task[] = [];
+    for (const title of titles) {
+      const result = await taskAPI.createTask(
+        user.id,
+        title,
+        undefined,
+        undefined,
+        selectedGroupId || undefined,
+        selectedDate.toISOString().split('T')[0]
+      );
+      if (result.success && result.data) {
+        newTasks.push(result.data);
+      }
     }
+
+    setTasks([...tasks, ...newTasks]);
+    setShowModal(false);
   };
 
   const isToday = (date: Date) => {
@@ -283,6 +291,27 @@ export default function CalendarPage() {
                 value={newTaskTitle}
                 onChange={(e) => setNewTaskTitle(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && addTask()}
+                onPaste={async (e) => {
+                  const text = e.clipboardData.getData('text');
+                  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+                  if (lines.length > 1) {
+                    e.preventDefault();
+                    const newTasks: Task[] = [];
+                    for (const title of lines) {
+                      const result = await taskAPI.createTask(
+                        user.id,
+                        title,
+                        undefined,
+                        undefined,
+                        selectedGroupId || undefined,
+                        selectedDate!.toISOString().split('T')[0]
+                      );
+                      if (result.success && result.data) newTasks.push(result.data);
+                    }
+                    setTasks(prev => [...prev, ...newTasks]);
+                    setShowModal(false);
+                  }
+                }}
                 placeholder="Ex: Reunião de planejamento"
                 autoFocus
               />

@@ -19,6 +19,9 @@ export interface Tables {
       section_id: number | null
       due_date: string | null
       position: number
+      description: string | null
+      priority: string | null
+      status: string | null
       created_at: string
     }
     Insert: {
@@ -32,6 +35,9 @@ export interface Tables {
       section_id?: number | null
       due_date?: string | null
       position?: number
+      description?: string | null
+      priority?: string | null
+      status?: string | null
       created_at?: string
     }
     Update: {
@@ -45,6 +51,9 @@ export interface Tables {
       section_id?: number | null
       due_date?: string | null
       position?: number
+      description?: string | null
+      priority?: string | null
+      status?: string | null
       created_at?: string
     }
   }

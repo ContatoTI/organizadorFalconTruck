@@ -37,7 +37,11 @@ export interface Task {
   project_id: number | null;
   section_id: number | null;
   position: number;
+  description: string | null;
+  priority: string | null;
+  status: string | null;
   created_at: string;
+  creator_name?: string;
 }
 
 // ============= PROJETOS =============
@@ -139,7 +143,7 @@ export const COLORS = {
 
 export const DEFAULT_COLOR = COLORS.primary;
 
-export const TASK_SELECT = 'id, user_id, title, is_completed, due_date, view_group_id, project_id, section_id, position, created_at';
+export const TASK_SELECT = 'id, user_id, title, is_completed, due_date, view_group_id, project_id, section_id, position, description, priority, status, created_at';
 export const PROJECT_SELECT = 'id, owner_id, name, color, created_at';
 export const GROUP_SELECT = '*';
 export const SECTION_SELECT = 'id, project_id, user_id, title, order, created_at';

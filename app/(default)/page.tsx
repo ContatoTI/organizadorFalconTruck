@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
 
 function DashboardContent() {
   const [user, setUser] = useState<AppUser | null>(null);
@@ -40,6 +41,11 @@ function DashboardContent() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [invitesLoaded, setInvitesLoaded] = useState(false);
   const [draggingTaskId, setDraggingTaskId] = useState<number | null>(null);
+  const [dragOverSectionId, setDragOverSectionId] = useState<number | 'unsectioned' | null>(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState<number | null>(null);
+  const [dropPosition, setDropPosition] = useState<'before' | 'after' | null>(null);
+  const [droppedTaskId, setDroppedTaskId] = useState<number | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
   const client = createClient();
@@ -362,26 +368,35 @@ function DashboardContent() {
   };
 
   const handleAddTask = async (sectionId?: number, titleParam?: string) => {
-    const title = (titleParam ?? newTaskTitle).trim();
-    if (!title || !user) return;
+    const raw = (titleParam ?? newTaskTitle).trim();
+    if (!raw || !user) return;
 
-    const result = await taskAPI.createTask(
-      user.id,
-      title,
-      selectedProjectId ? parseInt(selectedProjectId) : undefined,
-      sectionId,
-      selectedGroupId && !selectedProjectId ? parseInt(selectedGroupId) : undefined
-    );
+    const titles = raw.split('\n').map(t => t.trim()).filter(Boolean);
+    if (titles.length === 0) return;
 
-    if (result.success) {
-      if (!titleParam) setNewTaskTitle('');
-      await fetchTasks();
+    for (const title of titles) {
+      await taskAPI.createTask(
+        user.id,
+        title,
+        selectedProjectId ? parseInt(selectedProjectId) : undefined,
+        sectionId,
+        selectedGroupId && !selectedProjectId ? parseInt(selectedGroupId) : undefined
+      );
     }
+
+    if (!titleParam) setNewTaskTitle('');
+    await fetchTasks();
   };
 
   const toggleTask = async (task: Task) => {
-    await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
-    await fetchTasks();
+    const result = await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
+    if (result.success) {
+      setTasks(prev => prev.map(t =>
+        t.id === task.id ? { ...t, is_completed: result.newState ?? !t.is_completed } : t
+      ));
+    } else {
+      await fetchTasks();
+    }
   };
 
   const deleteTask = async (taskId: number) => {
@@ -539,59 +554,172 @@ function DashboardContent() {
     setDraggingTaskId(task.id);
     e.dataTransfer.setData('taskId', task.id.toString());
     e.dataTransfer.setData('taskTitle', task.title);
+    e.dataTransfer.setData('sourceSectionId', (task.section_id ?? '').toString());
     e.dataTransfer.effectAllowed = 'move';
-    
-    // Pequeno atraso para a classe de opacidade ser aplicada após o início do drag
-    setTimeout(() => {
-      if (e.target instanceof HTMLElement) {
-        e.target.style.opacity = '0.4';
-      }
-    }, 0);
+
+    // Custom drag ghost (imagem fantasma)
+    const el = e.currentTarget as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    const ghost = el.cloneNode(true) as HTMLElement;
+    ghost.style.position = 'absolute';
+    ghost.style.top = '-10000px';
+    ghost.style.left = '-10000px';
+    ghost.style.width = `${rect.width}px`;
+    ghost.style.opacity = '0.85';
+    ghost.style.borderRadius = '8px';
+    ghost.style.boxShadow = '0 8px 24px rgba(0,0,0,0.15)';
+    ghost.style.border = '2px solid #6366f1';
+    ghost.style.backgroundColor = 'var(--card)';
+    ghost.style.transform = 'rotate(2deg) scale(1.02)';
+    ghost.style.pointerEvents = 'none';
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, e.clientX - rect.left, e.clientY - rect.top);
+    setTimeout(() => document.body.removeChild(ghost), 0);
   };
 
-  const handleDragEnd = (e: React.DragEvent) => {
+  const handleDragEnd = () => {
     setDraggingTaskId(null);
-    if (e.target instanceof HTMLElement) {
-      e.target.style.opacity = '1';
+    setDragOverSectionId(null);
+    setDragOverTaskId(null);
+    setDropPosition(null);
+  };
+
+  const handleDragOverSection = (e: React.DragEvent, sectionId: number | 'unsectioned') => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverSectionId(sectionId);
+  };
+
+  const handleDragLeaveSection = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOverSectionId(null);
+      setDragOverTaskId(null);
+      setDropPosition(null);
     }
   };
 
-  const renderTaskItem = (task: Task, sectionId?: number) => (
-    <div
-      key={task.id}
-      draggable
-      onDragStart={(e) => handleDragStart(e, task)}
-      onDragEnd={handleDragEnd}
-      className={cn(
-        "flex items-center gap-3 py-2 px-2 hover:bg-accent/5 transition-all group border-b border-accent/10 last:border-b-0 cursor-grab active:cursor-grabbing",
-        draggingTaskId === task.id && "opacity-40 bg-accent/10 scale-[0.98] shadow-inner"
-      )}
-    >
-      <GripVertical className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
-      <Checkbox
-        checked={task.is_completed}
-        onCheckedChange={() => toggleTask(task)}
-      />
-      <span className={cn('flex-1 text-sm', task.is_completed && 'line-through text-muted-foreground')}>
-        {task.title}
-      </span>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 text-muted-foreground/50 hover:text-yellow-500"
-      >
-        <Star className="w-4 h-4" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => deleteTask(task.id)}
-        className="h-7 w-7 text-muted-foreground/50 hover:text-destructive opacity-0 group-hover:opacity-100"
-      >
-        <X className="w-4 h-4" />
-      </Button>
-    </div>
-  );
+  const handleTaskDragOver = (e: React.DragEvent, task: Task) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverTaskId(task.id);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    setDropPosition(y < rect.height / 2 ? 'before' : 'after');
+  };
+
+  const handleTaskDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOverTaskId(null);
+      setDropPosition(null);
+    }
+  };
+
+  const handleDropOnSection = async (e: React.DragEvent, sectionId: number | null) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const taskIdStr = e.dataTransfer.getData('taskId');
+    if (!taskIdStr || !user || !selectedProjectId) {
+      handleDragEnd();
+      return;
+    }
+
+    const taskId = parseInt(taskIdStr);
+    const targetTasks = sectionId === null
+      ? getTasksBySection(null).filter(t => t.id !== taskId)
+      : getTasksBySection(sectionId).filter(t => t.id !== taskId);
+
+    let insertIndex = targetTasks.length;
+    if (dragOverTaskId) {
+      const idx = targetTasks.findIndex(t => t.id === dragOverTaskId);
+      if (idx !== -1) {
+        insertIndex = dropPosition === 'before' ? idx : idx + 1;
+      }
+    }
+    insertIndex = Math.max(0, Math.min(insertIndex, targetTasks.length));
+
+    // Drop animation highlight
+    setDroppedTaskId(taskId);
+    setTimeout(() => setDroppedTaskId(null), 600);
+
+    setDraggingTaskId(null);
+    setDragOverSectionId(null);
+    setDragOverTaskId(null);
+    setDropPosition(null);
+
+    await taskAPI.moveTaskAndReorder(taskId, sectionId, insertIndex, parseInt(selectedProjectId));
+    await fetchTasks();
+    window.dispatchEvent(new CustomEvent('tasks-updated'));
+  };
+
+  const renderTaskItem = (task: Task, sectionId?: number) => {
+    const isDragOverTarget = dragOverTaskId === task.id && draggingTaskId !== task.id;
+
+    return (
+      <div key={task.id} className="relative">
+        {/* Linha indicadora antes da tarefa */}
+        {isDragOverTarget && dropPosition === 'before' && (
+          <div className="absolute -top-[2px] left-3 right-3 h-[3px] bg-primary rounded-full z-20 shadow-sm shadow-primary/50" />
+        )}
+
+        <div
+          draggable
+          onDragStart={(e) => handleDragStart(e, task)}
+          onDragEnd={handleDragEnd}
+          onDragOver={(e) => handleTaskDragOver(e, task)}
+          onDragLeave={handleTaskDragLeave}
+          className={cn(
+            "flex items-center gap-3 py-2 px-2 transition-all duration-200 group border-b border-accent/10 last:border-b-0 cursor-grab active:cursor-grabbing",
+            draggingTaskId === task.id && "opacity-50 border-2 border-primary/30 ring-2 ring-primary/20 rounded-lg scale-[0.97] shadow-sm",
+            droppedTaskId === task.id && "animate-in fade-in zoom-in-95 duration-500"
+          )}
+        >
+          <GripVertical className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
+          <Checkbox
+            checked={task.is_completed}
+            onCheckedChange={() => toggleTask(task)}
+          />
+          <div className="flex-1 flex items-center justify-between gap-2 min-w-0">
+            <button
+              onClick={() => setSelectedTask(task)}
+              className={cn(
+                'text-sm truncate text-left bg-transparent border-none p-0 cursor-pointer hover:underline',
+                task.is_completed && 'line-through text-muted-foreground'
+              )}
+            >
+              {task.title}
+            </button>
+            {task.creator_name && (
+              <span className="text-xs text-muted-foreground/50 whitespace-nowrap flex-shrink-0">
+                👤 {task.creator_name}
+              </span>
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground/50 hover:text-yellow-500"
+          >
+            <Star className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => deleteTask(task.id)}
+            className="h-7 w-7 text-muted-foreground/50 hover:text-destructive opacity-0 group-hover:opacity-100"
+          >
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+
+        {/* Linha indicadora depois da tarefa */}
+        {isDragOverTarget && dropPosition === 'after' && (
+          <div className="absolute -bottom-[2px] left-3 right-3 h-[3px] bg-primary rounded-full z-20 shadow-sm shadow-primary/50" />
+        )}
+      </div>
+    );
+  };
 
   if (!user) {
     return <div className="p-6">Carregando...</div>;
@@ -821,6 +949,23 @@ function DashboardContent() {
               handleAddTask();
             }
           }}
+          onPaste={async (e) => {
+            const text = e.clipboardData.getData('text');
+            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+            if (lines.length > 1) {
+              e.preventDefault();
+              for (const title of lines) {
+                await taskAPI.createTask(
+                  user.id,
+                  title,
+                  selectedProjectId ? parseInt(selectedProjectId) : undefined,
+                  undefined,
+                  selectedGroupId && !selectedProjectId ? parseInt(selectedGroupId) : undefined
+                );
+              }
+              await fetchTasks();
+            }
+          }}
           placeholder="O que precisa ser feito?"
           className="pr-12 h-12 text-base shadow-sm"
         />
@@ -841,14 +986,20 @@ function DashboardContent() {
             <div className="text-center py-8 text-muted-foreground">Carregando...</div>
           ) : sections.length === 0 && getProjectTasks().length === 0 ? (
             <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
-              <p>Nenhuma seção encontrada neste projeto.</p>
-              <p className="text-sm mt-2">Clique em "+ Nova seção" para começar.</p>
+              <p>Nenhuma organização encontrada neste projeto.</p>
+              <p className="text-sm mt-2">Clique em "+ Nova organização" para começar.</p>
             </div>
           ) : (
             <>
               {/* Lista de Seções */}
               {sections.map((section) => (
-                <Card key={section.id} className="bg-accent/5 border-accent/20 overflow-hidden shadow-none">
+                <Card
+                  key={section.id}
+                  className={cn(
+                    "bg-accent/5 border-accent/20 overflow-hidden shadow-none transition-all duration-200",
+                    dragOverSectionId === section.id && "ring-2 ring-primary/40 bg-primary/[0.03] shadow-sm"
+                  )}
+                >
                   {/* Header da seção */}
                   <div
                     className="flex items-center justify-between px-4 py-2 border-b border-accent/20 cursor-pointer hover:bg-accent/10 transition-colors"
@@ -904,7 +1055,12 @@ function DashboardContent() {
 
                   {/* Tarefas da seção */}
                   {expandedSections[section.id] && (
-                    <div className="border-t border-accent/20">
+                    <div
+                      className="border-t border-accent/20 min-h-[48px] transition-all duration-200"
+                      onDragOver={(e) => handleDragOverSection(e, section.id)}
+                      onDragLeave={handleDragLeaveSection}
+                      onDrop={(e) => handleDropOnSection(e, section.id)}
+                    >
                       {getTasksBySection(section.id).map((task) => renderTaskItem(task, section.id))}
                       {/* Input para nova tarefa na seção */}
                       <div className="px-10 py-2">
@@ -918,6 +1074,23 @@ function DashboardContent() {
                               handleAddTask(section.id, title);
                             }
                           }}
+                          onPaste={async (e) => {
+                            const text = e.clipboardData.getData('text');
+                            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+                            if (lines.length > 1) {
+                              e.preventDefault();
+                              for (const title of lines) {
+                                await taskAPI.createTask(
+                                  user.id,
+                                  title,
+                                  selectedProjectId ? parseInt(selectedProjectId) : undefined,
+                                  section.id,
+                                  selectedGroupId && !selectedProjectId ? parseInt(selectedGroupId) : undefined
+                                );
+                              }
+                              await fetchTasks();
+                            }
+                          }}
                         />
                       </div>
                     </div>
@@ -926,18 +1099,35 @@ function DashboardContent() {
               ))}
 
               {/* Tarefas sem seção */}
-              {getTasksBySection(null).length > 0 && (
-                <Card className="bg-accent/5 border-accent/20 overflow-hidden shadow-none">
+              {(getTasksBySection(null).length > 0 || draggingTaskId) && (
+                <Card
+                  className={cn(
+                    "bg-accent/5 border-accent/20 overflow-hidden shadow-none transition-all duration-200",
+                    dragOverSectionId === 'unsectioned' && "ring-2 ring-primary/40 bg-primary/[0.03] shadow-sm"
+                  )}
+                >
                   <div className="flex items-center justify-between px-4 py-2 border-b border-accent/20">
                     <div className="flex items-center gap-3">
                       <Folder className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm font-semibold text-muted-foreground">Sem seção</span>
+                      <span className="text-sm font-semibold text-muted-foreground">Sem organização</span>
                       <span className="text-xs text-muted-foreground">
                         ({getTasksBySection(null).length})
                       </span>
                     </div>
                   </div>
-                  {getTasksBySection(null).map((task) => renderTaskItem(task))}
+                  <div
+                    className="min-h-[48px] transition-all duration-200"
+                    onDragOver={(e) => handleDragOverSection(e, 'unsectioned')}
+                    onDragLeave={handleDragLeaveSection}
+                    onDrop={(e) => handleDropOnSection(e, null)}
+                  >
+                    {getTasksBySection(null).map((task) => renderTaskItem(task))}
+                    {getTasksBySection(null).length === 0 && (
+                      <div className="px-4 py-3 text-xs text-muted-foreground/50 text-center italic">
+                        Solte tarefas aqui para removê-las da organização
+                      </div>
+                    )}
+                  </div>
                 </Card>
               )}
 
@@ -947,13 +1137,13 @@ function DashboardContent() {
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    const title = prompt('Nome da nova seção:');
+                    const title = prompt('Nome da nova organização:');
                     if (title?.trim()) { createSection(title.trim()); }
                   }}
                   className="text-primary hover:bg-primary/10"
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Nova seção
+                  Nova organização
                 </Button>
               </div>
             </>
@@ -1012,6 +1202,18 @@ function DashboardContent() {
             </>
           )}
         </div>
+      )}
+
+      {/* Task Detail Panel */}
+      {selectedTask && (
+        <TaskDetailPanel
+          task={selectedTask}
+          onClose={() => setSelectedTask(null)}
+          onUpdate={(updatedTask) => {
+            setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
+            setSelectedTask(updatedTask);
+          }}
+        />
       )}
     </div>
   );

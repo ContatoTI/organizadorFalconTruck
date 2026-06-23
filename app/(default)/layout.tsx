@@ -469,7 +469,11 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
       <aside className="w-64 border-r bg-card hidden md:flex flex-col">
         <div className="p-6 border-b">
-          <h1 className="text-xl font-bold">Organizador</h1>
+          <h1 className="text-xl font-bold">
+            {user
+              ? user.user_metadata?.full_name || user.email?.split('@')[0] || 'Usuário'
+              : 'Organizador'}
+          </h1>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -545,7 +549,9 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                           href={`/?group=${group.id}`}
                           className="flex-1 flex items-center gap-2"
                         >
-                          {group.icon && <span style={{ color: group.color ?? undefined }}>{group.icon}</span>}
+                          <span style={{ color: group.color ?? undefined }}>
+                            {group.icon || '🕐'}
+                          </span>
                           <span className="truncate">{group.title}</span>
                         </Link>
                         <button
@@ -601,7 +607,9 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                           href={`/?group=${group.id}`}
                           className="flex-1 flex items-center gap-2"
                         >
-                          {group.icon && <span style={{ color: group.color ?? undefined }}>{group.icon}</span>}
+                          <span style={{ color: group.color ?? undefined }}>
+                            {group.icon || '📋'}
+                          </span>
                           <span className="truncate">{group.title}</span>
                         </Link>
                         <button

@@ -8,6 +8,28 @@ import type { Task } from '@/types/index';
 
 class TaskAPI {
   /**
+   * Buscar perfis dos criadores das tarefas e enriquecer com o nome
+   */
+  private async enrichWithCreatorNames(tasks: Task[]): Promise<Task[]> {
+    const userIds = [...new Set(tasks.map(t => t.user_id))];
+    if (userIds.length === 0) return tasks;
+
+    const client = createClient();
+    const { data: profiles } = await client
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', userIds);
+
+    const nameMap = new Map<string, string>();
+    profiles?.forEach(p => nameMap.set(p.id, p.full_name || p.email || 'Usuário'));
+
+    return tasks.map(t => ({
+      ...t,
+      creator_name: nameMap.get(t.user_id) || undefined,
+    }));
+  }
+
+  /**
    * Buscar tarefas do usuário com filtros opcionais
    */
   async getUserTasks(
@@ -29,9 +51,9 @@ class TaskAPI {
         if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
         if (!filters?.showCompleted) q = q.eq('is_completed', false);
         if (filters?.onlyToday) q = q.eq('due_date', new Date().toISOString().split('T')[0]);
-        const { data, error } = await q.order('created_at', { ascending: false });
+        const { data, error } = await q.order('position', { ascending: true }).order('created_at', { ascending: true });
         if (error) throw error;
-        return (data as Task[]) || [];
+        return this.enrichWithCreatorNames((data as Task[]) || []);
       }
 
       // Buscar tarefas em 2 queries separadas (mais robusto que or() com RLS complexo)
@@ -78,7 +100,7 @@ class TaskAPI {
       }
       unique.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-      return unique;
+      return this.enrichWithCreatorNames(unique);
     } catch (error) {
       console.error('Erro ao buscar tarefas:', error);
       return [];
@@ -94,7 +116,10 @@ class TaskAPI {
     projectId?: number,
     sectionId?: number,
     groupId?: number,
-    dueDate?: string
+    dueDate?: string,
+    description?: string,
+    priority?: string,
+    status?: string
   ): Promise<{ success: boolean; data?: Task; error?: string }> {
     try {
       if (!title.trim()) {
@@ -145,6 +170,9 @@ class TaskAPI {
           due_date: dueDate || null,
           position: nextPosition,
           is_completed: false,
+          description: description || null,
+          priority: priority || null,
+          status: status || 'a_fazer',
         })
         .select()
         .single();
@@ -160,6 +188,9 @@ class TaskAPI {
           due_date: dueDate || null,
           position: nextPosition,
           is_completed: false,
+          description: description || null,
+          priority: priority || null,
+          status: status || 'a_fazer',
         });
         console.error('[taskAPI.createTask] erro Supabase:', JSON.stringify(error, null, 2));
         return { success: false, error: error.message };
@@ -369,6 +400,76 @@ class TaskAPI {
         .eq('view_group_id', groupId);
 
       if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Mover tarefa entre seções e reordenar, persistindo positions.
+   * Atualiza section_id, insere no targetIndex e normaliza posições
+   * nas seções de origem e destino.
+   */
+  async moveTaskAndReorder(
+    taskId: number,
+    targetSectionId: number | null,
+    targetIndex: number,
+    projectId: number
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const client = createClient();
+
+      const { data: task } = await client
+        .from('todos')
+        .select('section_id')
+        .eq('id', taskId)
+        .single();
+
+      if (!task) return { success: false, error: 'Task not found' };
+
+      const sourceSectionId = task.section_id;
+
+      const getSectionTasksQuery = (sid: number | null) => {
+        let q = client.from('todos').select('id').eq('project_id', projectId);
+        if (sid === null) return q.is('section_id', null);
+        return q.eq('section_id', sid);
+      };
+
+      // Build ordered list of task IDs in target section (excluding the moved task)
+      const { data: targetBefore } = await getSectionTasksQuery(targetSectionId)
+        .order('position', { ascending: true })
+        .order('id', { ascending: true });
+
+      const targetIds = (targetBefore || [])
+        .map(t => t.id)
+        .filter(id => id !== taskId);
+
+      // Insert moved task at targetIndex
+      targetIds.splice(targetIndex, 0, taskId);
+
+      // Assign sequential positions
+      for (let i = 0; i < targetIds.length; i++) {
+        const updateData: Record<string, number | null> = { position: i };
+        if (targetIds[i] === taskId) {
+          updateData.section_id = targetSectionId;
+        }
+        await client.from('todos').update(updateData).eq('id', targetIds[i]);
+      }
+
+      // If source section is different, normalize its positions too
+      if (sourceSectionId !== targetSectionId) {
+        const { data: sourceTasks } = await getSectionTasksQuery(sourceSectionId)
+          .order('position', { ascending: true })
+          .order('id', { ascending: true });
+
+        if (sourceTasks) {
+          for (let i = 0; i < sourceTasks.length; i++) {
+            await client.from('todos').update({ position: i }).eq('id', sourceTasks[i].id);
+          }
+        }
+      }
+
       return { success: true };
     } catch (error) {
       return { success: false, error: (error as Error).message };

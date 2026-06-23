@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card } from '@/components/ui/card';
+import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
 
 export default function TodosPage() {
   const [user, setUser] = useState<any>(null);
@@ -22,6 +23,7 @@ export default function TodosPage() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [editingTask, setEditingTask] = useState<Partial<Task> | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const router = useRouter();
   const client = createClient();
 
@@ -42,21 +44,14 @@ export default function TodosPage() {
       fetchGroups();
       fetchTasks();
 
-      // Realtime subscription
+      // Realtime subscription — sem filtro de user_id para capturar
+      // alterações em tasks de projetos feitas por outros membros
       const channel = client
         .channel('todos-changes')
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'todos', filter: `user_id=eq.${user.id}` },
-          (payload) => {
-            if (payload.eventType === 'INSERT') {
-              setTasks((prev) => [payload.new as Task, ...prev.filter(t => t.id !== payload.new.id)]);
-            } else if (payload.eventType === 'UPDATE') {
-              setTasks((prev) => prev.map(t => t.id === payload.new.id ? (payload.new as Task) : t));
-            } else if (payload.eventType === 'DELETE') {
-              setTasks((prev) => prev.filter(t => t.id !== payload.old.id));
-            }
-          }
+          { event: '*', schema: 'public', table: 'todos' },
+          () => fetchTasks()
         )
         .subscribe();
 
@@ -89,24 +84,32 @@ export default function TodosPage() {
   };
 
   const addTask = async () => {
-    if (!newTaskTitle.trim() || !user) return;
+    const raw = newTaskTitle.trim();
+    if (!raw || !user) return;
 
-    const result = await taskAPI.createTask(
-      user.id,
-      newTaskTitle,
-      undefined,
-      undefined,
-      selectedGroupId || undefined
-    );
+    const titles = raw.split('\n').map(t => t.trim()).filter(Boolean);
+    if (titles.length === 0) return;
 
-    if (result.success && result.data) {
-      // realtime should pick it up, but we can do it optimistically
-      setNewTaskTitle('');
+    for (const title of titles) {
+      await taskAPI.createTask(
+        user.id,
+        title,
+        undefined,
+        undefined,
+        selectedGroupId || undefined
+      );
     }
+
+    setNewTaskTitle('');
   };
 
   const toggleTask = async (task: Task) => {
-    await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
+    const result = await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
+    if (result.success) {
+      setTasks(prev => prev.map(t =>
+        t.id === task.id ? { ...t, is_completed: result.newState ?? !t.is_completed } : t
+      ));
+    }
   };
 
   const deleteTask = async (taskId: number) => {
@@ -139,6 +142,23 @@ export default function TodosPage() {
           value={newTaskTitle}
           onChange={(e) => setNewTaskTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && addTask()}
+          onPaste={async (e) => {
+            const text = e.clipboardData.getData('text');
+            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+            if (lines.length > 1) {
+              e.preventDefault();
+              for (const title of lines) {
+                await taskAPI.createTask(
+                  user.id,
+                  title,
+                  undefined,
+                  undefined,
+                  selectedGroupId || undefined
+                );
+              }
+              setNewTaskTitle('');
+            }
+          }}
           placeholder="Adicionar nova tarefa..."
           className="flex-1"
         />
@@ -179,9 +199,12 @@ export default function TodosPage() {
                 onCheckedChange={() => toggleTask(task)}
               />
               <div className="flex-1">
-                <span className={task.is_completed ? 'line-through text-muted-foreground' : ''}>
+                <button
+                  onClick={() => setSelectedTask(task)}
+                  className={'text-left bg-transparent border-none p-0 cursor-pointer hover:underline' + (task.is_completed ? ' line-through text-muted-foreground' : '')}
+                >
                   {task.title}
-                </span>
+                </button>
                 {task.view_group_id && groups.find(g => g.id === task.view_group_id) && (
                   <span className="ml-2 text-xs bg-muted px-2 py-0.5 rounded">
                     {groups.find(g => g.id === task.view_group_id)?.title}
@@ -249,6 +272,18 @@ export default function TodosPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Task Detail Panel */}
+      {selectedTask && (
+        <TaskDetailPanel
+          task={selectedTask}
+          onClose={() => setSelectedTask(null)}
+          onUpdate={(updatedTask) => {
+            setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
+            setSelectedTask(updatedTask);
+          }}
+        />
+      )}
     </div>
   );
 }
