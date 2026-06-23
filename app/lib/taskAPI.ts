@@ -5,6 +5,7 @@
 
 import { createClient } from '@/app/lib/supabase/Client';
 import type { Task, TaskViewGroup } from '@/types/index';
+import { projectAPI } from '@/app/lib/projectAPI';
 
 class TaskAPI {
   /**
@@ -326,11 +327,31 @@ class TaskAPI {
   }
 
   /**
-   * Deletar tarefa
+   * Deletar tarefa — apenas o criador ou membros do projeto podem excluir
    */
   async deleteTask(taskId: number): Promise<{ success: boolean; error?: string }> {
     try {
       const client = createClient();
+
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return { success: false, error: 'Usuário não autenticado' };
+
+      const { data: task, error: fetchError } = await client
+        .from('todos')
+        .select('user_id, project_id')
+        .eq('id', taskId)
+        .single();
+
+      if (fetchError || !task) return { success: false, error: 'Tarefa não encontrada' };
+
+      const isCreator = task.user_id === user.id;
+      const isProjectTask = task.project_id !== null;
+      const isMember = isProjectTask && await projectAPI.isProjectMember(task.project_id!, user.id);
+
+      if (!isCreator && !isMember) {
+        return { success: false, error: 'Apenas o criador ou membros do projeto podem excluir esta tarefa' };
+      }
+
       const { error } = await client.from('todos').delete().eq('id', taskId);
 
       if (error) return { success: false, error: error.message };
