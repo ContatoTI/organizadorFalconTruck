@@ -769,7 +769,7 @@ function DashboardContent() {
             >
               {task.title}
             </button>
-            {task.creator_name && task.creator_name !== user?.email && task.creator_name !== user?.user_metadata?.full_name && (
+            {task.creator_name && task.creator_name !== user?.email && (
               <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">
                 {task.creator_name.split('@')[0]}
               </span>
