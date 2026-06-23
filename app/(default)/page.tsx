@@ -749,12 +749,12 @@ function DashboardContent() {
           onDragOver={(e) => handleTaskDragOver(e, task)}
           onDragLeave={handleTaskDragLeave}
           className={cn(
-            "flex items-center gap-3 py-2 px-2 group border-b border-accent/10 last:border-b-0 cursor-grab active:cursor-grabbing",
+            "flex items-center gap-3 py-3 px-3 group border-b border-border/40 last:border-b-0 cursor-grab active:cursor-grabbing hover:bg-accent/50 transition-colors",
             draggingTaskId === task.id && "opacity-50 border-2 border-primary/30 ring-2 ring-primary/20 rounded-lg scale-[0.97] shadow-sm",
             droppedTaskId === task.id && "animate-in fade-in zoom-in-95 duration-500"
           )}
         >
-          <GripVertical className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
+          <GripVertical className="w-4 h-4 text-muted-foreground/30 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
           <Checkbox
             checked={task.is_completed}
             onCheckedChange={() => toggleTask(task)}
@@ -763,15 +763,15 @@ function DashboardContent() {
             <button
               onClick={() => setSelectedTask(task)}
               className={cn(
-                'text-sm truncate text-left bg-transparent border-none p-0 cursor-pointer hover:underline',
+                'text-sm truncate text-left bg-transparent border-none p-0 cursor-pointer hover:text-primary transition-colors',
                 task.is_completed && 'line-through text-muted-foreground'
               )}
             >
               {task.title}
             </button>
-            {task.creator_name && (
-              <span className="text-xs text-muted-foreground/50 whitespace-nowrap flex-shrink-0">
-                👤 {task.creator_name}
+            {task.creator_name && task.creator_name !== user?.email && task.creator_name !== user?.user_metadata?.full_name && (
+              <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">
+                {task.creator_name.split('@')[0]}
               </span>
             )}
           </div>
@@ -812,8 +812,8 @@ function DashboardContent() {
         <div key={group.key}>
           <div
             className={cn(
-              "flex items-center gap-2 px-4 py-1.5 border-b border-accent/5 text-xs font-medium uppercase tracking-wider",
-              isHovered ? "bg-primary/[0.04] text-primary" : "text-muted-foreground/60 bg-accent/[0.02]"
+              "flex items-center gap-2 px-4 py-1.5 border-b border-border/40 text-xs font-medium uppercase tracking-wider",
+              isHovered ? "bg-primary/5 text-primary" : "text-muted-foreground/60"
             )}
             onDragOver={(e) => handleDragOverStatusGroup(e, sectionId, group.key)}
             onDragLeave={handleDragLeaveStatusGroup}
@@ -1105,13 +1105,13 @@ function DashboardContent() {
                 <Card
                   key={section.id}
                   className={cn(
-                    "bg-accent/5 border-accent/20 overflow-hidden shadow-none transition-all duration-200",
-                    dragOverSectionId === section.id && "ring-2 ring-primary/40 bg-primary/[0.03] shadow-sm"
+                    "bg-card border-border overflow-hidden shadow-card transition-all duration-200",
+                    dragOverSectionId === section.id && "ring-2 ring-primary/40 bg-primary/5 shadow-card-hover"
                   )}
                 >
                   {/* Header da seção */}
                   <div
-                    className="flex items-center justify-between px-4 py-2 border-b border-accent/20 cursor-pointer hover:bg-accent/10 transition-colors"
+                    className="flex items-center justify-between px-4 py-2 border-b border-border/60 cursor-pointer hover:bg-accent/50 transition-colors"
                     onClick={() => toggleSectionExpand(section.id)}
                   >
                     <div className="flex items-center gap-3">
@@ -1165,7 +1165,7 @@ function DashboardContent() {
                   {/* Tarefas da seção */}
                   {expandedSections[section.id] && (
                     <div
-                      className="border-t border-accent/20 min-h-[48px] transition-all duration-200"
+                      className="border-t border-border/50 min-h-[48px] transition-all duration-200"
                       onDragOver={(e) => handleDragOverSection(e, section.id)}
                       onDragLeave={handleDragLeaveSection}
                       onDrop={(e) => handleDropOnSection(e, section.id)}
@@ -1211,11 +1211,11 @@ function DashboardContent() {
               {(getTasksBySection(null).length > 0 || draggingTaskId) && (
                 <Card
                   className={cn(
-                    "bg-accent/5 border-accent/20 overflow-hidden shadow-none transition-all duration-200",
-                    dragOverSectionId === 'unsectioned' && "ring-2 ring-primary/40 bg-primary/[0.03] shadow-sm"
+                    "bg-card border-border overflow-hidden shadow-card transition-all duration-200",
+                    dragOverSectionId === 'unsectioned' && "ring-2 ring-primary/40 bg-primary/5 shadow-card-hover"
                   )}
                 >
-                  <div className="flex items-center justify-between px-4 py-2 border-b border-accent/20">
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-border/60">
                     <div className="flex items-center gap-3">
                       <Folder className="w-4 h-4 text-muted-foreground" />
                       <span className="text-sm font-semibold text-muted-foreground">Sem organização</span>
@@ -1275,27 +1275,39 @@ function DashboardContent() {
                 const groupInfo = getGroupInfo(groupId);
                 const groupTasks = groupedTasks[groupId];
                 if (!groupTasks || groupTasks.length === 0) return null;
+                const pendingCount = groupTasks.filter(t => !t.is_completed).length;
                 return (
-                  <div key={groupId} className="mb-4">
-                    <div className="flex items-center justify-between px-1 py-2">
-                      <span
-                        className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                        style={groupInfo.color ? { color: groupInfo.color } : undefined}
-                      >
-                        {groupInfo.title}
-                      </span>
+                  <div key={groupId} className="mb-6">
+                    <div className="flex items-center justify-between mb-2 px-1">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className="w-1 h-4 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: groupInfo.color || 'hsl(var(--primary))' }}
+                        />
+                        <span
+                          className="text-sm font-semibold"
+                          style={groupInfo.color ? { color: groupInfo.color } : undefined}
+                        >
+                          {groupInfo.title}
+                        </span>
+                        {pendingCount > 0 && (
+                          <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full font-medium tabular-nums">
+                            {pendingCount}
+                          </span>
+                        )}
+                      </div>
                       {groupInfo.link && (
                         <Button
-                          variant="link"
+                          variant="ghost"
                           size="sm"
                           onClick={() => router.push(groupInfo.link!)}
-                          className="h-auto p-0 text-xs"
+                          className="h-7 px-2 text-xs text-muted-foreground hover:text-primary gap-1"
                         >
-                          Selecionar
+                          Ver <ArrowRight className="w-3 h-3" />
                         </Button>
                       )}
                     </div>
-                    <div className="border border-accent/20 rounded-lg overflow-hidden bg-accent/5">
+                    <div className="border border-border rounded-xl overflow-hidden bg-card shadow-card">
                       {groupTasks.map((task) => renderTaskItem(task))}
                     </div>
                   </div>
@@ -1304,7 +1316,7 @@ function DashboardContent() {
 
               {/* Quando tem grupo selecionado: lista compacta única */}
               {selectedGroup && (
-                <div className="border border-accent/20 rounded-lg overflow-hidden bg-accent/5">
+                <div className="border border-border rounded-xl overflow-hidden bg-card shadow-card">
                   {filteredTasks.map((task) => renderTaskItem(task))}
                 </div>
               )}

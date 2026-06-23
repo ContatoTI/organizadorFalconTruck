@@ -179,7 +179,7 @@ export default function CalendarPage() {
         <h1 className="text-3xl font-bold">Calendário</h1>
       </div>
 
-      <Card className="p-6 shadow-none border-accent/20">
+      <Card className="p-6 shadow-card border-border">
         <div className="flex items-center justify-between mb-8">
           <Button variant="ghost" size="icon" onClick={prevMonth}>
             <ChevronLeft className="w-5 h-5" />
@@ -254,7 +254,7 @@ export default function CalendarPage() {
           </div>
           <div className="space-y-2">
             {getTasksForDate(selectedDate).map((task) => (
-              <Card key={task.id} className="flex items-center gap-3 p-3 shadow-none border-accent/20">
+              <Card key={task.id} className="flex items-center gap-3 p-3 shadow-xs border-border">
                 <Checkbox checked={task.is_completed} disabled />
                 <span className={cn("text-sm flex-1", task.is_completed && "line-through text-muted-foreground")}>
                   {task.title}
@@ -267,7 +267,7 @@ export default function CalendarPage() {
               </Card>
             ))}
             {getTasksForDate(selectedDate).length === 0 && (
-              <div className="text-center py-8 bg-muted/20 rounded-xl border border-dashed border-accent/20">
+              <div className="text-center py-8 bg-muted/20 rounded-xl border border-dashed border-border">
                 <p className="text-muted-foreground text-sm">Nenhuma tarefa neste dia.</p>
               </div>
             )}

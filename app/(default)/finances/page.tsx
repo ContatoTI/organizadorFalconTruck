@@ -140,30 +140,36 @@ export default function FinancesPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-8">
-        <Card className="p-4">
-          <div className="flex items-center gap-2 text-green-600 mb-2">
-            <TrendingUp className="w-5 h-5" />
-            <span className="text-sm font-medium">Receitas</span>
+        <Card className="p-4 shadow-card">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-8 h-8 rounded-lg cat-green-soft flex items-center justify-center">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+            <span className="text-sm font-medium text-muted-foreground">Receitas</span>
           </div>
-          <p className="text-2xl font-bold text-green-600">
+          <p className="text-2xl font-bold text-foreground">
             {totalIncome.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </p>
         </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-2 text-red-600 mb-2">
-            <TrendingDown className="w-5 h-5" />
-            <span className="text-sm font-medium">Despesas</span>
+        <Card className="p-4 shadow-card">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-8 h-8 rounded-lg cat-red-soft flex items-center justify-center">
+              <TrendingDown className="w-4 h-4" />
+            </div>
+            <span className="text-sm font-medium text-muted-foreground">Despesas</span>
           </div>
-          <p className="text-2xl font-bold text-red-600">
+          <p className="text-2xl font-bold text-foreground">
             {totalExpense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </p>
         </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-2 text-primary mb-2">
-            <Wallet className="w-5 h-5" />
-            <span className="text-sm font-medium">Saldo</span>
+        <Card className="p-4 shadow-card">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-8 h-8 rounded-lg bg-sidebar-accent flex items-center justify-center">
+              <Wallet className="w-4 h-4 text-sidebar-primary" />
+            </div>
+            <span className="text-sm font-medium text-muted-foreground">Saldo</span>
           </div>
-          <p className={`text-2xl font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+          <p className={`text-2xl font-bold ${balance >= 0 ? 'text-cat-green' : 'text-cat-red'}`}>
             {balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </p>
         </Card>
@@ -173,15 +179,15 @@ export default function FinancesPage() {
         {loading ? (
           <div className="text-center py-8 text-muted-foreground">Carregando...</div>
         ) : transactions.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-lg border border-dashed">
+          <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed border-border">
             <p>Nenhuma transação encontrada.</p>
             <p className="text-sm mt-2">Registre suas receitas e despesas.</p>
           </div>
         ) : (
           transactions.map((transaction) => (
-            <Card key={transaction.id} className="flex items-center gap-4 p-4">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                transaction.type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
+            <Card key={transaction.id} className="flex items-center gap-4 p-4 shadow-xs hover:shadow-card transition-shadow">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                transaction.type === 'income' ? 'cat-green-soft' : 'cat-red-soft'
               }`}>
                 {transaction.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
               </div>
@@ -196,7 +202,7 @@ export default function FinancesPage() {
                   </span>
                 </div>
               </div>
-              <p className={`font-bold ${transaction.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+              <p className={`font-bold ${transaction.type === 'income' ? 'text-cat-green' : 'text-cat-red'}`}>
                 {transaction.type === 'income' ? '+' : '-'}
                 {transaction.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </p>

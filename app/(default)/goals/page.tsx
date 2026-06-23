@@ -128,13 +128,13 @@ export default function GoalsPage() {
         {loading ? (
           <div className="text-center py-8 text-muted-foreground">Carregando...</div>
         ) : goals.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-lg border border-dashed">
+          <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed border-border">
             <p>Nenhuma meta encontrada.</p>
             <p className="text-sm mt-2">Defina suas metas para acompanhar seu progresso.</p>
           </div>
         ) : (
           goals.map((goal) => (
-            <Card key={goal.id} className="p-4">
+            <Card key={goal.id} className="p-4 shadow-card hover:shadow-card-hover transition-shadow">
               <div className="flex items-start gap-4">
                 <button
                   onClick={() => toggleGoal(goal)}

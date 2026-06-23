@@ -185,14 +185,14 @@ export default function TodosPage() {
         {loading ? (
           <div className="text-center py-8 text-muted-foreground">Carregando...</div>
         ) : tasks.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-lg border border-dashed">
+          <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed border-border">
             <p>Nenhuma tarefa encontrada.</p>
           </div>
         ) : (
           tasks.map((task) => (
             <Card
               key={task.id}
-              className="flex items-center gap-3 p-4 hover:bg-accent/5 transition-colors group"
+              className="flex items-center gap-3 p-4 hover:bg-accent/50 transition-colors group shadow-xs"
             >
               <Checkbox
                 checked={task.is_completed}

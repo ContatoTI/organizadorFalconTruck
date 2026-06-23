@@ -4,48 +4,148 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    /* ── Superfícies ──────────────────────────────────────────────── */
+    --background: 210 40% 98%;          /* #f8fafc — cinza muito suave, não branco puro */
+    --foreground: 222 47% 11%;          /* #0f172a — navy escuro para texto */
+
+    --card: 0 0% 100%;                  /* #ffffff — cards brancos sobre bg cinza */
+    --card-foreground: 222 47% 11%;
+
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    --popover-foreground: 222 47% 11%;
+
+    /* ── Primária (Azul) ──────────────────────────────────────────── */
+    --primary: 221 83% 53%;             /* #2563eb — azul profissional */
+    --primary-foreground: 0 0% 100%;
+
+    /* ── Secundária ───────────────────────────────────────────────── */
+    --secondary: 210 40% 96%;           /* #f1f5f9 — cinza claro */
+    --secondary-foreground: 222 47% 11%;
+
+    /* ── Muted ────────────────────────────────────────────────────── */
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;    /* #64748b — cinza médio */
+
+    /* ── Accent — cor de hover/seleção (azul muito suave) ─────────── */
+    --accent: 214 100% 97%;             /* #eff6ff — essencial para look moderno */
+    --accent-foreground: 221 83% 45%;   /* azul mais escuro para texto sobre accent */
+
+    /* ── Destrutivo ───────────────────────────────────────────────── */
+    --destructive: 0 72% 51%;           /* #dc2626 */
+    --destructive-foreground: 0 0% 100%;
+
+    /* ── Bordas e Inputs ──────────────────────────────────────────── */
+    --border: 214 32% 91%;              /* #e2e8f0 — borda suave */
+    --input: 214 32% 91%;
+    --ring: 221 83% 53%;
+
+    /* ── Border Radius ────────────────────────────────────────────── */
+    --radius: 0.625rem;                 /* 10px — arredondamento padrão */
+
+    /* ── Sistema de Sombras ───────────────────────────────────────── */
+    --shadow-xs:  0 1px 3px 0 rgb(0 0 0 / 0.07);
+    --shadow-sm:  0 1px 3px 0 rgb(0 0 0 / 0.10), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+    --shadow-md:  0 4px 8px -1px rgb(0 0 0 / 0.10), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+    --shadow-lg:  0 10px 20px -3px rgb(0 0 0 / 0.10), 0 4px 8px -4px rgb(0 0 0 / 0.06);
+    --shadow-xl:  0 20px 30px -5px rgb(0 0 0 / 0.12), 0 8px 12px -6px rgb(0 0 0 / 0.06);
+
+    /* ── Sidebar ──────────────────────────────────────────────────── */
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-accent: 214 100% 97%;
+    --sidebar-accent-foreground: 221 83% 45%;
+    --sidebar-primary: 221 83% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-ring: 221 83% 53%;
+    --sidebar-muted-foreground: 215 16% 47%;
+
+    /* ── Cores de Categoria ───────────────────────────────────────── */
+    /* Usadas em eventos de calendário, rótulos de projetos, badges   */
+    --cat-blue:       217 91% 60%;
+    --cat-blue-bg:    214 100% 97%;
+    --cat-green:      142 71% 45%;
+    --cat-green-bg:   141 84% 93%;
+    --cat-coral:      14 100% 57%;
+    --cat-coral-bg:   30 100% 95%;
+    --cat-purple:     270 67% 60%;
+    --cat-purple-bg:  270 100% 97%;
+    --cat-pink:       330 81% 60%;
+    --cat-pink-bg:    330 100% 96%;
+    --cat-yellow:     43 96% 56%;
+    --cat-yellow-bg:  48 100% 95%;
+    --cat-teal:       172 66% 50%;
+    --cat-teal-bg:    170 76% 93%;
+    --cat-red:        0 72% 51%;
+    --cat-red-bg:     0 100% 96%;
+
+    /* ── Transições ───────────────────────────────────────────────── */
+    --transition-fast: 150ms ease;
+    --transition-base: 200ms ease;
+    --transition-slow: 300ms ease;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
+    --background: 222 47% 6%;
     --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
+
+    --card: 222 47% 8%;
     --card-foreground: 210 40% 98%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
+
+    --popover: 222 47% 9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 6%;
+
+    --secondary: 217 32% 17%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
+
+    --muted: 217 32% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 217 32% 14%;
+    --accent-foreground: 217 91% 70%;
+
+    --destructive: 0 63% 45%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+
+    --border: 217 32% 17%;
+    --input: 217 32% 17%;
+    --ring: 217 91% 60%;
+
+    --shadow-xs:  0 1px 2px 0 rgb(0 0 0 / 0.2);
+    --shadow-sm:  0 1px 3px 0 rgb(0 0 0 / 0.25), 0 1px 2px -1px rgb(0 0 0 / 0.2);
+    --shadow-md:  0 4px 6px -1px rgb(0 0 0 / 0.25), 0 2px 4px -2px rgb(0 0 0 / 0.2);
+    --shadow-lg:  0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.2);
+    --shadow-xl:  0 20px 25px -5px rgb(0 0 0 / 0.25), 0 8px 10px -6px rgb(0 0 0 / 0.18);
+
+    --sidebar: 222 47% 7%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-border: 217 32% 17%;
+    --sidebar-accent: 217 32% 13%;
+    --sidebar-accent-foreground: 217 91% 70%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 222 47% 6%;
+    --sidebar-ring: 217 91% 60%;
+    --sidebar-muted-foreground: 215 20% 55%;
+
+    --cat-blue:       217 91% 60%;
+    --cat-blue-bg:    217 32% 13%;
+    --cat-green:      142 71% 45%;
+    --cat-green-bg:   142 32% 12%;
+    --cat-coral:      14 100% 57%;
+    --cat-coral-bg:   14 32% 12%;
+    --cat-purple:     270 67% 60%;
+    --cat-purple-bg:  270 32% 13%;
+    --cat-pink:       330 81% 60%;
+    --cat-pink-bg:    330 32% 12%;
+    --cat-yellow:     43 96% 56%;
+    --cat-yellow-bg:  43 32% 12%;
+    --cat-teal:       172 66% 50%;
+    --cat-teal-bg:    172 32% 12%;
+    --cat-red:        0 72% 51%;
+    --cat-red-bg:     0 32% 12%;
   }
 }
 
@@ -55,10 +155,74 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Scrollbar discreta */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.3);
   }
 }
 
 @layer utilities {
+  /* ── Sombras como utilities ───────────────────────────────────── */
+  .shadow-xs        { box-shadow: var(--shadow-xs); }
+  .shadow-card      { box-shadow: var(--shadow-sm); }
+  .shadow-card-hover { box-shadow: var(--shadow-md); }
+  .shadow-panel     { box-shadow: var(--shadow-lg); }
+  .shadow-modal     { box-shadow: var(--shadow-xl); }
+
+  /* ── Sidebar ─────────────────────────────────────────────────── */
+  .bg-sidebar                   { background-color: hsl(var(--sidebar)); }
+  .text-sidebar-foreground      { color: hsl(var(--sidebar-foreground)); }
+  .border-sidebar               { border-color: hsl(var(--sidebar-border)); }
+  .bg-sidebar-accent            { background-color: hsl(var(--sidebar-accent)); }
+  .text-sidebar-accent          { color: hsl(var(--sidebar-accent-foreground)); }
+  .text-sidebar-muted           { color: hsl(var(--sidebar-muted-foreground)); }
+  .text-sidebar-primary         { color: hsl(var(--sidebar-primary)); }
+
+  /* ── Cores de Categoria ──────────────────────────────────────── */
+  .cat-blue        { background-color: hsl(var(--cat-blue)); color: #fff; }
+  .cat-blue-soft   { background-color: hsl(var(--cat-blue-bg)); color: hsl(var(--cat-blue)); }
+  .cat-green       { background-color: hsl(var(--cat-green)); color: #fff; }
+  .cat-green-soft  { background-color: hsl(var(--cat-green-bg)); color: hsl(var(--cat-green)); }
+  .cat-coral       { background-color: hsl(var(--cat-coral)); color: #fff; }
+  .cat-coral-soft  { background-color: hsl(var(--cat-coral-bg)); color: hsl(var(--cat-coral)); }
+  .cat-purple      { background-color: hsl(var(--cat-purple)); color: #fff; }
+  .cat-purple-soft { background-color: hsl(var(--cat-purple-bg)); color: hsl(var(--cat-purple)); }
+  .cat-pink        { background-color: hsl(var(--cat-pink)); color: #fff; }
+  .cat-pink-soft   { background-color: hsl(var(--cat-pink-bg)); color: hsl(var(--cat-pink)); }
+  .cat-yellow      { background-color: hsl(var(--cat-yellow)); color: hsl(222 47% 11%); }
+  .cat-yellow-soft { background-color: hsl(var(--cat-yellow-bg)); color: hsl(var(--cat-yellow)); }
+  .cat-teal        { background-color: hsl(var(--cat-teal)); color: #fff; }
+  .cat-teal-soft   { background-color: hsl(var(--cat-teal-bg)); color: hsl(var(--cat-teal)); }
+  .cat-red         { background-color: hsl(var(--cat-red)); color: #fff; }
+  .cat-red-soft    { background-color: hsl(var(--cat-red-bg)); color: hsl(var(--cat-red)); }
+
+  /* ── Texto de Categoria ─────────────────────────────────────── */
+  .text-cat-blue   { color: hsl(var(--cat-blue)); }
+  .text-cat-green  { color: hsl(var(--cat-green)); }
+  .text-cat-coral  { color: hsl(var(--cat-coral)); }
+  .text-cat-purple { color: hsl(var(--cat-purple)); }
+  .text-cat-pink   { color: hsl(var(--cat-pink)); }
+  .text-cat-yellow { color: hsl(var(--cat-yellow)); }
+  .text-cat-teal   { color: hsl(var(--cat-teal)); }
+  .text-cat-red    { color: hsl(var(--cat-red)); }
+
+  /* ── Animações ───────────────────────────────────────────────── */
   .drag-indicator-pulse {
     animation: drag-indicator-pulse 1s ease-in-out infinite;
   }

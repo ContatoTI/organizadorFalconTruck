@@ -131,14 +131,14 @@ export function TaskDetailPanel({ task, onClose, onUpdate }: TaskDetailPanelProp
     <div className="fixed inset-0 z-50 flex justify-end">
       {/* Overlay - mesmo estilo do modal Novo Projeto */}
       <div
-        className="absolute inset-0 bg-black/80 animate-in fade-in duration-200"
+        className="absolute inset-0 bg-foreground/50 backdrop-blur-sm animate-in fade-in duration-200"
         onClick={onClose}
       />
 
       {/* Panel - mesma linguagem visual do modal */}
       <div
         className={cn(
-          "relative w-full max-w-lg bg-white text-card-foreground shadow-xl border-l",
+          "relative w-full max-w-lg bg-card text-card-foreground shadow-modal border-l border-border",
           "flex flex-col h-full",
           "animate-in slide-in-from-right duration-300"
         )}

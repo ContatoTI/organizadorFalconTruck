@@ -187,13 +187,13 @@ function GroupsContent() {
         {loading ? (
           <div className="col-span-2 text-center py-8 text-muted-foreground">Carregando...</div>
         ) : groups.length === 0 ? (
-          <div className="col-span-2 text-center py-8 text-muted-foreground bg-muted/20 rounded-lg border border-dashed">
+          <div className="col-span-2 text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed border-border">
             <p>Nenhum grupo encontrado.</p>
             <p className="text-sm mt-2">Crie um grupo para organizar suas tarefas.</p>
           </div>
         ) : (
           groups.map((group) => (
-            <Card key={group.id} className="p-4">
+            <Card key={group.id} className="p-4 shadow-card hover:shadow-card-hover transition-shadow">
               <div className="flex items-center gap-3">
                 <span className="text-2xl" style={{ color: group.color ?? undefined }}>
                   {group.icon || (group.type === 'time' ? '🕐' : '📋')}

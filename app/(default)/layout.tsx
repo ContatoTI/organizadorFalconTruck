@@ -420,8 +420,8 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
       {/* Modal para criar projeto */}
       {showProjectModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-80 shadow-xl">
+        <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-card rounded-xl p-6 w-80 shadow-modal border border-border">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Novo Projeto</h3>
               <button onClick={() => setShowProjectModal(false)} className="p-1 hover:bg-accent rounded">
@@ -467,12 +467,13 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
         </div>
       )}
 
-      <aside className="w-64 border-r bg-card hidden md:flex flex-col">
-        <div className="p-6 border-b">
-          <h1 className="text-xl font-bold">
+      <aside className="w-64 border-r border-border bg-sidebar hidden md:flex flex-col">
+        <div className="p-5 border-b border-border">
+          <p className="text-xs font-semibold text-sidebar-muted uppercase tracking-widest mb-0.5">Organizador</p>
+          <h1 className="text-base font-semibold text-sidebar-foreground truncate">
             {user
               ? user.user_metadata?.full_name || user.email?.split('@')[0] || 'Usuário'
-              : 'Organizador'}
+              : 'FalconTruck'}
           </h1>
         </div>
 
@@ -497,21 +498,21 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                 <Link
                   href="/"
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors',
-                    pathname === '/' && 'bg-primary text-primary-foreground'
+                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                    pathname === '/' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
                   )}
                 >
-                  <LayoutDashboard className="w-5 h-5" />
+                  <LayoutDashboard className="w-4 h-4" />
                   Dashboard
                 </Link>
                 <Link
                   href="/calendar"
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors',
-                    pathname === '/calendar' && 'bg-primary text-primary-foreground'
+                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                    pathname === '/calendar' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
                   )}
                 >
-                  <Calendar className="w-5 h-5" />
+                  <Calendar className="w-4 h-4" />
                   Calendário
                 </Link>
               </div>
@@ -542,7 +543,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                         onDrop={(e) => handleDropOnGroup(e, group.id)}
                         className={cn(
                           "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
-                          isDragOver === group.id ? "bg-primary/20 ring-2 ring-primary" : "hover:bg-accent/50"
+                          isDragOver === group.id ? "bg-primary/10 ring-2 ring-primary/40" : "hover:bg-sidebar-accent"
                         )}
                       >
                         <Link
@@ -600,7 +601,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                         onDrop={(e) => handleDropOnGroup(e, group.id)}
                         className={cn(
                           "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
-                          isDragOver === group.id ? "bg-primary/20 ring-2 ring-primary" : "hover:bg-accent/50"
+                          isDragOver === group.id ? "bg-primary/10 ring-2 ring-primary/40" : "hover:bg-sidebar-accent"
                         )}
                       >
                         <Link
@@ -639,7 +640,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                     toggleSection('projetos');
                     setShowProjectsView(true);
                   }}
-                  className="flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:bg-accent/50 rounded-md transition-colors cursor-pointer"
+                  className="flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-2">
                     <ChevronRight
@@ -708,7 +709,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
               <div>
                 <button
                   onClick={() => toggleSection('planejamento')}
-                  className="flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:bg-accent/50 rounded-md transition-colors"
+                  className="flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors"
                 >
                   <div className="flex items-center gap-2">
                     <ChevronRight
@@ -726,8 +727,8 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                     <Link
                       href="/goals"
                       className={cn(
-                        'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-accent/50 transition-colors',
-                        pathname === '/goals' && 'bg-primary/10 text-primary'
+                        'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                        pathname === '/goals' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
                       )}
                     >
                       <Target className="w-4 h-4" />
@@ -736,8 +737,8 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                     <Link
                       href="/finances"
                       className={cn(
-                        'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-accent/50 transition-colors',
-                        pathname === '/finances' && 'bg-primary/10 text-primary'
+                        'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                        pathname === '/finances' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
                       )}
                     >
                       <Wallet className="w-4 h-4" />
@@ -752,11 +753,11 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                 <Link
                   href="/todos"
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors',
-                    pathname === '/todos' && 'bg-primary text-primary-foreground'
+                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                    pathname === '/todos' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
                   )}
                 >
-                  <CheckSquare className="w-5 h-5" />
+                  <CheckSquare className="w-4 h-4" />
                   Todas Tarefas
                 </Link>
               </div>
@@ -765,7 +766,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
               <div className="pt-4 border-t">
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-accent hover:text-accent-foreground transition-colors w-full"
+                  className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-sidebar-muted hover:bg-destructive/10 hover:text-destructive transition-colors w-full"
                 >
                   <LogOut className="w-5 h-5" />
                   Sair

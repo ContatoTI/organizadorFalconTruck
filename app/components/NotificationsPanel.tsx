@@ -44,7 +44,7 @@ export function NotificationsPanel({
   if (!isOpen) return null;
 
   return (
-    <div className="absolute right-0 mt-2 w-80 bg-card rounded-lg border shadow-xl max-h-96 overflow-y-auto">
+    <div className="absolute right-0 mt-2 w-80 bg-card rounded-xl border border-border shadow-modal max-h-96 overflow-y-auto">
       <div className="p-3 border-b">
         <h3 className="font-semibold">Notificações</h3>
       </div>
@@ -140,7 +140,7 @@ export function NotificationBell({
   return (
     <button
       onClick={onClick}
-      className="relative p-2 rounded-full bg-card border hover:bg-accent transition-colors shadow-sm"
+      className="relative p-2 rounded-full bg-card border border-border hover:bg-accent transition-colors shadow-card"
     >
       <Bell className="w-5 h-5" />
       {count > 0 && (

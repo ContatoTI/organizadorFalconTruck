@@ -82,7 +82,7 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose }: Pr
                   key={project.id}
                   href={`/?project=${project.id}`}
                   onClick={onClose}
-                  className="group relative bg-card rounded-xl p-5 ring-1 ring-foreground/10 hover:ring-2 hover:ring-primary/50 transition-all hover:shadow-md"
+                  className="group relative bg-card rounded-xl p-5 border border-border shadow-card hover:shadow-card-hover hover:border-primary/30 transition-all"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
@@ -111,11 +111,11 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose }: Pr
 
       {editingProject && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center z-50"
           onClick={() => setEditingProject(null)}
         >
           <div
-            className="bg-card rounded-xl p-6 w-80 shadow-xl"
+            className="bg-card rounded-xl p-6 w-80 shadow-modal border border-border"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
@@ -135,7 +135,7 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose }: Pr
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   placeholder="Nome do projeto"
-                  className="w-full px-3 py-2 rounded-lg border border-input bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   autoFocus
                 />
               </div>
