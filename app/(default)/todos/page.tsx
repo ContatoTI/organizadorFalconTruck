@@ -105,7 +105,7 @@ export default function TodosPage() {
       description: null,
       priority: null,
       status: 'a_fazer',
-      creator_name: user.user_metadata?.full_name || user.email,
+      creator_name: (user as any).user_metadata?.full_name || user.email,
     } as Task));
 
     setTasks(prev => [...newOptimisticTasks, ...prev]);
@@ -175,7 +175,7 @@ export default function TodosPage() {
     // OPTIMISTIC UPDATE
     const originalTask = tasks.find(t => t.id === editingTask.id);
     setTasks(prev => prev.map(t => 
-      t.id === editingTask.id ? { ...t, title: editingTask.title, due_date: editingTask.due_date } : t
+      t.id === editingTask.id ? { ...t, title: editingTask.title || t.title, due_date: editingTask.due_date || t.due_date } : t
     ));
     setEditingTask(null);
 

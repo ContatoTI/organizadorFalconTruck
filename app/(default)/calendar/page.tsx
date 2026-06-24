@@ -150,7 +150,7 @@ export default function CalendarPage() {
       description: null,
       priority: null,
       status: 'a_fazer',
-      creator_name: user.user_metadata?.full_name || user.email,
+      creator_name: (user as any).user_metadata?.full_name || user.email,
     } as Task));
 
     setTasks(prev => [...prev, ...newOptimisticTasks]);

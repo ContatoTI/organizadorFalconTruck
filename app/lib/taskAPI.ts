@@ -59,8 +59,27 @@ class TaskAPI {
   }
 
   /**
-   * Buscar tarefas do usuário com filtros opcionais
+   * Buscar uma única tarefa pelo ID e enriquecê-la
    */
+  async getTask(taskId: number): Promise<Task | null> {
+    try {
+      const client = createClient();
+      const { data, error } = await client
+        .from('todos')
+        .select('*')
+        .eq('id', taskId)
+        .single();
+
+      if (error || !data) return null;
+
+      const [enrichedTask] = await this.enrichWithCreatorNames([data as Task]);
+      const [fullyEnrichedTask] = await this.enrichWithLinkedGroups([enrichedTask]);
+      
+      return fullyEnrichedTask;
+    } catch {
+      return null;
+    }
+  }
   async getUserTasks(
     userId: string,
     filters?: {
