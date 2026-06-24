@@ -16,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { DndContext, useDndMonitor } from '@dnd-kit/core';
+import { DndContext } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableTaskItem } from '@/app/components/SortableTaskItem';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
@@ -555,11 +555,11 @@ function DashboardContent() {
           const idx = prev.findIndex(t => t.id === newOptimisticTasks[i].id);
           if (idx !== -1) {
             const next = [...prev];
-            next[idx] = taskWithMeta;
+            next[idx] = { ...taskWithMeta, isSyncing: false };
             return next;
           }
           if (!prev.some(t => t.id === taskWithMeta.id)) {
-            return [taskWithMeta, ...prev];
+            return [{ ...taskWithMeta, isSyncing: false }, ...prev];
           }
           return prev;
         });
@@ -834,8 +834,7 @@ function DashboardContent() {
     }
   };
 
-  useDndMonitor({
-    onDragEnd(event) {
+  const handleDragEnd = (event: any) => {
       const { active, over } = event;
       if (!over || active.id === over.id) return;
       if (active.data.current?.type !== 'Task') return;
@@ -1065,8 +1064,7 @@ function DashboardContent() {
              setTasks(prev => prev.map(t => t.id === activeTask.id ? { ...t, isSyncing: false } : t));
            }
         });
-    }
-  });
+  };
 
   const renderTasksList = (tasksList: Task[], sectionId?: number, currentGroupId?: number) => {
     return (
@@ -1123,6 +1121,7 @@ function DashboardContent() {
   const pageTitle = selectedProject ? selectedProject.name : selectedGroup ? selectedGroup.title : 'Dashboard';
 
   return (
+    <DndContext onDragEnd={handleDragEnd}>
     <div className="flex flex-col min-h-full">
       {/* Modal de Convites */}
       <Dialog open={showInviteModal && pendingInvites.length > 0} onOpenChange={(open) => !open && setShowInviteModal(false)}>
@@ -1633,6 +1632,7 @@ function DashboardContent() {
         />
       )}
     </div>
+    </DndContext>
   );
 }
 
