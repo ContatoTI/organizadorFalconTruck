@@ -10,6 +10,7 @@ import { projectAPI } from '@/app/lib/projectAPI';
 import { notificationAPI } from '@/app/lib/notificationAPI';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { NotificationBell, NotificationsPanel } from '@/app/components/NotificationsPanel';
+import { ProfileDialog } from '@/app/components/ProfileDialog';
 import { ProjectsView } from '@/app/components/ProjectsView';
 import type { Project } from '@/types/index';
 import {
@@ -31,6 +32,7 @@ import {
   Clock,
   List,
   Trash2,
+  User,
 } from 'lucide-react';
 
 export default function DefaultLayout({ children }: { children: React.ReactNode }) {
@@ -49,6 +51,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const [newProjectColor, setNewProjectColor] = useState('#6366f1');
   const [showProjectsView, setShowProjectsView] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileDialog, setShowProfileDialog] = useState(false);
   const [pendingInvites, setPendingInvites] = useState<any[]>([]);
   const [declineNotifications, setDeclineNotifications] = useState<any[]>([]);
   const userRef = useRef(user);
@@ -487,12 +490,25 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
       <aside className="w-[244px] border-r border-border bg-sidebar hidden md:flex flex-col">
         <div className="p-5 border-b border-border">
-          <p className="text-xs font-semibold text-sidebar-muted uppercase tracking-widest mb-0.5">Organizador</p>
-          <h1 className="text-base font-semibold text-sidebar-foreground truncate">
-            {user
-              ? user.user_metadata?.full_name || user.email?.split('@')[0] || 'Usuário'
-              : 'FalconTruck'}
-          </h1>
+          <div className="flex items-center justify-between">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-sidebar-muted uppercase tracking-widest mb-0.5">Organizador</p>
+              <h1 className="text-base font-semibold text-sidebar-foreground truncate">
+                {user
+                  ? user.user_metadata?.full_name || user.email?.split('@')[0] || 'Usuário'
+                  : 'FalconTruck'}
+              </h1>
+            </div>
+            {user && (
+              <button
+                onClick={() => setShowProfileDialog(true)}
+                className="ml-2 p-2 rounded-md hover:bg-sidebar-accent transition-colors"
+                title="Meu Perfil"
+              >
+                <User className="w-4 h-4 text-sidebar-muted" />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -811,6 +827,13 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
           children
         )}
       </main>
+
+      {/* Dialog de Perfil */}
+      <ProfileDialog
+        open={showProfileDialog}
+        onOpenChange={setShowProfileDialog}
+        user={user}
+      />
     </div>
   );
 }
