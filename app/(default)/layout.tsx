@@ -289,15 +289,17 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
   const fetchProjects = useCallback(async () => {
     setLoadingProjects(true);
-    const { data: { user } } = await client.auth.getUser();
-    if (!user) return;
+    const curUser = userRef.current;
+    if (!curUser) {
+      setLoadingProjects(false);
+      return;
+    }
 
     try {
-      const allProjects = await projectAPI.getUserProjects(user.id);
+      const allProjects = await projectAPI.getUserProjects(curUser.id);
       mergeProjectsRef.current!(allProjects);
     } catch (error) {
       console.error('Erro ao buscar projetos:', error);
-      // Em caso de erro, NÃO sobrescreve o estado local — preserva o que já existe.
     } finally {
       setLoadingProjects(false);
     }
