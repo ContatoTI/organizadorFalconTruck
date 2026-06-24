@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Check, X, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search } from 'lucide-react';
@@ -82,6 +82,15 @@ function DashboardContent() {
   const { toast } = useToast();
   const client = createClient();
   const skipRealtimeFetchRef = useRef(false);
+  const lastPointerPos = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handler = (e: PointerEvent) => {
+      lastPointerPos.current = { x: e.clientX, y: e.clientY };
+    };
+    document.addEventListener('pointermove', handler);
+    return () => document.removeEventListener('pointermove', handler);
+  }, []);
 
   const selectedGroupId = searchParams.get('group');
   const selectedProjectId = searchParams.get('project');
@@ -835,6 +844,125 @@ function DashboardContent() {
     }
   };
 
+  // ponytail: sidevar drop helpers, shared by dnd-kit path and sidebar fallback
+  const execGroupDrop = useCallback((activeTask: Task, groupId: number) => {
+    const sourceProjectId = activeTask.project_id;
+    const sourceGroupId = activeTask.view_group_id;
+
+    const originalTask = { ...activeTask };
+
+    let updatedSnapshot: Task = activeTask;
+    setTasks(prev => prev.map(t => {
+      if (t.id !== activeTask.id) return t;
+      if (sourceGroupId && sourceProjectId) {
+        const nextLinked = (t.linked_view_group_ids || []).filter((id: number) => id !== sourceGroupId);
+        updatedSnapshot = { ...t, view_group_id: t.view_group_id === sourceGroupId ? null : t.view_group_id, linked_view_group_ids: [...nextLinked, groupId], isSyncing: true };
+        return updatedSnapshot;
+      }
+      if (sourceProjectId) {
+        updatedSnapshot = { ...t, linked_view_group_ids: [...(t.linked_view_group_ids || []), groupId], isSyncing: true };
+        return updatedSnapshot;
+      }
+      updatedSnapshot = { ...t, view_group_id: groupId, project_id: null, section_id: null, isSyncing: true };
+      return updatedSnapshot;
+    }));
+
+    emitTaskMoved({
+      taskId: activeTask.id,
+      taskSnapshot: updatedSnapshot,
+      from: {
+        viewGroupId: sourceGroupId,
+        projectId: sourceProjectId,
+        sectionId: activeTask.section_id,
+        linkedViewGroupIds: originalTask.linked_view_group_ids,
+      },
+    });
+
+    const clearSyncing = () => setTasks(prev => prev.map(t => t.id === activeTask.id ? { ...t, isSyncing: false } : t));
+
+    skipRealtimeFetchRef.current = true;
+    setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
+
+    if (sourceProjectId) {
+      if (sourceGroupId) {
+        taskAPI.unlinkTaskFromGroup(activeTask.id, sourceGroupId)
+          .then(() => taskAPI.linkTaskToGroup(activeTask.id, groupId))
+          .then(() => { clearSyncing(); })
+          .catch((err) => {
+            setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
+            emitTaskMoveError({
+              taskId: activeTask.id,
+              originalTask,
+              error: err?.message || 'Falha ao mover a tarefa',
+            });
+            toast('Erro ao mover tarefa', 'error');
+          });
+      } else {
+        taskAPI.linkTaskToGroup(activeTask.id, groupId)
+          .then(() => { clearSyncing(); })
+          .catch((err) => {
+            setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
+            emitTaskMoveError({
+              taskId: activeTask.id,
+              originalTask,
+              error: err?.message || 'Falha ao mover a tarefa',
+            });
+            toast('Erro ao mover tarefa', 'error');
+          });
+      }
+    } else {
+      taskAPI.moveTaskToGroup(activeTask.id, groupId)
+        .then(() => { clearSyncing(); })
+        .catch((err) => {
+          setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
+          emitTaskMoveError({
+            taskId: activeTask.id,
+            originalTask,
+            error: err?.message || 'Falha ao mover a tarefa',
+          });
+          toast('Erro ao mover tarefa', 'error');
+        });
+    }
+  }, [setTasks, toast]);
+
+  const execProjectDrop = useCallback((activeTask: Task, projectId: number) => {
+    const originalTask = { ...activeTask };
+
+    let updatedSnapshot: Task = { ...activeTask, project_id: projectId, view_group_id: null, section_id: null, isSyncing: true };
+    setTasks(prev => prev.map(t => {
+      if (t.id !== activeTask.id) return t;
+      return updatedSnapshot;
+    }));
+
+    emitTaskMoved({
+      taskId: activeTask.id,
+      taskSnapshot: updatedSnapshot,
+      from: {
+        viewGroupId: originalTask.view_group_id,
+        projectId: originalTask.project_id,
+        sectionId: originalTask.section_id,
+        linkedViewGroupIds: originalTask.linked_view_group_ids,
+      },
+    });
+
+    const clearSyncing = () => setTasks(prev => prev.map(t => t.id === activeTask.id ? { ...t, isSyncing: false } : t));
+
+    skipRealtimeFetchRef.current = true;
+    setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
+
+    taskAPI.moveTaskToProject(activeTask.id, projectId)
+      .then(() => { clearSyncing(); })
+      .catch((err) => {
+        setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
+        emitTaskMoveError({
+          taskId: activeTask.id,
+          originalTask,
+          error: err?.message || 'Falha ao mover a tarefa para o projeto',
+        });
+        toast('Erro ao mover tarefa para o projeto', 'error');
+      });
+  }, [setTasks, toast]);
+
   const handleDragStart = (event: any) => {
     const { active } = event;
     if (active.data.current?.type === 'Task') {
@@ -849,6 +977,25 @@ function DashboardContent() {
   const handleDragEnd = (event: any) => {
       setActiveDragTask(null);
       const { active, over } = event;
+
+      // ponytail: sidebar fallback – dnd-kit blocks native HTML5 drag,
+      // so we detect sidebar drops by cursor position
+      if (active.data.current?.type === 'Task') {
+        const activeTask = active.data.current.task as Task;
+        if (!over || active.id === over.id) {
+          const pos = lastPointerPos.current;
+          const el = document.elementsFromPoint(pos.x, pos.y)
+            .find(el => el.hasAttribute('data-sidebar-type'));
+          if (el) {
+            const sidebarType = el.getAttribute('data-sidebar-type');
+            const sidebarId = parseInt(el.getAttribute('data-sidebar-id')!);
+            if (sidebarType === 'group') { execGroupDrop(activeTask, sidebarId); return; }
+            if (sidebarType === 'project') { execProjectDrop(activeTask, sidebarId); return; }
+          }
+          return;
+        }
+      }
+
       if (!over || active.id === over.id) return;
       if (active.data.current?.type !== 'Task') return;
 
@@ -872,131 +1019,13 @@ function DashboardContent() {
 
       // ─── GROUP DROP (sidebar: Blocos de Tempo / Listas) ──────────────
       if (overType === 'group') {
-        const groupId = overId as number;
-        const sourceProjectId = activeTask.project_id;
-        const sourceGroupId = activeTask.view_group_id;
-
-        // Snapshot da tarefa ANTES do move (para revert em caso de erro e para auditoria)
-        const originalTask = { ...activeTask };
-
-        // SYNCHRONOUS optimistic update – instantâneo
-        let updatedSnapshot: Task = activeTask;
-        setTasks(prev => prev.map(t => {
-          if (t.id !== activeTask.id) return t;
-          if (sourceGroupId && sourceProjectId) {
-            const nextLinked = (t.linked_view_group_ids || []).filter((id: number) => id !== sourceGroupId);
-            updatedSnapshot = { ...t, view_group_id: t.view_group_id === sourceGroupId ? null : t.view_group_id, linked_view_group_ids: [...nextLinked, groupId], isSyncing: true };
-            return updatedSnapshot;
-          }
-          if (sourceProjectId) {
-            updatedSnapshot = { ...t, linked_view_group_ids: [...(t.linked_view_group_ids || []), groupId], isSyncing: true };
-            return updatedSnapshot;
-          }
-          updatedSnapshot = { ...t, view_group_id: groupId, project_id: null, section_id: null, isSyncing: true };
-          return updatedSnapshot;
-        }));
-
-        // Notifica outras paginas (todos/calendar) para atualizarem apenas a tarefa especifica
-        emitTaskMoved({
-          taskId: activeTask.id,
-          taskSnapshot: updatedSnapshot,
-          from: {
-            viewGroupId: sourceGroupId,
-            projectId: sourceProjectId,
-            sectionId: activeTask.section_id,
-            linkedViewGroupIds: originalTask.linked_view_group_ids,
-          },
-        });
-
-        const clearSyncing = () => setTasks(prev => prev.map(t => t.id === activeTask.id ? { ...t, isSyncing: false } : t));
-
-        // API call (assíncrono – não bloqueia a UI)
-        skipRealtimeFetchRef.current = true;
-        setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
-
-        if (sourceProjectId) {
-          if (sourceGroupId) {
-            taskAPI.unlinkTaskFromGroup(activeTask.id, sourceGroupId)
-              .then(() => taskAPI.linkTaskToGroup(activeTask.id, groupId))
-              .then(() => { clearSyncing(); })
-              .catch((err) => {
-                setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
-                emitTaskMoveError({
-                  taskId: activeTask.id,
-                  originalTask,
-                  error: err?.message || 'Falha ao mover a tarefa',
-                });
-                toast('Erro ao mover tarefa', 'error');
-              });
-          } else {
-            taskAPI.linkTaskToGroup(activeTask.id, groupId)
-              .then(() => { clearSyncing(); })
-              .catch((err) => {
-                setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
-                emitTaskMoveError({
-                  taskId: activeTask.id,
-                  originalTask,
-                  error: err?.message || 'Falha ao mover a tarefa',
-                });
-                toast('Erro ao mover tarefa', 'error');
-              });
-          }
-        } else {
-          taskAPI.moveTaskToGroup(activeTask.id, groupId)
-            .then(() => { clearSyncing(); })
-            .catch((err) => {
-              setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
-              emitTaskMoveError({
-                taskId: activeTask.id,
-                originalTask,
-                error: err?.message || 'Falha ao mover a tarefa',
-              });
-              toast('Erro ao mover tarefa', 'error');
-            });
-        }
+        execGroupDrop(activeTask, overId as number);
         return;
       }
 
       // ─── PROJECT DROP (sidebar) ──────────────────────────────────────
       if (overType === 'project') {
-        const projectId = overId as number;
-
-        const originalTask = { ...activeTask };
-
-        // SYNCHRONOUS optimistic update
-        let updatedSnapshot: Task = { ...activeTask, project_id: projectId, view_group_id: null, section_id: null, isSyncing: true };
-        setTasks(prev => prev.map(t => {
-          if (t.id !== activeTask.id) return t;
-          return updatedSnapshot;
-        }));
-
-        emitTaskMoved({
-          taskId: activeTask.id,
-          taskSnapshot: updatedSnapshot,
-          from: {
-            viewGroupId: originalTask.view_group_id,
-            projectId: originalTask.project_id,
-            sectionId: originalTask.section_id,
-            linkedViewGroupIds: originalTask.linked_view_group_ids,
-          },
-        });
-
-        const clearSyncing = () => setTasks(prev => prev.map(t => t.id === activeTask.id ? { ...t, isSyncing: false } : t));
-
-        skipRealtimeFetchRef.current = true;
-        setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
-
-        taskAPI.moveTaskToProject(activeTask.id, projectId)
-          .then(() => { clearSyncing(); })
-          .catch((err) => {
-            setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
-            emitTaskMoveError({
-              taskId: activeTask.id,
-              originalTask,
-              error: err?.message || 'Falha ao mover a tarefa para o projeto',
-            });
-            toast('Erro ao mover tarefa para o projeto', 'error');
-          });
+        execProjectDrop(activeTask, overId as number);
         return;
       }
 

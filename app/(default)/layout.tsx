@@ -592,6 +592,8 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                         onDragOver={(e) => handleDragOver(e, group.id)}
                         onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDropOnGroup(e, group.id)}
+                        data-sidebar-type="group"
+                        data-sidebar-id={group.id}
                         className={cn(
                           "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
                           isDragOver === group.id ? "bg-primary/10 ring-2 ring-primary/40" : "hover:bg-sidebar-accent"
@@ -652,6 +654,8 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                         onDragOver={(e) => handleDragOver(e, group.id)}
                         onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDropOnGroup(e, group.id)}
+                        data-sidebar-type="group"
+                        data-sidebar-id={group.id}
                         className={cn(
                           "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
                           isDragOver === group.id ? "bg-primary/10 ring-2 ring-primary/40" : "hover:bg-sidebar-accent"
@@ -734,6 +738,8 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                           onDragOver={(e) => handleDragOver(e, project.id)}
                           onDragLeave={handleDragLeave}
                           onDrop={(e) => handleDropOnProject(e, project.id)}
+                          data-sidebar-type="project"
+                          data-sidebar-id={project.id}
                           className={cn(
                             "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors",
                             isDragOver === project.id ? "bg-primary/20 ring-2 ring-primary" : "hover:bg-accent/50"

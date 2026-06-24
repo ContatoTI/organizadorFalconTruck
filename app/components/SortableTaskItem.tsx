@@ -77,17 +77,6 @@ export const SortableTaskItem = memo(function SortableTaskItem({
       <div 
         {...attributes} 
         {...listeners}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData('taskId', task.id.toString());
-          if (task.project_id) e.dataTransfer.setData('sourceProjectId', task.project_id.toString());
-          if (task.view_group_id) e.dataTransfer.setData('sourceGroupId', task.view_group_id.toString());
-          
-          // Oculta a imagem fantasma nativa do navegador, pois o dnd-kit DragOverlay cuida do visual
-          const img = new Image();
-          img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-          e.dataTransfer.setDragImage(img, 0, 0);
-        }}
         className={cn(
           "flex-shrink-0 cursor-grab active:cursor-grabbing outline-none",
           isOverlay ? "opacity-100" : "opacity-0 group-hover/task:opacity-100 transition-opacity"
