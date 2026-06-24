@@ -32,7 +32,7 @@ export const brand = {
 } as const;
 
 export const borders = {
-  default:       "hsl(214 32% 91%)",   /* #e2e8f0 — borda padrão */
+  default:       "hsl(210 28% 93%)",   /* #e8edf2 — borda padrão (DS border) */
 } as const;
 
 /* ── Cores de Categoria ─────────────────────────────────────────────── */
@@ -83,11 +83,11 @@ export const categoryColorList = Object.keys(category) as CategoryColor[];
 
 /* ── Sombras ────────────────────────────────────────────────────────── */
 export const shadows = {
-  xs:    "0 1px 2px 0 rgb(0 0 0 / 0.04)",
-  sm:    "0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04)",
-  md:    "0 4px 6px -1px rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.04)",
-  lg:    "0 10px 15px -3px rgb(0 0 0 / 0.06), 0 4px 6px -4px rgb(0 0 0 / 0.04)",
-  xl:    "0 20px 25px -5px rgb(0 0 0 / 0.06), 0 8px 10px -6px rgb(0 0 0 / 0.03)",
+  xs:    "0 1px 4px rgb(0 0 0 / 0.04)",                                        /* DS: listas de tarefas */
+  sm:    "0 1px 3px rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04)",
+  md:    "0 2px 8px rgb(0 0 0 / 0.08)",                                         /* DS: sidebar logo, cards */
+  lg:    "0 8px 40px rgb(0 0 0 / 0.12), 0 2px 4px rgb(0 0 0 / 0.05)",          /* DS: frames, modais */
+  xl:    "0 20px 40px rgb(0 0 0 / 0.14), 0 4px 8px rgb(0 0 0 / 0.08)",
 } as const;
 
 /* ── Border Radius ──────────────────────────────────────────────────── */

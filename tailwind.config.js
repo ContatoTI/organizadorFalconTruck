@@ -11,7 +11,7 @@ const config = {
   theme: {
     extend: {
       /* ── Tipografia ──────────────────────────────────────────────── */
-      /* var(--font-sans) é injetado pelo next/font (Geist) no layout.tsx */
+      /* var(--font-sans) é injetado pelo next/font (DM Sans 400/500/600) no layout.tsx */
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "-apple-system", "sans-serif"],
       },

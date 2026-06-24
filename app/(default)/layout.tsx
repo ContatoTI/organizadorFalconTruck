@@ -485,7 +485,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
         </div>
       )}
 
-      <aside className="w-64 border-r border-border bg-sidebar hidden md:flex flex-col">
+      <aside className="w-[244px] border-r border-border bg-sidebar hidden md:flex flex-col">
         <div className="p-5 border-b border-border">
           <p className="text-xs font-semibold text-sidebar-muted uppercase tracking-widest mb-0.5">Organizador</p>
           <h1 className="text-base font-semibold text-sidebar-foreground truncate">

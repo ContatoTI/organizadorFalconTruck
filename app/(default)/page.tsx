@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, X, GripVertical, Star, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search, Target, Wallet } from 'lucide-react';
+import { Check, X, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search } from 'lucide-react';
 import { cn } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { projectAPI } from '@/app/lib/projectAPI';
@@ -792,12 +792,14 @@ function DashboardContent() {
 
   const renderTaskItem = (task: Task, sectionId?: number, currentGroupId?: number) => {
     const isDragOverTarget = dragOverTaskId === task.id && draggingTaskId !== task.id;
+    const currentGroup = currentGroupId ? groups.find(g => g.id === currentGroupId) : null;
+    const timeDisplay = currentGroup?.start_time ? currentGroup.start_time.substring(0, 5) : null;
+    const dateDisplay = task.due_date && isToday(task.due_date) ? 'hoje' : null;
 
     return (
-      <div key={task.id} className="relative">
-        {/* Linha indicadora antes da tarefa */}
+      <div key={task.id} className="relative group/task">
         {isDragOverTarget && dropPosition === 'before' && (
-          <div className="absolute -top-[2px] left-3 right-3 h-[3px] bg-primary rounded-full z-20 shadow-sm shadow-primary/50" />
+          <div className="absolute -top-[2px] left-3 right-3 h-[3px] bg-primary rounded-full z-20" />
         )}
 
         <div
@@ -807,81 +809,103 @@ function DashboardContent() {
           onDragOver={(e) => handleTaskDragOver(e, task)}
           onDragLeave={handleTaskDragLeave}
           className={cn(
-            "flex items-center gap-3 py-3 px-3 group border-b border-border/40 last:border-b-0 cursor-grab active:cursor-grabbing hover:bg-accent/50 transition-colors",
-            draggingTaskId === task.id && "opacity-50 border-2 border-primary/30 ring-2 ring-primary/20 rounded-lg scale-[0.97] shadow-sm",
+            "flex items-center gap-[10px] py-[9px] px-[14px] border-b border-border/40 last:border-b-0 cursor-grab active:cursor-grabbing hover:bg-slate-50 transition-colors",
+            draggingTaskId === task.id && "opacity-50 scale-[0.97]",
             droppedTaskId === task.id && "animate-in fade-in zoom-in-95 duration-500"
           )}
         >
-          <GripVertical className="w-4 h-4 text-muted-foreground/30 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-          <Checkbox
-            checked={task.is_completed}
-            onCheckedChange={() => toggleTask(task)}
-          />
-          <div className="flex-1 flex items-center justify-between gap-2 min-w-0">
-            <button
-              onClick={() => setSelectedTask(task)}
-              className={cn(
-                'text-sm truncate text-left bg-transparent border-none p-0 cursor-pointer hover:text-primary transition-colors',
-                task.is_completed && 'line-through text-muted-foreground'
-              )}
-            >
-              {task.title}
-            </button>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {task.creator_name && task.creator_name !== user?.email && (
-                <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium text-white flex-shrink-0"
-                  style={{ backgroundColor: getColorFromString(task.creator_name) }}
-                  title={task.creator_name}
-                >
-                  {getInitials(task.creator_name)}
-                </div>
-              )}
-              <span className={cn(
-                "text-xs px-2 py-0.5 rounded-full whitespace-nowrap",
-                (!task.status || task.status === 'a_fazer') && "bg-muted text-muted-foreground",
-                task.status === 'em_andamento' && "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-                task.status === 'concluida' && "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-              )}>
-                {(!task.status || task.status === 'a_fazer') ? 'A fazer' :
-                 task.status === 'em_andamento' ? 'Em andamento' : 'Concluído'}
-              </span>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground/50 hover:text-yellow-500"
+          {/* 6-dot drag handle */}
+          <svg
+            width="10" height="12" viewBox="0 0 10 12" fill="#cbd5e1"
+            className="flex-shrink-0 opacity-0 group-hover/task:opacity-100 transition-opacity"
           >
-            <Star className="w-4 h-4" />
-          </Button>
+            <circle cx="3" cy="2.5" r="1"/><circle cx="7" cy="2.5" r="1"/>
+            <circle cx="3" cy="6" r="1"/><circle cx="7" cy="6" r="1"/>
+            <circle cx="3" cy="9.5" r="1"/><circle cx="7" cy="9.5" r="1"/>
+          </svg>
+
+          {/* Circular checkbox */}
+          <button
+            onClick={() => toggleTask(task)}
+            className="flex-shrink-0 flex items-center justify-center transition-colors hover:scale-110"
+            style={{
+              width: 15, height: 15, borderRadius: '50%',
+              border: task.is_completed ? 'none' : '1.5px solid #cbd5e1',
+              background: task.is_completed ? '#22c55e' : 'transparent',
+            }}
+          >
+            {task.is_completed && (
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                <path d="M1 4.5L3 6.5L7 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+          </button>
+
+          {/* Task title */}
+          <button
+            onClick={() => setSelectedTask(task)}
+            className={cn(
+              "flex-1 text-[13px] text-left truncate bg-transparent border-none p-0 cursor-pointer hover:text-primary transition-colors min-w-0",
+              task.is_completed ? "line-through text-slate-400" : "text-slate-800"
+            )}
+          >
+            {task.title}
+          </button>
+
+          {/* Creator avatar (only for shared tasks) */}
+          {task.creator_name && task.creator_name !== user?.email && (
+            <div
+              className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-[9px] font-semibold text-white flex-shrink-0"
+              style={{ backgroundColor: getColorFromString(task.creator_name) }}
+              title={task.creator_name}
+            >
+              {getInitials(task.creator_name)}
+            </div>
+          )}
+
+          {/* Time / date indicator */}
+          {(timeDisplay || dateDisplay) && (
+            <span className="text-[10px] font-semibold text-orange-500 flex-shrink-0">
+              {timeDisplay ?? dateDisplay}
+            </span>
+          )}
+
+          {/* Status badge */}
+          <span className={cn(
+            "text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0",
+            (!task.status || task.status === 'a_fazer') && "bg-slate-100 text-slate-500",
+            task.status === 'em_andamento' && "bg-blue-50 text-blue-600",
+            task.status === 'concluida' && "bg-green-50 text-green-600",
+          )}>
+            {(!task.status || task.status === 'a_fazer') ? 'A fazer' :
+             task.status === 'em_andamento' ? 'Em andamento' : 'Concluído'}
+          </span>
+
+          {/* Remove from group */}
           {currentGroupId && (
-            <Button
-              variant="ghost"
-              size="icon"
+            <button
               onClick={async () => {
                 await taskAPI.removeTaskFromGroup(task.id, currentGroupId);
                 await fetchTasks();
               }}
-              className="h-7 w-7 text-muted-foreground/50 hover:text-orange-500 opacity-0 group-hover:opacity-100"
               title="Remover deste bloco/lista"
+              className="flex-shrink-0 opacity-0 group-hover/task:opacity-100 transition-opacity text-slate-300 hover:text-orange-400"
             >
-              <XCircle className="w-4 h-4" />
-            </Button>
+              <XCircle className="w-3.5 h-3.5" />
+            </button>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
+
+          {/* Delete */}
+          <button
             onClick={() => deleteTask(task.id)}
-            className="h-7 w-7 text-muted-foreground/50 hover:text-destructive opacity-0 group-hover:opacity-100"
+            className="flex-shrink-0 opacity-0 group-hover/task:opacity-100 transition-opacity text-slate-300 hover:text-red-400"
           >
-            <X className="w-4 h-4" />
-          </Button>
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
 
-        {/* Linha indicadora depois da tarefa */}
         {isDragOverTarget && dropPosition === 'after' && (
-          <div className="absolute -bottom-[2px] left-3 right-3 h-[3px] bg-primary rounded-full z-20 shadow-sm shadow-primary/50" />
+          <div className="absolute -bottom-[2px] left-3 right-3 h-[3px] bg-primary rounded-full z-20" />
         )}
       </div>
     );
@@ -921,8 +945,14 @@ function DashboardContent() {
     return <div className="p-6">Carregando...</div>;
   }
 
+  const todayDisplay = new Intl.DateTimeFormat('pt-BR', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  }).format(new Date()).replace(/^./, c => c.toUpperCase());
+
+  const pageTitle = selectedProject ? selectedProject.name : selectedGroup ? selectedGroup.title : 'Dashboard';
+
   return (
-    <div className="p-6 w-full max-w-4xl mx-auto">
+    <div className="flex flex-col min-h-full">
       {/* Modal de Convites */}
       <Dialog open={showInviteModal && pendingInvites.length > 0} onOpenChange={(open) => !open && setShowInviteModal(false)}>
         <DialogContent className="sm:max-w-md">
@@ -1075,104 +1105,101 @@ function DashboardContent() {
         </DialogContent>
       </Dialog>
 
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-3">
-          <h1 className="text-3xl font-bold text-foreground">
-            {selectedProject ? selectedProject.name : selectedGroup ? selectedGroup.title : 'Dashboard'}
-          </h1>
-          {(selectedGroup || selectedProject) && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => router.push('/')}
-              className="rounded-full h-8"
-            >
-              <XCircle className="w-4 h-4 mr-2" />
-              Limpar filtro
-            </Button>
-          )}
-          {selectedProject && user && selectedProject.owner_id === user.id && (
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={openShareModal}
-                className="rounded-full"
-              >
-                <Share className="w-4 h-4 mr-2" />
-                Compartilhar
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={deleteProject}
-                className="rounded-full"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Excluir
-              </Button>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Mostrar Concluídas</span>
-            <Checkbox
-              checked={showCompleted}
-              onCheckedChange={(checked) => setShowCompleted(!!checked)}
-            />
+      {/* Sticky topbar */}
+      <div className="sticky top-0 z-10 bg-card border-b border-border">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-semibold text-foreground">{pageTitle}</h1>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{todayDisplay}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Apenas Atuais</span>
-            <Checkbox
-              checked={onlyToday}
-              onCheckedChange={(checked) => setOnlyToday(!!checked)}
-            />
+          <div className="flex items-center gap-4 pr-10">
+            {(selectedGroup || selectedProject) && (
+              <Button variant="ghost" size="sm" onClick={() => router.push('/')} className="rounded-full h-7 text-xs gap-1">
+                <XCircle className="w-3.5 h-3.5" /> Limpar filtro
+              </Button>
+            )}
+            {selectedProject && user && selectedProject.owner_id === user.id && (
+              <>
+                <Button variant="outline" size="sm" onClick={openShareModal} className="rounded-full h-7 text-xs gap-1">
+                  <Share className="w-3 h-3" /> Compartilhar
+                </Button>
+                <Button variant="destructive" size="sm" onClick={deleteProject} className="rounded-full h-7 text-xs gap-1">
+                  <Trash2 className="w-3 h-3" /> Excluir
+                </Button>
+              </>
+            )}
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <div
+                onClick={() => setShowCompleted(!showCompleted)}
+                className={cn(
+                  "w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0",
+                  showCompleted ? "bg-primary border-primary" : "border-slate-300 bg-white"
+                )}
+              >
+                {showCompleted && <Check className="w-2.5 h-2.5 text-white" strokeWidth={2.5} />}
+              </div>
+              <span className="text-[12px] text-slate-500">Concluídas</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <div
+                onClick={() => setOnlyToday(!onlyToday)}
+                className={cn(
+                  "w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0",
+                  onlyToday ? "bg-primary border-primary" : "border-slate-300 bg-white"
+                )}
+              >
+                {onlyToday && <Check className="w-2.5 h-2.5 text-white" strokeWidth={2.5} />}
+              </div>
+              <span className="text-[12px] text-slate-500">Só hoje</span>
+            </label>
           </div>
         </div>
       </div>
 
-      {/* Input adicionar tarefa */}
-      <div className="relative mb-8">
-        <Input
-          type="text"
-          value={newTaskTitle}
-          onChange={(e) => setNewTaskTitle(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleAddTask();
-            }
-          }}
-          onPaste={async (e) => {
-            const text = e.clipboardData.getData('text');
-            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-            if (lines.length > 1) {
-              e.preventDefault();
-              for (const title of lines) {
-                await taskAPI.createTask(
-                  user.id,
-                  title,
-                  selectedProjectId ? parseInt(selectedProjectId) : undefined,
-                  undefined,
-                  selectedGroupId && !selectedProjectId ? parseInt(selectedGroupId) : undefined
-                );
+      {/* Page content */}
+      <div className="max-w-4xl mx-auto w-full px-6 py-5 flex-1">
+
+      {/* Dashed task input */}
+      <div className="mb-5 bg-card rounded-[10px] border border-dashed border-slate-300">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <Plus className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+          <input
+            type="text"
+            value={newTaskTitle}
+            onChange={(e) => setNewTaskTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); handleAddTask(); }
+            }}
+            onPaste={async (e) => {
+              const text = e.clipboardData.getData('text');
+              const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+              if (lines.length > 1) {
+                e.preventDefault();
+                for (const title of lines) {
+                  await taskAPI.createTask(
+                    user.id, title,
+                    selectedProjectId ? parseInt(selectedProjectId) : undefined,
+                    undefined,
+                    selectedGroupId && !selectedProjectId ? parseInt(selectedGroupId) : undefined
+                  );
+                }
+                await fetchTasks();
               }
-              await fetchTasks();
-            }
-          }}
-          placeholder="O que precisa ser feito?"
-          className="pr-12 h-12 text-base shadow-sm"
-        />
-        <Button
-          size="icon"
-          variant="ghost"
-          className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary"
-          onClick={() => handleAddTask()}
-        >
-          <ArrowRight className="w-5 h-5" />
-        </Button>
+            }}
+            placeholder="Nova tarefa — pressione Enter para adicionar"
+            className="flex-1 text-[13px] text-slate-500 placeholder:text-slate-400 bg-transparent outline-none"
+          />
+          <button
+            onClick={() => handleAddTask()}
+            className="text-slate-300 hover:text-primary transition-colors flex-shrink-0"
+          >
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="px-4 pb-2.5 flex items-center gap-1.5">
+          <span className="text-[11px]">💡</span>
+          <span className="text-[11px] text-amber-600">Cole uma lista e crie várias tarefas de uma vez</span>
+        </div>
       </div>
 
       {/* MODO PROJETO: Seções expansíveis */}
@@ -1375,43 +1402,41 @@ function DashboardContent() {
                 if (!groupTasks || groupTasks.length === 0) return null;
                 const pendingCount = groupTasks.filter(t => !t.is_completed).length;
                 return (
-                  <div key={groupId} className="mb-6">
+                  <div key={groupId} className="mb-5">
+                    {/* DS group header: 3px bar | name | count pill | Ver → */}
                     <div className="flex items-center justify-between mb-2 px-1">
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-2">
                         <div
-                          className="w-1 h-4 rounded-full flex-shrink-0"
+                          className="w-[3px] h-[15px] rounded-full flex-shrink-0"
                           style={{ backgroundColor: groupInfo.color || 'hsl(var(--primary))' }}
                         />
                         <span
-                          className="text-sm font-semibold"
+                          className="text-[13px] font-semibold"
                           style={groupInfo.color ? { color: groupInfo.color } : undefined}
                         >
                           {groupInfo.title}
                         </span>
-                        {pendingCount > 0 && (
-                          <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full font-medium tabular-nums">
-                            {pendingCount}
-                          </span>
-                        )}
+                        <span className="text-[10px] font-medium bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full tabular-nums">
+                          {pendingCount}
+                        </span>
                       </div>
                       {groupInfo.link && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
+                        <button
                           onClick={() => router.push(groupInfo.link!)}
-                          className="h-7 px-2 text-xs text-muted-foreground hover:text-primary gap-1"
+                          className="text-[11px] text-muted-foreground hover:text-primary flex items-center gap-0.5 transition-colors"
                         >
                           Ver <ArrowRight className="w-3 h-3" />
-                        </Button>
+                        </button>
                       )}
                     </div>
-                    <div className="border border-border rounded-xl overflow-hidden bg-card shadow-card">
+                    <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
                       {groupTasks.map((task) => renderTaskItem(task, undefined, groupId.startsWith('group:') ? parseInt(groupId.split(':')[1]) : undefined))}
                       {groupId.startsWith('group:') && (
-                        <div className="px-4 py-2 border-t border-border/40">
-                          <Input
+                        <div className="flex items-center gap-2 px-[14px] py-2 border-t border-border/40">
+                          <Plus className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                          <input
                             placeholder="Adicionar tarefa..."
-                            className="h-8 text-sm bg-transparent border-none shadow-none focus-visible:ring-0 px-0"
+                            className="flex-1 text-[12px] text-slate-500 placeholder:text-slate-400 bg-transparent outline-none"
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' && e.currentTarget.value.trim()) {
                                 const title = e.currentTarget.value.trim();
@@ -1429,12 +1454,13 @@ function DashboardContent() {
 
               {/* Quando tem grupo selecionado: lista compacta única */}
               {selectedGroup && (
-                <div className="border border-border rounded-xl overflow-hidden bg-card shadow-card">
+                <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
                   {filteredTasks.map((task) => renderTaskItem(task, undefined, selectedGroup.id))}
-                  <div className="px-4 py-2 border-t border-border/40">
-                    <Input
+                  <div className="flex items-center gap-2 px-[14px] py-2 border-t border-border/40">
+                    <Plus className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                    <input
                       placeholder="Adicionar tarefa..."
-                      className="h-8 text-sm bg-transparent border-none shadow-none focus-visible:ring-0 px-0"
+                      className="flex-1 text-[12px] text-slate-500 placeholder:text-slate-400 bg-transparent outline-none"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && e.currentTarget.value.trim()) {
                           const title = e.currentTarget.value.trim();
@@ -1450,6 +1476,8 @@ function DashboardContent() {
           )}
         </div>
       )}
+
+      </div>{/* end page content */}
 
       {/* Task Detail Panel */}
       {selectedTask && (

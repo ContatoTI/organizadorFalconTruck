@@ -2,10 +2,10 @@ import type { Metadata } from 'next';
 import { ThemeProvider } from 'next-themes';
 import { GroupsProvider } from './lib/GroupsContext';
 import './globals.css';
-import { Geist } from "next/font/google";
+import { DM_Sans } from "next/font/google";
 import { cn } from "@/lib/utils";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const dmSans = DM_Sans({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-sans' });
 
 export const metadata: Metadata = {
   title: 'Organizador',
@@ -23,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning className={cn("font-sans", geist.variable)}>
+    <html lang="pt-BR" suppressHydrationWarning className={cn("font-sans", dmSans.variable)}>
       <body>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <GroupsProvider>

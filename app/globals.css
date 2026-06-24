@@ -5,7 +5,7 @@
 @layer base {
   :root {
     /* ── Superfícies ──────────────────────────────────────────────── */
-    --background: 210 40% 98%;          /* #f8fafc — cinza muito suave, não branco puro */
+    --background: 215 54% 97%;          /* #f5f8fc — azul-cinza muito suave (DS bg-page) */
     --foreground: 222 47% 11%;          /* #0f172a — navy escuro para texto */
 
     --card: 0 0% 100%;                  /* #ffffff — cards brancos sobre bg cinza */
@@ -35,19 +35,19 @@
     --destructive-foreground: 0 0% 100%;
 
     /* ── Bordas e Inputs ──────────────────────────────────────────── */
-    --border: 214 32% 91%;              /* #e2e8f0 — borda suave */
-    --input: 214 32% 91%;
+    --border: 210 28% 93%;              /* #e8edf2 — borda suave (DS border) */
+    --input: 210 28% 93%;
     --ring: 221 83% 53%;
 
     /* ── Border Radius ────────────────────────────────────────────── */
     --radius: 0.625rem;                 /* 10px — arredondamento padrão */
 
     /* ── Sistema de Sombras ───────────────────────────────────────── */
-    --shadow-xs:  0 1px 3px 0 rgb(0 0 0 / 0.07);
-    --shadow-sm:  0 1px 3px 0 rgb(0 0 0 / 0.10), 0 1px 2px -1px rgb(0 0 0 / 0.06);
-    --shadow-md:  0 4px 8px -1px rgb(0 0 0 / 0.10), 0 2px 4px -2px rgb(0 0 0 / 0.06);
-    --shadow-lg:  0 10px 20px -3px rgb(0 0 0 / 0.10), 0 4px 8px -4px rgb(0 0 0 / 0.06);
-    --shadow-xl:  0 20px 30px -5px rgb(0 0 0 / 0.12), 0 8px 12px -6px rgb(0 0 0 / 0.06);
+    --shadow-xs:  0 1px 4px rgb(0 0 0 / 0.04);                                           /* DS shadow-xs: listas de tarefas */
+    --shadow-sm:  0 1px 3px rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+    --shadow-md:  0 2px 8px rgb(0 0 0 / 0.08);                                           /* DS shadow-md: sidebar logo, cards */
+    --shadow-lg:  0 8px 40px rgb(0 0 0 / 0.12), 0 2px 4px rgb(0 0 0 / 0.05);            /* DS shadow-lg: frames, modais */
+    --shadow-xl:  0 20px 40px rgb(0 0 0 / 0.14), 0 4px 8px rgb(0 0 0 / 0.08);
 
     /* ── Sidebar ──────────────────────────────────────────────────── */
     --sidebar: 0 0% 100%;
@@ -221,6 +221,16 @@
   .text-cat-yellow { color: hsl(var(--cat-yellow)); }
   .text-cat-teal   { color: hsl(var(--cat-teal)); }
   .text-cat-red    { color: hsl(var(--cat-red)); }
+
+  /* ── Tipografia DS — tokens oficiais do Design System ─────────── */
+  .ds-page-title    { font-size: 20px; font-weight: 600; line-height: 1.4; color: hsl(var(--foreground)); }
+  .ds-section-title { font-size: 18px; font-weight: 600; line-height: 1.4; color: hsl(var(--foreground)); }
+  .ds-card-title    { font-size: 16px; font-weight: 600; line-height: 1.4; color: hsl(var(--foreground)); }
+  .ds-sidebar-item  { font-size: 13px; line-height: 1.5; }
+  .ds-task-title    { font-size: 13px; color: hsl(var(--foreground)); line-height: 1.5; }
+  .ds-group-label   { font-size: 11.5px; font-weight: 600; }
+  .ds-section-header{ font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: hsl(var(--muted-foreground)); }
+  .ds-badge         { font-size: 10px; font-weight: 500; padding: 2px 8px; border-radius: 20px; }
 
   /* ── Animações ───────────────────────────────────────────────── */
   .drag-indicator-pulse {
