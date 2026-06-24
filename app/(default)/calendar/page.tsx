@@ -178,12 +178,13 @@ export default function CalendarPage() {
       priority: null,
       status: 'a_fazer',
       creator_name: (user as any).user_metadata?.full_name || user.email,
+      isSyncing: true,
     } as Task));
 
     setTasks(prev => [...prev, ...newOptimisticTasks]);
     setShowModal(false);
 
-    const results = await Promise.all(titles.map(title => 
+    const results = await Promise.all(titles.map(title =>
       taskAPI.createTask(
         user.id,
         title,
@@ -204,7 +205,9 @@ export default function CalendarPage() {
         results.forEach((res, i) => {
           if (res.success && res.data) {
             const idx = next.findIndex(t => t.id === newOptimisticTasks[i].id);
-            if (idx !== -1) next[idx] = res.data;
+            if (idx !== -1) {
+              next[idx] = { ...res.data, isSyncing: false } as Task;
+            }
           }
         });
         return next;
