@@ -16,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { DndContext } from '@dnd-kit/core';
+import { DndContext, DragOverlay } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableTaskItem } from '@/app/components/SortableTaskItem';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
@@ -75,6 +75,7 @@ function DashboardContent() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [invitesLoaded, setInvitesLoaded] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [activeDragTask, setActiveDragTask] = useState<Task | null>(null);
   const [pendingTaskIds, setPendingTaskIds] = useState<Record<number, boolean>>({});
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -834,7 +835,19 @@ function DashboardContent() {
     }
   };
 
+  const handleDragStart = (event: any) => {
+    const { active } = event;
+    if (active.data.current?.type === 'Task') {
+      setActiveDragTask(active.data.current.task);
+    }
+  };
+
+  const handleDragCancel = () => {
+    setActiveDragTask(null);
+  };
+
   const handleDragEnd = (event: any) => {
+      setActiveDragTask(null);
       const { active, over } = event;
       if (!over || active.id === over.id) return;
       if (active.data.current?.type !== 'Task') return;
@@ -1011,8 +1024,6 @@ function DashboardContent() {
       
       if (targetSectionId === undefined) return;
 
-      if (!selectedProjectId) return;
-
       const originalTaskForReorder = { ...activeTask };
 
       // Optimistic update
@@ -1037,6 +1048,7 @@ function DashboardContent() {
            let absoluteIndex = 0;
            let sectionCount = 0;
            for (let i = 0; i < next.length; i++) {
+             // In Inbox/Group view, we don't have sections, but targetSectionId is null, which matches
              if (next[i].section_id === targetSectionId) {
                if (sectionCount === targetIndex) {
                  absoluteIndex = i;
@@ -1055,8 +1067,13 @@ function DashboardContent() {
       skipRealtimeFetchRef.current = true;
       setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
 
-      taskAPI.moveTaskAndReorder(activeTask.id, targetSectionId, targetIndex, parseInt(selectedProjectId))
-        .then(result => {
+      taskAPI.moveTaskAndReorder(
+        activeTask.id, 
+        targetSectionId, 
+        targetIndex, 
+        selectedProjectId ? parseInt(selectedProjectId) : null,
+        selectedGroupId ? parseInt(selectedGroupId) : null
+      ).then(result => {
            if (!result.success) {
              setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTaskForReorder : t));
              toast('Erro ao reorganizar tarefa', 'error');
@@ -1121,7 +1138,7 @@ function DashboardContent() {
   const pageTitle = selectedProject ? selectedProject.name : selectedGroup ? selectedGroup.title : 'Dashboard';
 
   return (
-    <DndContext onDragEnd={handleDragEnd}>
+    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
     <div className="flex flex-col min-h-full">
       {/* Modal de Convites */}
       <Dialog open={showInviteModal && pendingInvites.length > 0} onOpenChange={(open) => !open && setShowInviteModal(false)}>
@@ -1631,6 +1648,21 @@ function DashboardContent() {
           }}
         />
       )}
+
+      {/* Drag Overlay */}
+      <DragOverlay>
+        {activeDragTask ? (
+          <SortableTaskItem
+            task={activeDragTask}
+            groups={groups}
+            userEmail={user?.email}
+            onToggle={() => {}}
+            onSelect={() => {}}
+            onDelete={() => {}}
+            isOverlay
+          />
+        ) : null}
+      </DragOverlay>
     </div>
     </DndContext>
   );

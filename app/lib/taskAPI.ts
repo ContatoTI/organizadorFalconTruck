@@ -535,7 +535,8 @@ class TaskAPI {
     taskId: number,
     targetSectionId: number | null,
     targetIndex: number,
-    projectId: number
+    projectId: number | null,
+    groupId: number | null = null
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const client = createClient();
@@ -551,7 +552,16 @@ class TaskAPI {
       const sourceSectionId = task.section_id;
 
       const getSectionTasksQuery = (sid: number | null) => {
-        let q = client.from('todos').select('id').eq('project_id', projectId);
+        let q = client.from('todos').select('id');
+        
+        if (projectId) {
+          q = q.eq('project_id', projectId);
+        } else if (groupId) {
+          q = q.eq('view_group_id', groupId);
+        } else {
+          q = q.is('project_id', null).is('view_group_id', null);
+        }
+        
         if (sid === null) return q.is('section_id', null);
         return q.eq('section_id', sid);
       };
