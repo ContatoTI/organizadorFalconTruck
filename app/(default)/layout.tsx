@@ -374,7 +374,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     setIsDragOver(null);
   };
 
-  const handleDropOnGroup = async (e: React.DragEvent, groupId: number) => {
+  const handleDropOnGroup = (e: React.DragEvent, groupId: number) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(null);
@@ -385,25 +385,36 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     
     const sourceProjectId = e.dataTransfer.getData('sourceProjectId');
     const sourceGroupId = e.dataTransfer.getData('sourceGroupId');
-    
+
+    // Atualização otimista imediata
     if (sourceProjectId) {
       if (sourceGroupId) {
-        // Se a tarefa foi arrastada de um grupo (bloco de tempo) e tem projeto, move de um grupo para o outro (desvincula do antigo e vincula ao novo)
-        await taskAPI.unlinkTaskFromGroup(taskId, parseInt(sourceGroupId));
-        await taskAPI.linkTaskToGroup(taskId, groupId);
+        window.dispatchEvent(new CustomEvent('tasks-updated', {
+          detail: { optimistic: true, taskId, action: 'relink_group', sourceGroupId: parseInt(sourceGroupId), groupId }
+        }));
+        
+        taskAPI.unlinkTaskFromGroup(taskId, parseInt(sourceGroupId))
+          .then(() => taskAPI.linkTaskToGroup(taskId, groupId))
+          .catch(() => window.dispatchEvent(new CustomEvent('tasks-updated')));
       } else {
-        // Arrastada do projeto para o grupo: vincula ao grupo
-        await taskAPI.linkTaskToGroup(taskId, groupId);
+        window.dispatchEvent(new CustomEvent('tasks-updated', {
+          detail: { optimistic: true, taskId, action: 'link_group', groupId }
+        }));
+        
+        taskAPI.linkTaskToGroup(taskId, groupId)
+          .catch(() => window.dispatchEvent(new CustomEvent('tasks-updated')));
       }
     } else {
-      // Tarefa sem projeto: move para o grupo
-      await taskAPI.moveTaskToGroup(taskId, groupId);
+      window.dispatchEvent(new CustomEvent('tasks-updated', {
+        detail: { optimistic: true, taskId, action: 'move_to_group', groupId }
+      }));
+      
+      taskAPI.moveTaskToGroup(taskId, groupId)
+        .catch(() => window.dispatchEvent(new CustomEvent('tasks-updated')));
     }
-    
-    window.dispatchEvent(new CustomEvent('tasks-updated'));
   };
 
-  const handleDropOnProject = async (e: React.DragEvent, projectId: number) => {
+  const handleDropOnProject = (e: React.DragEvent, projectId: number) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(null);
@@ -411,9 +422,13 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     const taskId = parseInt(e.dataTransfer.getData('taskId'));
     if (!taskId || isNaN(taskId)) return;
     
-    await taskAPI.moveTaskToProject(taskId, projectId);
+    // Atualização otimista imediata
+    window.dispatchEvent(new CustomEvent('tasks-updated', {
+      detail: { optimistic: true, taskId, action: 'move_to_project', projectId }
+    }));
     
-    window.dispatchEvent(new CustomEvent('tasks-updated'));
+    taskAPI.moveTaskToProject(taskId, projectId)
+      .catch(() => window.dispatchEvent(new CustomEvent('tasks-updated')));
   };
 
   const timeGroups = groups.filter((g) => g.type === 'time');
