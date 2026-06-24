@@ -51,9 +51,14 @@ export function TaskDetailPanel({ task, onClose, onUpdate }: TaskDetailPanelProp
 
   const save = useCallback(async (updates: Partial<Task>) => {
     setSaving(true);
+    // OPTIMISTIC UPDATE: Atualiza UI antes da resposta
+    onUpdate({ ...task, ...updates } as Task);
+
     const result = await taskAPI.updateTask(task.id, updates);
-    if (result.success) {
-      onUpdate({ ...task, ...updates } as Task);
+    if (!result.success) {
+      // Reverte em caso de erro
+      onUpdate(task);
+      console.error('Erro ao atualizar tarefa:', result.error);
     }
     setSaving(false);
   }, [task, onUpdate]);

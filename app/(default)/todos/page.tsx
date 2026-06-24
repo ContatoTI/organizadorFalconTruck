@@ -42,7 +42,7 @@ export default function TodosPage() {
   useEffect(() => {
     if (user) {
       fetchGroups();
-      fetchTasks();
+      fetchTasks(true);
 
       // Realtime subscription — sem filtro de user_id para capturar
       // alterações em tasks de projetos feitas por outros membros
@@ -51,7 +51,7 @@ export default function TodosPage() {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'todos' },
-          () => fetchTasks()
+          () => fetchTasks(false)
         )
         .subscribe();
 
@@ -74,13 +74,13 @@ export default function TodosPage() {
     if (data) setGroups(data);
   };
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (showLoading = false) => {
     if (!user) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
 
     const data = await taskAPI.getUserTasks(user.id, { showCompleted: true });
     setTasks(data);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
 
   const addTask = async () => {
@@ -90,42 +90,108 @@ export default function TodosPage() {
     const titles = raw.split('\n').map(t => t.trim()).filter(Boolean);
     if (titles.length === 0) return;
 
-    for (const title of titles) {
-      await taskAPI.createTask(
+    // OPTIMISTIC UPDATE
+    const newOptimisticTasks = titles.map((title, index) => ({
+      id: Date.now() + index, // Temporary ID
+      title,
+      user_id: user.id,
+      project_id: null,
+      section_id: null,
+      view_group_id: selectedGroupId || null,
+      is_completed: false,
+      position: 99999,
+      created_at: new Date().toISOString(),
+      due_date: null,
+      description: null,
+      priority: null,
+      status: 'a_fazer',
+      creator_name: user.user_metadata?.full_name || user.email,
+    } as Task));
+
+    setTasks(prev => [...newOptimisticTasks, ...prev]);
+    setNewTaskTitle('');
+
+    const results = await Promise.all(titles.map(title => 
+      taskAPI.createTask(
         user.id,
         title,
         undefined,
         undefined,
         selectedGroupId || undefined
-      );
-    }
+      )
+    ));
 
-    setNewTaskTitle('');
+    // Se houve erro, re-faz fetch
+    if (results.some(r => !r.success)) {
+      await fetchTasks();
+    } else {
+      // Atualiza IDs temporários pelos reais
+      setTasks(prev => {
+        const next = [...prev];
+        results.forEach((res, i) => {
+          if (res.success && res.data) {
+            const idx = next.findIndex(t => t.id === newOptimisticTasks[i].id);
+            if (idx !== -1) next[idx] = res.data;
+          }
+        });
+        return next;
+      });
+    }
   };
 
   const toggleTask = async (task: Task) => {
+    // OPTIMISTIC UPDATE
+    const newState = !task.is_completed;
+    setTasks(prev => prev.map(t =>
+      t.id === task.id ? { ...t, is_completed: newState } : t
+    ));
+
     const result = await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
-    if (result.success) {
+    if (!result.success) {
+      // Revert on error
       setTasks(prev => prev.map(t =>
-        t.id === task.id ? { ...t, is_completed: result.newState ?? !t.is_completed } : t
+        t.id === task.id ? { ...t, is_completed: !newState } : t
       ));
+      await fetchTasks();
     }
   };
 
   const deleteTask = async (taskId: number) => {
-    await taskAPI.deleteTask(taskId);
+    // OPTIMISTIC UPDATE
+    const taskToDelete = tasks.find(t => t.id === taskId);
+    setTasks(prev => prev.filter(t => t.id !== taskId));
+
+    const result = await taskAPI.deleteTask(taskId);
+    if (!result.success && taskToDelete) {
+      // Revert on error
+      setTasks(prev => [...prev, taskToDelete]);
+      await fetchTasks();
+    }
   };
 
   const updateTask = async () => {
     if (!editingTask || !editingTask.id) return;
 
-    await taskAPI.updateTask(editingTask.id, {
+    // OPTIMISTIC UPDATE
+    const originalTask = tasks.find(t => t.id === editingTask.id);
+    setTasks(prev => prev.map(t => 
+      t.id === editingTask.id ? { ...t, title: editingTask.title, due_date: editingTask.due_date } : t
+    ));
+    setEditingTask(null);
+
+    const result = await taskAPI.updateTask(editingTask.id, {
       title: editingTask.title,
       view_group_id: editingTask.view_group_id,
       due_date: editingTask.due_date
     });
 
-    setEditingTask(null);
+    if (!result.success && originalTask) {
+      // Revert on error
+      setTasks(prev => prev.map(t => 
+        t.id === originalTask.id ? originalTask : t
+      ));
+      await fetchTasks();
+    }
   };
 
   if (!user) {

@@ -42,7 +42,7 @@ export default function CalendarPage() {
 
   useEffect(() => {
     if (user) {
-      fetchTasks();
+      fetchTasks(true);
       fetchGroups();
 
       // Realtime: reflete exclusões/edições de tarefas em tempo real
@@ -51,15 +51,7 @@ export default function CalendarPage() {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'todos', filter: `user_id=eq.${user.id}` },
-          (payload) => {
-            if (payload.eventType === 'INSERT') {
-              setTasks((prev) => [payload.new as Task, ...prev.filter(t => t.id !== (payload.new as Task).id)]);
-            } else if (payload.eventType === 'UPDATE') {
-              setTasks((prev) => prev.map(t => t.id === (payload.new as Task).id ? (payload.new as Task) : t));
-            } else if (payload.eventType === 'DELETE') {
-              setTasks((prev) => prev.filter(t => t.id !== (payload.old as Task).id));
-            }
-          }
+          () => fetchTasks(false)
         )
         .subscribe();
 
@@ -69,12 +61,12 @@ export default function CalendarPage() {
     }
   }, [user]);
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (showLoading = false) => {
     if (!user) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     const data = await taskAPI.getUserTasks(user.id, { showCompleted: true });
     setTasks(data);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
 
   const fetchGroups = async () => {
@@ -142,23 +134,55 @@ export default function CalendarPage() {
     const titles = raw.split('\n').map(t => t.trim()).filter(Boolean);
     if (titles.length === 0) return;
 
-    const newTasks: Task[] = [];
-    for (const title of titles) {
-      const result = await taskAPI.createTask(
+    // OPTIMISTIC UPDATE
+    const dateStr = selectedDate.toISOString().split('T')[0];
+    const newOptimisticTasks = titles.map((title, index) => ({
+      id: Date.now() + index,
+      title,
+      user_id: user.id,
+      project_id: null,
+      section_id: null,
+      view_group_id: selectedGroupId || null,
+      is_completed: false,
+      position: 99999,
+      created_at: new Date().toISOString(),
+      due_date: dateStr,
+      description: null,
+      priority: null,
+      status: 'a_fazer',
+      creator_name: user.user_metadata?.full_name || user.email,
+    } as Task));
+
+    setTasks(prev => [...prev, ...newOptimisticTasks]);
+    setShowModal(false);
+
+    const results = await Promise.all(titles.map(title => 
+      taskAPI.createTask(
         user.id,
         title,
         undefined,
         undefined,
         selectedGroupId || undefined,
-        selectedDate.toISOString().split('T')[0]
-      );
-      if (result.success && result.data) {
-        newTasks.push(result.data);
-      }
-    }
+        dateStr
+      )
+    ));
 
-    setTasks([...tasks, ...newTasks]);
-    setShowModal(false);
+    // Se houve erro, re-faz fetch
+    if (results.some(r => !r.success)) {
+      await fetchTasks();
+    } else {
+      // Atualiza IDs temporários pelos reais
+      setTasks(prev => {
+        const next = [...prev];
+        results.forEach((res, i) => {
+          if (res.success && res.data) {
+            const idx = next.findIndex(t => t.id === newOptimisticTasks[i].id);
+            if (idx !== -1) next[idx] = res.data;
+          }
+        });
+        return next;
+      });
+    }
   };
 
   const isToday = (date: Date) => {

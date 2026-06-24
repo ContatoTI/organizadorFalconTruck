@@ -92,7 +92,7 @@ function DashboardContent() {
     if (user) {
       fetchGroups();
       fetchProjects();
-      fetchTasks();
+      fetchTasks(true);
       fetchPendingInvites(true);
       
       // Inscrição para atualizações em tempo real
@@ -133,7 +133,7 @@ function DashboardContent() {
             table: 'todos',
             ...(selectedProjectId ? { filter: `project_id=eq.${selectedProjectId}` } : {}),
           },
-          () => fetchTasks()
+          () => fetchTasks(false)
         )
         .on(
           'postgres_changes',
@@ -313,16 +313,16 @@ function DashboardContent() {
     }
   };
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (showLoading = false) => {
     if (!user) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     const data = await taskAPI.getUserTasks(user.id, {
       showCompleted: true,
       ...(selectedProjectId ? { projectId: parseInt(selectedProjectId) } : {}),
       ...(selectedGroupId && !selectedProjectId ? { groupId: parseInt(selectedGroupId) } : {}),
     });
     setTasks(data);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
 
   const fetchPendingInvites = async (isInitialLoad = false) => {
@@ -402,35 +402,84 @@ function DashboardContent() {
     if (titles.length === 0) return;
 
     const effectiveGroupId = groupOverrideId ?? (selectedGroupId && !selectedProjectId ? parseInt(selectedGroupId) : undefined);
+    
+    // OPTIMISTIC UPDATE
+    const newOptimisticTasks = titles.map((title, index) => ({
+      id: Date.now() + index, // Temporary ID
+      title,
+      user_id: user.id,
+      project_id: selectedProjectId ? parseInt(selectedProjectId) : null,
+      section_id: sectionId || null,
+      view_group_id: effectiveGroupId || null,
+      is_completed: false,
+      position: 99999,
+      created_at: new Date().toISOString(),
+      due_date: null,
+      description: null,
+      priority: null,
+      status: 'a_fazer',
+      creator_name: user.user_metadata?.full_name || user.email,
+    } as Task));
 
-    for (const title of titles) {
-      await taskAPI.createTask(
+    setTasks(prev => [...newOptimisticTasks, ...prev]);
+    if (!titleParam) setNewTaskTitle('');
+
+    const results = await Promise.all(titles.map(title => 
+      taskAPI.createTask(
         user.id,
         title,
         selectedProjectId ? parseInt(selectedProjectId) : undefined,
         sectionId,
         effectiveGroupId
-      );
-    }
+      )
+    ));
 
-    if (!titleParam) setNewTaskTitle('');
-    await fetchTasks();
+    // Se houve erro, re-faz fetch
+    if (results.some(r => !r.success)) {
+      await fetchTasks();
+    } else {
+      // Atualiza IDs temporarios pelos reais
+      setTasks(prev => {
+        const next = [...prev];
+        results.forEach((res, i) => {
+          if (res.success && res.data) {
+            const idx = next.findIndex(t => t.id === newOptimisticTasks[i].id);
+            if (idx !== -1) next[idx] = res.data;
+          }
+        });
+        return next;
+      });
+    }
   };
 
   const toggleTask = async (task: Task) => {
+    // OPTIMISTIC UPDATE
+    const newState = !task.is_completed;
+    setTasks(prev => prev.map(t =>
+      t.id === task.id ? { ...t, is_completed: newState } : t
+    ));
+
     const result = await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
-    if (result.success) {
+    if (!result.success) {
+      // Revert on error
       setTasks(prev => prev.map(t =>
-        t.id === task.id ? { ...t, is_completed: result.newState ?? !t.is_completed } : t
+        t.id === task.id ? { ...t, is_completed: !newState } : t
       ));
-    } else {
       await fetchTasks();
     }
   };
 
   const deleteTask = async (taskId: number) => {
-    await taskAPI.deleteTask(taskId);
-    await fetchTasks();
+    // OPTIMISTIC UPDATE
+    const taskToDelete = tasks.find(t => t.id === taskId);
+    setTasks(prev => prev.filter(t => t.id !== taskId));
+
+    const result = await taskAPI.deleteTask(taskId);
+    if (!result.success && taskToDelete) {
+      // Revert on error
+      setTasks(prev => [...prev, taskToDelete]);
+      await fetchTasks();
+    }
   };
 
   const createSection = async (title: string) => {
