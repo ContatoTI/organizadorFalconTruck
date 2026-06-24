@@ -390,27 +390,34 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     if (sourceProjectId) {
       if (sourceGroupId) {
         window.dispatchEvent(new CustomEvent('tasks-updated', {
-          detail: { optimistic: true, taskId, action: 'relink_group', sourceGroupId: parseInt(sourceGroupId), groupId }
+          detail: { optimistic: true, taskId, action: 'relink_group', sourceGroupId: parseInt(sourceGroupId, 10), groupId }
         }));
-        
-        taskAPI.unlinkTaskFromGroup(taskId, parseInt(sourceGroupId))
-          .then(() => taskAPI.linkTaskToGroup(taskId, groupId))
-          .catch(() => window.dispatchEvent(new CustomEvent('tasks-updated')));
+
+        (async () => {
+          const unlinkResult = await taskAPI.unlinkTaskFromGroup(taskId, parseInt(sourceGroupId, 10));
+          if (!unlinkResult.success) { window.dispatchEvent(new CustomEvent('tasks-updated')); return; }
+          const linkResult = await taskAPI.linkTaskToGroup(taskId, groupId);
+          if (!linkResult.success) { window.dispatchEvent(new CustomEvent('tasks-updated')); }
+        })();
       } else {
         window.dispatchEvent(new CustomEvent('tasks-updated', {
           detail: { optimistic: true, taskId, action: 'link_group', groupId }
         }));
-        
-        taskAPI.linkTaskToGroup(taskId, groupId)
-          .catch(() => window.dispatchEvent(new CustomEvent('tasks-updated')));
+
+        (async () => {
+          const result = await taskAPI.linkTaskToGroup(taskId, groupId);
+          if (!result.success) { window.dispatchEvent(new CustomEvent('tasks-updated')); }
+        })();
       }
     } else {
       window.dispatchEvent(new CustomEvent('tasks-updated', {
         detail: { optimistic: true, taskId, action: 'move_to_group', groupId }
       }));
-      
-      taskAPI.moveTaskToGroup(taskId, groupId)
-        .catch(() => window.dispatchEvent(new CustomEvent('tasks-updated')));
+
+      (async () => {
+        const result = await taskAPI.moveTaskToGroup(taskId, groupId);
+        if (!result.success) { window.dispatchEvent(new CustomEvent('tasks-updated')); }
+      })();
     }
   };
 

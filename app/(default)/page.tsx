@@ -411,7 +411,7 @@ function DashboardContent() {
       if (result.success) {
         setProjectPendingInvites(prev => [...prev, targetUserId]);
       } else {
-        alert(result.error);
+        toast(result.error || 'Erro ao convidar usuário', 'error');
       }
     }
   };
@@ -488,7 +488,7 @@ function DashboardContent() {
         return next;
       });
     } else {
-      alert(`Erro ao aceitar convite: ${result.error}`);
+      toast(`Erro ao aceitar convite: ${result.error || 'desconhecido'}`, 'error');
     }
   };
 
@@ -883,45 +883,34 @@ function DashboardContent() {
     skipRealtimeFetchRef.current = true;
     setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
 
+    const handleMoveError = (errorMsg: string) => {
+      setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
+      emitTaskMoveError({ taskId: activeTask.id, originalTask, error: errorMsg });
+      toast('Erro ao mover tarefa', 'error');
+    };
+
     if (sourceProjectId) {
       if (sourceGroupId) {
-        taskAPI.unlinkTaskFromGroup(activeTask.id, sourceGroupId)
-          .then(() => taskAPI.linkTaskToGroup(activeTask.id, groupId))
-          .then(() => { clearSyncing(); })
-          .catch((err) => {
-            setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
-            emitTaskMoveError({
-              taskId: activeTask.id,
-              originalTask,
-              error: err?.message || 'Falha ao mover a tarefa',
-            });
-            toast('Erro ao mover tarefa', 'error');
-          });
+        (async () => {
+          const unlinkResult = await taskAPI.unlinkTaskFromGroup(activeTask.id, sourceGroupId);
+          if (!unlinkResult.success) { handleMoveError(unlinkResult.error || 'Falha ao desvincular tarefa'); return; }
+          const linkResult = await taskAPI.linkTaskToGroup(activeTask.id, groupId);
+          if (!linkResult.success) { handleMoveError(linkResult.error || 'Falha ao vincular tarefa'); return; }
+          clearSyncing();
+        })();
       } else {
-        taskAPI.linkTaskToGroup(activeTask.id, groupId)
-          .then(() => { clearSyncing(); })
-          .catch((err) => {
-            setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
-            emitTaskMoveError({
-              taskId: activeTask.id,
-              originalTask,
-              error: err?.message || 'Falha ao mover a tarefa',
-            });
-            toast('Erro ao mover tarefa', 'error');
-          });
+        (async () => {
+          const linkResult = await taskAPI.linkTaskToGroup(activeTask.id, groupId);
+          if (!linkResult.success) { handleMoveError(linkResult.error || 'Falha ao vincular tarefa'); return; }
+          clearSyncing();
+        })();
       }
     } else {
-      taskAPI.moveTaskToGroup(activeTask.id, groupId)
-        .then(() => { clearSyncing(); })
-        .catch((err) => {
-          setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
-          emitTaskMoveError({
-            taskId: activeTask.id,
-            originalTask,
-            error: err?.message || 'Falha ao mover a tarefa',
-          });
-          toast('Erro ao mover tarefa', 'error');
-        });
+      (async () => {
+        const moveResult = await taskAPI.moveTaskToGroup(activeTask.id, groupId);
+        if (!moveResult.success) { handleMoveError(moveResult.error || 'Falha ao mover a tarefa'); return; }
+        clearSyncing();
+      })();
     }
   }, [setTasks, toast]);
 
@@ -950,17 +939,20 @@ function DashboardContent() {
     skipRealtimeFetchRef.current = true;
     setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
 
-    taskAPI.moveTaskToProject(activeTask.id, projectId)
-      .then(() => { clearSyncing(); })
-      .catch((err) => {
+    (async () => {
+      const moveResult = await taskAPI.moveTaskToProject(activeTask.id, projectId);
+      if (!moveResult.success) {
         setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
         emitTaskMoveError({
           taskId: activeTask.id,
           originalTask,
-          error: err?.message || 'Falha ao mover a tarefa para o projeto',
+          error: moveResult.error || 'Falha ao mover a tarefa para o projeto',
         });
         toast('Erro ao mover tarefa para o projeto', 'error');
-      });
+        return;
+      }
+      clearSyncing();
+    })();
   }, [setTasks, toast]);
 
   const handleDragStart = (event: any) => {
