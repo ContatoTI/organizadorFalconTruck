@@ -16,9 +16,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { DndContext, useDndMonitor } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableTaskItem } from '@/app/components/SortableTaskItem';
-import { useDndMonitor } from '@dnd-kit/core';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
 import { ToastProvider, useToast } from '@/app/components/Toast';
 
