@@ -510,26 +510,45 @@ function DashboardContent() {
   };
 
   const deleteSection = async (sectionId: number) => {
+    // OPTIMISTIC UPDATE
+    const deletedSection = sections.find(s => s.id === sectionId);
+    setSections(sections.filter(s => s.id !== sectionId));
+    setTasks(prev => prev.map(t => t.section_id === sectionId ? { ...t, section_id: null } : t));
+
     // Garante que as tarefas voltem para a Caixa de Entrada (sem seção).
     // O banco já tem ON DELETE SET NULL, mas limpamos explicitamente como defesa em profundidade.
     await taskAPI.clearTasksFromSection(sectionId);
-    await client.from('sections').delete().eq('id', sectionId);
-    setSections(sections.filter(s => s.id !== sectionId));
-    await fetchTasks();
-    window.dispatchEvent(new CustomEvent('tasks-updated'));
+    const { error } = await client.from('sections').delete().eq('id', sectionId);
+    
+    if (error) {
+      if (deletedSection) setSections(prev => [...prev, deletedSection]);
+      await fetchTasks(false);
+    } else {
+      window.dispatchEvent(new CustomEvent('tasks-updated'));
+    }
   };
 
   const deleteProject = async () => {
     if (!selectedProject || !user || selectedProject.owner_id !== user.id) return;
     if (!confirm(`Excluir "${selectedProject.name}"? As tarefas associadas voltarão para a Caixa de Entrada.`)) return;
+    
+    // OPTIMISTIC UPDATE
+    const projectId = selectedProject.id;
+    setProjects(projects.filter(p => p.id !== projectId));
+    setTasks(prev => prev.map(t => t.project_id === projectId ? { ...t, project_id: null, section_id: null } : t));
+
     // Garante que as tarefas voltem para a Caixa de Entrada (sem projeto e sem seção).
-    await taskAPI.clearTasksFromProject(selectedProject.id);
-    await client.from('projects').delete().eq('id', selectedProject.id);
-    setProjects(projects.filter(p => p.id !== selectedProject.id));
-    window.dispatchEvent(new CustomEvent('projects_updated'));
-    await fetchTasks();
-    window.dispatchEvent(new CustomEvent('tasks-updated'));
-    router.push('/');
+    await taskAPI.clearTasksFromProject(projectId);
+    const { error } = await client.from('projects').delete().eq('id', projectId);
+    
+    if (error) {
+      await fetchProjects();
+      await fetchTasks(false);
+    } else {
+      window.dispatchEvent(new CustomEvent('projects_updated'));
+      window.dispatchEvent(new CustomEvent('tasks-updated'));
+      router.push('/');
+    }
   };
 
   const toggleSectionExpand = (sectionId: number) => {
@@ -791,9 +810,12 @@ function DashboardContent() {
     setDragOverStatusGroup(null);
 
     // Persist to database and reconcile in background
-    await taskAPI.moveTaskAndReorder(taskId, sectionId, insertIndex, parseInt(selectedProjectId));
-    await fetchTasks();
-    window.dispatchEvent(new CustomEvent('tasks-updated'));
+    const result = await taskAPI.moveTaskAndReorder(taskId, sectionId, insertIndex, parseInt(selectedProjectId));
+    if (!result.success) {
+      await fetchTasks(false); // Revert on error
+    } else {
+      window.dispatchEvent(new CustomEvent('tasks-updated'));
+    }
   };
 
   const handleDropOnStatusGroup = async (e: React.DragEvent, sectionId: number | null, statusKey: string) => {
@@ -833,10 +855,14 @@ function DashboardContent() {
     setDropPosition(null);
     setDragOverStatusGroup(null);
 
-    await taskAPI.moveTaskAndReorder(taskId, sectionId, insertIndex, parseInt(selectedProjectId));
-    await taskAPI.updateTask(taskId, { status: statusKey });
-    await fetchTasks();
-    window.dispatchEvent(new CustomEvent('tasks-updated'));
+    const result1 = await taskAPI.moveTaskAndReorder(taskId, sectionId, insertIndex, parseInt(selectedProjectId));
+    const result2 = await taskAPI.updateTask(taskId, { status: statusKey });
+    
+    if (!result1.success || !result2.success) {
+      await fetchTasks(false);
+    } else {
+      window.dispatchEvent(new CustomEvent('tasks-updated'));
+    }
   };
 
   const renderTaskItem = (task: Task, sectionId?: number, currentGroupId?: number) => {
@@ -933,9 +959,21 @@ function DashboardContent() {
           {/* Remove from group */}
           {currentGroupId && (
             <button
-              onClick={async () => {
-                await taskAPI.removeTaskFromGroup(task.id, currentGroupId);
-                await fetchTasks();
+              onClick={async (e) => {
+                e.stopPropagation();
+                // OPTIMISTIC UPDATE
+                setTasks(prev => prev.map(t =>
+                  t.id === task.id ? {
+                    ...t,
+                    view_group_id: t.view_group_id === currentGroupId ? null : t.view_group_id,
+                    linked_view_group_ids: t.linked_view_group_ids?.filter(id => id !== currentGroupId) || []
+                  } : t
+                ));
+                
+                const result = await taskAPI.removeTaskFromGroup(task.id, currentGroupId);
+                if (!result.success) {
+                  await fetchTasks(false);
+                }
               }}
               title="Remover deste bloco/lista"
               className="flex-shrink-0 opacity-0 group-hover/task:opacity-100 transition-opacity text-slate-300 hover:text-orange-400"
