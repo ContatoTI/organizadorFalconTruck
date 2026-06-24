@@ -43,6 +43,7 @@ export interface Task {
   created_at: string;
   creator_name?: string;
   linked_view_group_ids?: number[];
+  isSyncing?: boolean;
 }
 
 // ============= VINCULO TAREFA-GRUPO (task_view_groups) =============
@@ -125,37 +126,6 @@ export interface Goal {
   created_at: string;
   updated_at?: string;
 }
-
-// ============= TIPOS DE ESTADO DA UI =============
-export interface LoadingState {
-  groups: boolean;
-  projects: boolean;
-  tasks: boolean;
-  sections: boolean;
-  invites: boolean;
-}
-
-export interface ErrorState {
-  message: string | null;
-  field?: string;
-}
-
-// ============= CONSTANTES =============
-export const COLORS = {
-  primary: '#6366f1',
-  success: '#22c55e',
-  danger: '#ef4444',
-  warning: '#f97316',
-  info: '#3b82f6',
-  gray: '#6b7280',
-} as const;
-
-export const DEFAULT_COLOR = COLORS.primary;
-
-export const TASK_SELECT = 'id, user_id, title, is_completed, due_date, view_group_id, project_id, section_id, position, description, priority, status, created_at';
-export const PROJECT_SELECT = 'id, owner_id, name, color, created_at';
-export const GROUP_SELECT = '*';
-export const SECTION_SELECT = 'id, project_id, user_id, title, order, created_at';
 
 export type GroupType = Group['type'];
 export type ProjectInviteStatus = ProjectInvite['status'];

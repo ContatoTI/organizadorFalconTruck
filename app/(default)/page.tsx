@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Check, X, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search } from 'lucide-react';
@@ -8,6 +8,7 @@ import { cn } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { projectAPI } from '@/app/lib/projectAPI';
 import { notificationAPI } from '@/app/lib/notificationAPI';
+import { emitTaskMoved, emitTaskMoveError, TaskMovedEvent, shouldSkipRealtimeFetch } from '@/app/lib/taskEvents';
 import type { Task, Group, Project, Section, ProjectInviteNotification, User as AppUser } from '@/types/index';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +16,35 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { SortableTaskItem } from '@/app/components/SortableTaskItem';
+import { useDndMonitor } from '@dnd-kit/core';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
+import { ToastProvider, useToast } from '@/app/components/Toast';
+
+import { useDroppable } from '@dnd-kit/core';
+
+function DroppableSection({ sectionId, children }: { sectionId: number | 'unsectioned', children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `section-${sectionId}`,
+    data: {
+      type: 'Section',
+      id: sectionId
+    }
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "border-t border-border/50 min-h-[48px] transition-all duration-200",
+        isOver && "bg-primary/5"
+      )}
+    >
+      {children}
+    </div>
+  );
+}
 
 function DashboardContent() {
   const STATUS_GROUPS = [
@@ -23,21 +52,6 @@ function DashboardContent() {
     { key: 'em_andamento', label: 'Em andamento', match: (s: string | null | undefined) => s === 'em_andamento' },
     { key: 'concluida', label: 'Concluído', match: (s: string | null | undefined) => s === 'concluida' },
   ] as const;
-  const getInitials = (name: string) => {
-    const namePart = name.includes('@') ? name.split('@')[0] : name;
-    const parts = namePart.split(/[.\s_-]+/);
-    return parts.map(p => p[0]?.toUpperCase()).filter(Boolean).slice(0, 2).join('');
-  };
-
-  const getColorFromString = (str: string) => {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const hue = Math.abs(hash) % 360;
-    return `hsl(${hue}, 55%, 50%)`;
-  };
-
   const [user, setUser] = useState<AppUser | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -60,16 +74,13 @@ function DashboardContent() {
   const [pendingInvites, setPendingInvites] = useState<ProjectInviteNotification[]>([]);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [invitesLoaded, setInvitesLoaded] = useState(false);
-  const [draggingTaskId, setDraggingTaskId] = useState<number | null>(null);
-  const [dragOverSectionId, setDragOverSectionId] = useState<number | 'unsectioned' | null>(null);
-  const [dragOverTaskId, setDragOverTaskId] = useState<number | null>(null);
-  const [dropPosition, setDropPosition] = useState<'before' | 'after' | null>(null);
-  const [droppedTaskId, setDroppedTaskId] = useState<number | null>(null);
-  const [dragOverStatusGroup, setDragOverStatusGroup] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [pendingTaskIds, setPendingTaskIds] = useState<Record<number, boolean>>({});
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { toast } = useToast();
   const client = createClient();
+  const skipRealtimeFetchRef = useRef(false);
 
   const selectedGroupId = searchParams.get('group');
   const selectedProjectId = searchParams.get('project');
@@ -92,7 +103,6 @@ function DashboardContent() {
     if (user) {
       fetchGroups();
       fetchProjects();
-      fetchTasks(true);
       fetchPendingInvites(true);
       
       // Inscrição para atualizações em tempo real
@@ -104,7 +114,6 @@ function DashboardContent() {
           () => {
             fetchPendingInvites();
             if (selectedProjectId) {
-              // Atualiza convites pendentes no ShareModal se estiver aberto
               refreshShareModalData();
             }
           }
@@ -115,7 +124,6 @@ function DashboardContent() {
           () => {
             fetchProjects();
             if (selectedProjectId) {
-              // Atualiza membros no ShareModal se estiver aberto
               refreshShareModalData();
             }
           }
@@ -124,16 +132,6 @@ function DashboardContent() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'projects' },
           () => fetchProjects()
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'todos',
-            ...(selectedProjectId ? { filter: `project_id=eq.${selectedProjectId}` } : {}),
-          },
-          () => fetchTasks(false)
         )
         .on(
           'postgres_changes',
@@ -149,34 +147,109 @@ function DashboardContent() {
             }
           }
         )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'task_view_groups' },
-          () => fetchTasks()
-        )
         .subscribe();
 
       const handleProjectsUpdated = () => {
         fetchProjects();
       };
-      const handleTasksUpdated = () => {
-        fetchTasks();
-      };
       const handleInviteProcessed = () => {
         fetchPendingInvites();
       };
       window.addEventListener('projects_updated', handleProjectsUpdated);
-      window.addEventListener('tasks-updated', handleTasksUpdated);
       window.addEventListener('invite_processed', handleInviteProcessed);
 
       return () => {
         client.removeChannel(channel);
         window.removeEventListener('projects_updated', handleProjectsUpdated);
-        window.removeEventListener('tasks-updated', handleTasksUpdated);
         window.removeEventListener('invite_processed', handleInviteProcessed);
       };
     }
   }, [user, selectedProjectId]);
+
+  useEffect(() => {
+    if (user) {
+      fetchTasks(true);
+
+      const handleTasksUpdated = (e: Event) => {
+        const detail = (e as CustomEvent).detail;
+        if (detail?.optimistic) {
+          setTasks(prev => prev.map(t => {
+            if (t.id !== detail.taskId) return t;
+            if (detail.action === 'link_group') {
+              return { ...t, linked_view_group_ids: [...(t.linked_view_group_ids || []), detail.groupId] };
+            }
+            if (detail.action === 'relink_group') {
+              return {
+                ...t,
+                linked_view_group_ids: [
+                  ...(t.linked_view_group_ids || []).filter((id: number) => id !== detail.sourceGroupId),
+                  detail.groupId,
+                ],
+              };
+            }
+            if (detail.action === 'move_to_group') {
+              return { ...t, view_group_id: detail.groupId, project_id: null, section_id: null };
+            }
+            if (detail.action === 'move_to_project') {
+              return { ...t, project_id: detail.projectId, view_group_id: null, section_id: null };
+            }
+            return t;
+          }));
+        } else {
+          fetchTasks();
+        }
+      };
+
+      const todosChannel = client
+        .channel(`todos-changes-${selectedProjectId || 'all'}-${selectedGroupId || 'all'}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'todos',
+            ...(selectedProjectId ? { filter: `project_id=eq.${selectedProjectId}` } : {}),
+          },
+          () => {
+            if (skipRealtimeFetchRef.current || shouldSkipRealtimeFetch()) { skipRealtimeFetchRef.current = false; return; }
+            fetchTasks(false);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'task_view_groups' },
+          (payload: { eventType: string; new: Record<string, unknown>; old: Record<string, unknown> }) => {
+            if (skipRealtimeFetchRef.current || shouldSkipRealtimeFetch()) { skipRealtimeFetchRef.current = false; return; }
+            const taskId = (payload.new?.task_id ?? payload.old?.task_id) as number | undefined;
+            const groupId = (payload.new?.view_group_id ?? payload.old?.view_group_id) as number | undefined;
+            if (!taskId || !groupId) { fetchTasks(false); return; }
+            if (payload.eventType === 'INSERT') {
+              setTasks(prev => prev.map(t =>
+                t.id === taskId
+                  ? { ...t, linked_view_group_ids: [...new Set([...(t.linked_view_group_ids ?? []), groupId])] }
+                  : t
+              ));
+            } else if (payload.eventType === 'DELETE') {
+              setTasks(prev => prev.map(t =>
+                t.id === taskId
+                  ? { ...t, linked_view_group_ids: (t.linked_view_group_ids ?? []).filter(id => id !== groupId) }
+                  : t
+              ));
+            } else {
+              fetchTasks(false);
+            }
+          }
+        )
+        .subscribe();
+
+      window.addEventListener('tasks-updated', handleTasksUpdated);
+
+      return () => {
+        client.removeChannel(todosChannel);
+        window.removeEventListener('tasks-updated', handleTasksUpdated);
+      };
+    }
+  }, [user, selectedProjectId, selectedGroupId]);
 
   // Função para atualizar dados do ShareModal
   const refreshShareModalData = async () => {
@@ -197,7 +270,7 @@ function DashboardContent() {
     if (user && selectedProjectId) {
       fetchSections();
     } else {
-      setSections([]);
+      setSections(prev => prev.length === 0 ? prev : []);
     }
   }, [user, selectedProjectId]);
 
@@ -211,7 +284,12 @@ function DashboardContent() {
       .eq('user_id', user.id)
       .order('created_at');
 
-    if (data) setGroups(data as Group[]);
+    if (data) setGroups(prev => {
+      if (prev.length === data.length && prev.every((g, i) => g.id === data[i].id)) {
+        return prev;
+      }
+      return data as Group[];
+    });
   };
 
   // Faz merge dos projetos retornados pelo servidor com o estado local.
@@ -246,10 +324,25 @@ function DashboardContent() {
       .order('order');
 
     if (data) {
-      setSections(data as Section[]);
-      const initialExpanded: Record<number, boolean> = {};
-      data.forEach((s: Section) => { initialExpanded[s.id] = true; });
-      setExpandedSections(initialExpanded);
+      setSections(prev => {
+        if (prev.length === data.length && prev.every((s, i) => s.id === data[i].id)) {
+          return prev;
+        }
+        return data as Section[];
+      });
+      setExpandedSections(prev => {
+        const next: Record<number, boolean> = {};
+        data.forEach(s => { next[s.id] = s.id in prev ? prev[s.id] : true; });
+        const prevKeys = Object.keys(prev);
+        if (prevKeys.length === data.length && data.every(s => s.id in prev)) {
+          let same = true;
+          for (const s of data) {
+            if (prev[s.id] !== next[s.id]) { same = false; break; }
+          }
+          if (same) return prev;
+        }
+        return next;
+      });
     }
   };
 
@@ -321,14 +414,24 @@ function DashboardContent() {
       ...(selectedProjectId ? { projectId: parseInt(selectedProjectId) } : {}),
       ...(selectedGroupId && !selectedProjectId ? { groupId: parseInt(selectedGroupId) } : {}),
     });
-    setTasks(data);
+    setTasks(prev => {
+      if (prev.length === data.length && prev.every((t, i) => t.id === data[i].id)) {
+        return prev;
+      }
+      return data;
+    });
     if (showLoading) setLoading(false);
   };
 
   const fetchPendingInvites = async (isInitialLoad = false) => {
     if (!user) return;
     const invites = await notificationAPI.getPendingInvites(user.id);
-    setPendingInvites(invites);
+    setPendingInvites(prev => {
+      if (prev.length === invites.length && prev.every((p, i) => p.id === invites[i].id)) {
+        return prev;
+      }
+      return invites;
+    });
     if (isInitialLoad && invites.length > 0) {
       setShowInviteModal(true);
     }
@@ -419,12 +522,13 @@ function DashboardContent() {
       priority: null,
       status: 'a_fazer',
       creator_name: (user as any).user_metadata?.full_name || user.email,
+      isSyncing: true,
     } as Task));
 
     setTasks(prev => [...newOptimisticTasks, ...prev]);
     if (!titleParam) setNewTaskTitle('');
 
-    const results = await Promise.all(titles.map(title => 
+    const results = await Promise.all(titles.map(title =>
       taskAPI.createTask(
         user.id,
         title,
@@ -434,51 +538,71 @@ function DashboardContent() {
       )
     ));
 
-    // Se houve erro, re-faz fetch
-    if (results.some(r => !r.success)) {
-      await fetchTasks();
-    } else {
-      // Atualiza IDs temporarios pelos reais
-      setTasks(prev => {
-        const next = [...prev];
-        results.forEach((res, i) => {
-          if (res.success && res.data) {
-            const idx = next.findIndex(t => t.id === newOptimisticTasks[i].id);
-            if (idx !== -1) next[idx] = res.data;
-          }
-        });
-        return next;
-      });
+    const hasError = results.some(r => !r.success);
+    if (hasError) {
+      const failedTempIds = new Set(newOptimisticTasks.filter((_, i) => !results[i].success).map(t => t.id));
+      setTasks(prev => prev.filter(t => !failedTempIds.has(t.id)));
+      toast('Erro ao criar tarefa(s)', 'error');
     }
+
+    results.forEach((res, i) => {
+      if (res.success && res.data) {
+        const taskWithMeta = {
+          ...res.data,
+          creator_name: (user as any).user_metadata?.full_name || user.email,
+        } as Task;
+        setTasks(prev => {
+          const idx = prev.findIndex(t => t.id === newOptimisticTasks[i].id);
+          if (idx !== -1) {
+            const next = [...prev];
+            next[idx] = taskWithMeta;
+            return next;
+          }
+          if (!prev.some(t => t.id === taskWithMeta.id)) {
+            return [taskWithMeta, ...prev];
+          }
+          return prev;
+        });
+      }
+    });
   };
 
   const toggleTask = async (task: Task) => {
     // OPTIMISTIC UPDATE
     const newState = !task.is_completed;
     setTasks(prev => prev.map(t =>
-      t.id === task.id ? { ...t, is_completed: newState } : t
+      t.id === task.id ? { ...t, is_completed: newState, isSyncing: true } : t
     ));
 
     const result = await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
     if (!result.success) {
-      // Revert on error
       setTasks(prev => prev.map(t =>
-        t.id === task.id ? { ...t, is_completed: !newState } : t
+        t.id === task.id ? { ...t, is_completed: !newState, isSyncing: false } : t
       ));
-      await fetchTasks();
+      toast('Erro ao atualizar tarefa', 'error');
+    } else {
+      setTasks(prev => prev.map(t =>
+        t.id === task.id ? { ...t, isSyncing: false } : t
+      ));
     }
   };
 
   const deleteTask = async (taskId: number) => {
-    // OPTIMISTIC UPDATE
+    // OPTIMISTIC UPDATE: Injetar isSyncing: true
     const taskToDelete = tasks.find(t => t.id === taskId);
-    setTasks(prev => prev.filter(t => t.id !== taskId));
+    if (!taskToDelete) return;
+    const originalTask = { ...taskToDelete };
+
+    setTasks(prev => prev.map(t => 
+      t.id === taskId ? { ...t, isSyncing: true } : t
+    ));
 
     const result = await taskAPI.deleteTask(taskId);
-    if (!result.success && taskToDelete) {
-      // Revert on error
-      setTasks(prev => [...prev, taskToDelete]);
-      await fetchTasks();
+    if (result.success) {
+      setTasks(prev => prev.filter(t => t.id !== taskId));
+    } else {
+      setTasks(prev => prev.map(t => t.id === taskId ? originalTask : t));
+      toast('Erro ao excluir tarefa', 'error');
     }
   };
 
@@ -524,6 +648,7 @@ function DashboardContent() {
       if (deletedSection) setSections(prev => [...prev, deletedSection]);
       await fetchTasks(false);
     } else {
+      await fetchTasks(false);
       window.dispatchEvent(new CustomEvent('tasks-updated'));
     }
   };
@@ -686,315 +811,281 @@ function DashboardContent() {
     return a.localeCompare(b);
   });
 
-  const handleDragStart = (e: React.DragEvent, task: Task) => {
-    setDraggingTaskId(task.id);
-    e.dataTransfer.setData('taskId', task.id.toString());
-    e.dataTransfer.setData('taskTitle', task.title);
-    e.dataTransfer.setData('sourceSectionId', (task.section_id ?? '').toString());
-    e.dataTransfer.setData('sourceProjectId', (task.project_id ?? '').toString());
-    e.dataTransfer.setData('sourceGroupId', (selectedGroupId || '').toString());
-    e.dataTransfer.effectAllowed = 'move';
+  const handleRemoveFromGroup = async (taskId: number, currentGroupId: number) => {
+    let snapshot: Task[] = [];
+    setTasks(prev => {
+      snapshot = prev;
+      return prev.map(t =>
+        t.id === taskId ? {
+          ...t,
+          view_group_id: t.view_group_id === currentGroupId ? null : t.view_group_id,
+          linked_view_group_ids: t.linked_view_group_ids?.filter(id => id !== currentGroupId) || [],
+          isSyncing: true
+        } : t
+      );
+    });
 
-    // Custom drag ghost (imagem fantasma)
-    const el = e.currentTarget as HTMLElement;
-    const rect = el.getBoundingClientRect();
-    const ghost = el.cloneNode(true) as HTMLElement;
-    ghost.style.position = 'absolute';
-    ghost.style.top = '-10000px';
-    ghost.style.left = '-10000px';
-    ghost.style.width = `${rect.width}px`;
-    ghost.style.opacity = '0.85';
-    ghost.style.borderRadius = '8px';
-    ghost.style.boxShadow = '0 8px 24px rgba(0,0,0,0.15)';
-    ghost.style.border = '2px solid #6366f1';
-    ghost.style.backgroundColor = 'var(--card)';
-    ghost.style.transform = 'rotate(2deg) scale(1.02)';
-    ghost.style.pointerEvents = 'none';
-    document.body.appendChild(ghost);
-    e.dataTransfer.setDragImage(ghost, e.clientX - rect.left, e.clientY - rect.top);
-    setTimeout(() => document.body.removeChild(ghost), 0);
-  };
-
-  const handleDragEnd = () => {
-    setDraggingTaskId(null);
-    setDragOverSectionId(null);
-    setDragOverTaskId(null);
-    setDropPosition(null);
-    setDragOverStatusGroup(null);
-  };
-
-  const handleDragOverSection = (e: React.DragEvent, sectionId: number | 'unsectioned') => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverSectionId(sectionId);
-  };
-
-  const handleDragLeaveSection = (e: React.DragEvent) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setDragOverSectionId(null);
-      setDragOverTaskId(null);
-      setDropPosition(null);
-      setDragOverStatusGroup(null);
-    }
-  };
-
-  const handleDragOverStatusGroup = (e: React.DragEvent, sectionId: number | null, statusKey: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverSectionId(sectionId === null ? 'unsectioned' : sectionId);
-    setDragOverStatusGroup(statusKey);
-  };
-
-  const handleDragLeaveStatusGroup = (e: React.DragEvent) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setDragOverStatusGroup(null);
-    }
-  };
-
-  const handleTaskDragOver = (e: React.DragEvent, task: Task) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverTaskId(task.id);
-    const rect = e.currentTarget.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    setDropPosition(y < rect.height / 2 ? 'before' : 'after');
-  };
-
-  const handleTaskDragLeave = (e: React.DragEvent) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setDragOverTaskId(null);
-      setDropPosition(null);
-    }
-  };
-
-  const handleDropOnSection = async (e: React.DragEvent, sectionId: number | null) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const taskIdStr = e.dataTransfer.getData('taskId');
-    if (!taskIdStr || !user || !selectedProjectId) {
-      handleDragEnd();
-      return;
-    }
-
-    const taskId = parseInt(taskIdStr);
-    const targetTasks = sectionId === null
-      ? getTasksBySection(null).filter(t => t.id !== taskId)
-      : getTasksBySection(sectionId).filter(t => t.id !== taskId);
-
-    let insertIndex = targetTasks.length;
-    if (dragOverTaskId) {
-      const idx = targetTasks.findIndex(t => t.id === dragOverTaskId);
-      if (idx !== -1) {
-        insertIndex = dropPosition === 'before' ? idx : idx + 1;
-      }
-    }
-    insertIndex = Math.max(0, Math.min(insertIndex, targetTasks.length));
-
-    // Drop animation highlight
-    setDroppedTaskId(taskId);
-    setTimeout(() => setDroppedTaskId(null), 600);
-
-    // OPTIMISTIC UPDATE: move task to new section in local state immediately
-    setTasks(prev => prev.map(t =>
-      t.id === taskId ? { ...t, section_id: sectionId } : t
-    ));
-
-    // Reset all drag state immediately (clears opacity/ghost styles)
-    setDraggingTaskId(null);
-    setDragOverSectionId(null);
-    setDragOverTaskId(null);
-    setDropPosition(null);
-    setDragOverStatusGroup(null);
-
-    // Persist to database and reconcile in background
-    const result = await taskAPI.moveTaskAndReorder(taskId, sectionId, insertIndex, parseInt(selectedProjectId));
+    const result = await taskAPI.removeTaskFromGroup(taskId, currentGroupId);
     if (!result.success) {
-      await fetchTasks(false); // Revert on error
+      setTasks(snapshot);
+      toast('Erro ao remover tarefa do grupo', 'error');
     } else {
-      window.dispatchEvent(new CustomEvent('tasks-updated'));
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isSyncing: false } : t));
     }
   };
 
-  const handleDropOnStatusGroup = async (e: React.DragEvent, sectionId: number | null, statusKey: string) => {
-    e.preventDefault();
-    e.stopPropagation();
+  useDndMonitor({
+    onDragEnd(event) {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      if (active.data.current?.type !== 'Task') return;
 
-    const taskIdStr = e.dataTransfer.getData('taskId');
-    if (!taskIdStr || !user || !selectedProjectId) {
-      handleDragEnd();
-      return;
-    }
+      const activeTask = active.data.current.task as Task;
+      let overType = over.data.current?.type;
+      let overId = over.data.current?.id;
 
-    const taskId = parseInt(taskIdStr);
-
-    const targetTasks = getTasksBySectionAndStatus(sectionId, statusKey)
-      .filter(t => t.id !== taskId);
-
-    let insertIndex = targetTasks.length;
-    if (dragOverTaskId) {
-      const idx = targetTasks.findIndex(t => t.id === dragOverTaskId);
-      if (idx !== -1) {
-        insertIndex = dropPosition === 'before' ? idx : idx + 1;
+      // Fallback: parse over.id string if data ref is unavailable
+      if (!overType || !overId) {
+        const idStr = String(over.id);
+        if (idStr.startsWith('group-')) {
+          overType = 'group';
+          overId = parseInt(idStr.slice(6), 10);
+        } else if (idStr.startsWith('project-')) {
+          overType = 'project';
+          overId = parseInt(idStr.slice(8), 10);
+        }
       }
+
+      if (!overType || !overId) return;
+
+      // ─── GROUP DROP (sidebar: Blocos de Tempo / Listas) ──────────────
+      if (overType === 'group') {
+        const groupId = overId as number;
+        const sourceProjectId = activeTask.project_id;
+        const sourceGroupId = activeTask.view_group_id;
+
+        // Snapshot da tarefa ANTES do move (para revert em caso de erro e para auditoria)
+        const originalTask = { ...activeTask };
+
+        // SYNCHRONOUS optimistic update – instantâneo
+        let updatedSnapshot: Task = activeTask;
+        setTasks(prev => prev.map(t => {
+          if (t.id !== activeTask.id) return t;
+          if (sourceGroupId && sourceProjectId) {
+            const nextLinked = (t.linked_view_group_ids || []).filter((id: number) => id !== sourceGroupId);
+            updatedSnapshot = { ...t, view_group_id: t.view_group_id === sourceGroupId ? null : t.view_group_id, linked_view_group_ids: [...nextLinked, groupId], isSyncing: true };
+            return updatedSnapshot;
+          }
+          if (sourceProjectId) {
+            updatedSnapshot = { ...t, linked_view_group_ids: [...(t.linked_view_group_ids || []), groupId], isSyncing: true };
+            return updatedSnapshot;
+          }
+          updatedSnapshot = { ...t, view_group_id: groupId, project_id: null, section_id: null, isSyncing: true };
+          return updatedSnapshot;
+        }));
+
+        // Notifica outras paginas (todos/calendar) para atualizarem apenas a tarefa especifica
+        emitTaskMoved({
+          taskId: activeTask.id,
+          taskSnapshot: updatedSnapshot,
+          from: {
+            viewGroupId: sourceGroupId,
+            projectId: sourceProjectId,
+            sectionId: activeTask.section_id,
+            linkedViewGroupIds: originalTask.linked_view_group_ids,
+          },
+        });
+
+        const clearSyncing = () => setTasks(prev => prev.map(t => t.id === activeTask.id ? { ...t, isSyncing: false } : t));
+
+        // API call (assíncrono – não bloqueia a UI)
+        skipRealtimeFetchRef.current = true;
+        setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
+
+        if (sourceProjectId) {
+          if (sourceGroupId) {
+            taskAPI.unlinkTaskFromGroup(activeTask.id, sourceGroupId)
+              .then(() => taskAPI.linkTaskToGroup(activeTask.id, groupId))
+              .then(() => { clearSyncing(); })
+              .catch((err) => {
+                setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
+                emitTaskMoveError({
+                  taskId: activeTask.id,
+                  originalTask,
+                  error: err?.message || 'Falha ao mover a tarefa',
+                });
+                toast('Erro ao mover tarefa', 'error');
+              });
+          } else {
+            taskAPI.linkTaskToGroup(activeTask.id, groupId)
+              .then(() => { clearSyncing(); })
+              .catch((err) => {
+                setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
+                emitTaskMoveError({
+                  taskId: activeTask.id,
+                  originalTask,
+                  error: err?.message || 'Falha ao mover a tarefa',
+                });
+                toast('Erro ao mover tarefa', 'error');
+              });
+          }
+        } else {
+          taskAPI.moveTaskToGroup(activeTask.id, groupId)
+            .then(() => { clearSyncing(); })
+            .catch((err) => {
+              setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
+              emitTaskMoveError({
+                taskId: activeTask.id,
+                originalTask,
+                error: err?.message || 'Falha ao mover a tarefa',
+              });
+              toast('Erro ao mover tarefa', 'error');
+            });
+        }
+        return;
+      }
+
+      // ─── PROJECT DROP (sidebar) ──────────────────────────────────────
+      if (overType === 'project') {
+        const projectId = overId as number;
+
+        const originalTask = { ...activeTask };
+
+        // SYNCHRONOUS optimistic update
+        let updatedSnapshot: Task = { ...activeTask, project_id: projectId, view_group_id: null, section_id: null, isSyncing: true };
+        setTasks(prev => prev.map(t => {
+          if (t.id !== activeTask.id) return t;
+          return updatedSnapshot;
+        }));
+
+        emitTaskMoved({
+          taskId: activeTask.id,
+          taskSnapshot: updatedSnapshot,
+          from: {
+            viewGroupId: originalTask.view_group_id,
+            projectId: originalTask.project_id,
+            sectionId: originalTask.section_id,
+            linkedViewGroupIds: originalTask.linked_view_group_ids,
+          },
+        });
+
+        const clearSyncing = () => setTasks(prev => prev.map(t => t.id === activeTask.id ? { ...t, isSyncing: false } : t));
+
+        skipRealtimeFetchRef.current = true;
+        setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
+
+        taskAPI.moveTaskToProject(activeTask.id, projectId)
+          .then(() => { clearSyncing(); })
+          .catch((err) => {
+            setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
+            emitTaskMoveError({
+              taskId: activeTask.id,
+              originalTask,
+              error: err?.message || 'Falha ao mover a tarefa para o projeto',
+            });
+            toast('Erro ao mover tarefa para o projeto', 'error');
+          });
+        return;
+      }
+
+      // ─── SECTION / TASK DROP (reorder within project) ────────────────
+      if (overType !== 'Task' && overType !== 'Section') return;
+
+      let targetSectionId: number | null = null;
+      let targetIndex = 0;
+      
+      if (overType === 'Section') {
+         targetSectionId = over.data.current!.id === 'unsectioned' ? null : over.data.current!.id as number;
+         const tasksInSection = getTasksBySection(targetSectionId);
+         targetIndex = tasksInSection.length;
+      } else if (overType === 'Task') {
+         const overTask = over.data.current!.task as Task;
+         targetSectionId = overTask.section_id;
+         const tasksInSection = getTasksBySection(targetSectionId);
+         targetIndex = tasksInSection.findIndex(t => t.id === overTask.id);
+         
+         const activeIndex = tasksInSection.findIndex(t => t.id === activeTask.id);
+         if (activeIndex !== -1 && activeIndex < targetIndex) {
+            targetIndex += 1;
+         }
+      }
+      
+      if (targetSectionId === undefined) return;
+
+      if (!selectedProjectId) return;
+
+      const originalTaskForReorder = { ...activeTask };
+
+      // Optimistic update
+      setTasks(prev => {
+        const next = [...prev];
+        const taskIndex = next.findIndex(t => t.id === activeTask.id);
+        if (taskIndex > -1) {
+           const [movedTask] = next.splice(taskIndex, 1);
+           movedTask.section_id = targetSectionId;
+           movedTask.isSyncing = true;
+           
+           // We need to insert it at targetIndex but relative to the WHOLE tasks array, 
+           // not just the section. However, the section tasks might be interleaved.
+           // It's safer to just change the section_id and isSyncing, and let the UI 
+           // group it. To fix order, we should re-insert it correctly.
+           // Actually, getTasksBySection filters them, and SortableContext uses them.
+           // If we don't reorder the main array, it might appear at the end.
+           // Let's insert it back. We will just push it for now, and the position 
+           // will be updated by the backend. But to avoid lag, let's place it at targetIndex within its section.
+           
+           // Find the absolute index in `next` corresponding to `targetIndex` in `targetSectionId`
+           let absoluteIndex = 0;
+           let sectionCount = 0;
+           for (let i = 0; i < next.length; i++) {
+             if (next[i].section_id === targetSectionId) {
+               if (sectionCount === targetIndex) {
+                 absoluteIndex = i;
+                 break;
+               }
+               sectionCount++;
+             }
+             absoluteIndex = i + 1;
+           }
+           
+           next.splice(absoluteIndex, 0, movedTask);
+        }
+        return next;
+      });
+
+      skipRealtimeFetchRef.current = true;
+      setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
+
+      taskAPI.moveTaskAndReorder(activeTask.id, targetSectionId, targetIndex, parseInt(selectedProjectId))
+        .then(result => {
+           if (!result.success) {
+             setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTaskForReorder : t));
+             toast('Erro ao reorganizar tarefa', 'error');
+           } else {
+             setTasks(prev => prev.map(t => t.id === activeTask.id ? { ...t, isSyncing: false } : t));
+           }
+        });
     }
-    insertIndex = Math.max(0, Math.min(insertIndex, targetTasks.length));
+  });
 
-    setDroppedTaskId(taskId);
-    setTimeout(() => setDroppedTaskId(null), 600);
-
-    setTasks(prev => prev.map(t =>
-      t.id === taskId ? { ...t, section_id: sectionId, status: statusKey } : t
-    ));
-
-    setDraggingTaskId(null);
-    setDragOverSectionId(null);
-    setDragOverTaskId(null);
-    setDropPosition(null);
-    setDragOverStatusGroup(null);
-
-    const result1 = await taskAPI.moveTaskAndReorder(taskId, sectionId, insertIndex, parseInt(selectedProjectId));
-    const result2 = await taskAPI.updateTask(taskId, { status: statusKey });
-    
-    if (!result1.success || !result2.success) {
-      await fetchTasks(false);
-    } else {
-      window.dispatchEvent(new CustomEvent('tasks-updated'));
-    }
-  };
-
-  const renderTaskItem = (task: Task, sectionId?: number, currentGroupId?: number) => {
-    const isDragOverTarget = dragOverTaskId === task.id && draggingTaskId !== task.id;
-    const currentGroup = currentGroupId ? groups.find(g => g.id === currentGroupId) : null;
-    const timeDisplay = currentGroup?.start_time ? currentGroup.start_time.substring(0, 5) : null;
-    const dateDisplay = task.due_date && isToday(task.due_date) ? 'hoje' : null;
-
+  const renderTasksList = (tasksList: Task[], sectionId?: number, currentGroupId?: number) => {
     return (
-      <div key={task.id} className="relative group/task">
-        {isDragOverTarget && dropPosition === 'before' && (
-          <div className="absolute -top-[2px] left-3 right-3 h-[3px] bg-primary rounded-full z-20" />
-        )}
-
-        <div
-          draggable
-          onDragStart={(e) => handleDragStart(e, task)}
-          onDragEnd={handleDragEnd}
-          onDragOver={(e) => handleTaskDragOver(e, task)}
-          onDragLeave={handleTaskDragLeave}
-          className={cn(
-            "flex items-center gap-[10px] py-[9px] px-[14px] border-b border-border/40 last:border-b-0 cursor-grab active:cursor-grabbing hover:bg-slate-50 transition-colors",
-            draggingTaskId === task.id && "opacity-50 scale-[0.97]",
-            droppedTaskId === task.id && "animate-in fade-in zoom-in-95 duration-500"
-          )}
-        >
-          {/* 6-dot drag handle */}
-          <svg
-            width="10" height="12" viewBox="0 0 10 12" fill="#cbd5e1"
-            className="flex-shrink-0 opacity-0 group-hover/task:opacity-100 transition-opacity"
-          >
-            <circle cx="3" cy="2.5" r="1"/><circle cx="7" cy="2.5" r="1"/>
-            <circle cx="3" cy="6" r="1"/><circle cx="7" cy="6" r="1"/>
-            <circle cx="3" cy="9.5" r="1"/><circle cx="7" cy="9.5" r="1"/>
-          </svg>
-
-          {/* Circular checkbox */}
-          <button
-            onClick={() => toggleTask(task)}
-            className="flex-shrink-0 flex items-center justify-center transition-colors hover:scale-110"
-            style={{
-              width: 15, height: 15, borderRadius: '50%',
-              border: task.is_completed ? 'none' : '1.5px solid #cbd5e1',
-              background: task.is_completed ? '#22c55e' : 'transparent',
-            }}
-          >
-            {task.is_completed && (
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-                <path d="M1 4.5L3 6.5L7 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            )}
-          </button>
-
-          {/* Task title */}
-          <button
-            onClick={() => setSelectedTask(task)}
-            className={cn(
-              "flex-1 text-[13px] text-left truncate bg-transparent border-none p-0 cursor-pointer hover:text-primary transition-colors min-w-0",
-              task.is_completed ? "line-through text-slate-400" : "text-slate-800"
-            )}
-          >
-            {task.title}
-          </button>
-
-          {/* Creator avatar (only for shared tasks) */}
-          {task.creator_name && task.creator_name !== user?.email && (
-            <div
-              className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-[9px] font-semibold text-white flex-shrink-0"
-              style={{ backgroundColor: getColorFromString(task.creator_name) }}
-              title={task.creator_name}
-            >
-              {getInitials(task.creator_name)}
-            </div>
-          )}
-
-          {/* Time / date indicator */}
-          {(timeDisplay || dateDisplay) && (
-            <span className="text-[10px] font-semibold text-orange-500 flex-shrink-0">
-              {timeDisplay ?? dateDisplay}
-            </span>
-          )}
-
-          {/* Status badge */}
-          <span className={cn(
-            "text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0",
-            (!task.status || task.status === 'a_fazer') && "bg-slate-100 text-slate-500",
-            task.status === 'em_andamento' && "bg-blue-50 text-blue-600",
-            task.status === 'concluida' && "bg-green-50 text-green-600",
-          )}>
-            {(!task.status || task.status === 'a_fazer') ? 'A fazer' :
-             task.status === 'em_andamento' ? 'Em andamento' : 'Concluído'}
-          </span>
-
-          {/* Remove from group */}
-          {currentGroupId && (
-            <button
-              onClick={async (e) => {
-                e.stopPropagation();
-                // OPTIMISTIC UPDATE
-                setTasks(prev => prev.map(t =>
-                  t.id === task.id ? {
-                    ...t,
-                    view_group_id: t.view_group_id === currentGroupId ? null : t.view_group_id,
-                    linked_view_group_ids: t.linked_view_group_ids?.filter(id => id !== currentGroupId) || []
-                  } : t
-                ));
-                
-                const result = await taskAPI.removeTaskFromGroup(task.id, currentGroupId);
-                if (!result.success) {
-                  await fetchTasks(false);
-                }
-              }}
-              title="Remover deste bloco/lista"
-              className="flex-shrink-0 opacity-0 group-hover/task:opacity-100 transition-opacity text-slate-300 hover:text-orange-400"
-            >
-              <XCircle className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {/* Delete */}
-          <button
-            onClick={() => deleteTask(task.id)}
-            className="flex-shrink-0 opacity-0 group-hover/task:opacity-100 transition-opacity text-slate-300 hover:text-red-400"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {isDragOverTarget && dropPosition === 'after' && (
-          <div className="absolute -bottom-[2px] left-3 right-3 h-[3px] bg-primary rounded-full z-20" />
-        )}
-      </div>
+      <SortableContext items={tasksList.map(t => `task-${t.id}`)} strategy={verticalListSortingStrategy}>
+        {tasksList.map(task => (
+          <SortableTaskItem
+            key={task.id}
+            task={task}
+            currentGroupId={currentGroupId}
+            groups={groups}
+            userEmail={user?.email}
+            onToggle={toggleTask}
+            onSelect={setSelectedTask}
+            onRemoveFromGroup={currentGroupId ? handleRemoveFromGroup : undefined}
+            onDelete={deleteTask}
+            isPending={!!pendingTaskIds[task.id]}
+          />
+        ))}
+      </SortableContext>
     );
   };
 
@@ -1003,26 +1094,19 @@ function DashboardContent() {
       const groupTasks = getTasksBySectionAndStatus(sectionId, group.key);
       if (groupTasks.length === 0) return [];
 
-      const isHovered = (sectionId === null ? dragOverSectionId === 'unsectioned' : dragOverSectionId === sectionId)
-        && dragOverStatusGroup === group.key;
-
       return (
         <div key={group.key}>
           <div
             className={cn(
-              "flex items-center gap-2 px-4 py-1.5 border-b border-border/40 text-xs font-medium uppercase tracking-wider",
-              isHovered ? "bg-primary/5 text-primary" : "text-muted-foreground/60"
+              "flex items-center gap-2 px-4 py-1.5 border-b border-border/40 text-xs font-medium uppercase tracking-wider text-muted-foreground/60"
             )}
-            onDragOver={(e) => handleDragOverStatusGroup(e, sectionId, group.key)}
-            onDragLeave={handleDragLeaveStatusGroup}
-            onDrop={(e) => handleDropOnStatusGroup(e, sectionId, group.key)}
           >
             <span>{group.label}</span>
             <span className="text-muted-foreground/40 font-normal normal-case ml-1">
               ({groupTasks.length})
             </span>
           </div>
-          {groupTasks.map((task) => renderTaskItem(task, sectionId ?? undefined))}
+          {renderTasksList(groupTasks, sectionId ?? undefined)}
         </div>
       );
     });
@@ -1257,20 +1341,12 @@ function DashboardContent() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') { e.preventDefault(); handleAddTask(); }
             }}
-            onPaste={async (e) => {
+            onPaste={(e) => {
               const text = e.clipboardData.getData('text');
               const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
               if (lines.length > 1) {
                 e.preventDefault();
-                for (const title of lines) {
-                  await taskAPI.createTask(
-                    user.id, title,
-                    selectedProjectId ? parseInt(selectedProjectId) : undefined,
-                    undefined,
-                    selectedGroupId && !selectedProjectId ? parseInt(selectedGroupId) : undefined
-                  );
-                }
-                await fetchTasks();
+                handleAddTask(undefined, text);
               }
             }}
             placeholder="Nova tarefa — pressione Enter para adicionar"
@@ -1306,8 +1382,7 @@ function DashboardContent() {
                 <Card
                   key={section.id}
                   className={cn(
-                    "bg-card border-border overflow-hidden shadow-card transition-all duration-200",
-                    dragOverSectionId === section.id && "ring-2 ring-primary/40 bg-primary/5 shadow-card-hover"
+                    "bg-card border-border overflow-hidden shadow-card transition-all duration-200"
                   )}
                 >
                   {/* Header da seção */}
@@ -1365,12 +1440,7 @@ function DashboardContent() {
 
                   {/* Tarefas da seção */}
                   {expandedSections[section.id] && (
-                    <div
-                      className="border-t border-border/50 min-h-[48px] transition-all duration-200"
-                      onDragOver={(e) => handleDragOverSection(e, section.id)}
-                      onDragLeave={handleDragLeaveSection}
-                      onDrop={(e) => handleDropOnSection(e, section.id)}
-                    >
+                    <DroppableSection sectionId={section.id}>
                       {renderStatusGroups(section.id)}
                       {/* Input para nova tarefa na seção */}
                       <div className="px-10 py-2">
@@ -1384,26 +1454,17 @@ function DashboardContent() {
                               handleAddTask(section.id, title);
                             }
                           }}
-                          onPaste={async (e) => {
+                          onPaste={(e) => {
                             const text = e.clipboardData.getData('text');
                             const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
                             if (lines.length > 1) {
                               e.preventDefault();
-                              for (const title of lines) {
-                                await taskAPI.createTask(
-                                  user.id,
-                                  title,
-                                  selectedProjectId ? parseInt(selectedProjectId) : undefined,
-                                  section.id,
-                                  selectedGroupId && !selectedProjectId ? parseInt(selectedGroupId) : undefined
-                                );
-                              }
-                              await fetchTasks();
+                              handleAddTask(section.id, text);
                             }
                           }}
                         />
                       </div>
-                    </div>
+                    </DroppableSection>
                   )}
                 </Card>
               ))}
@@ -1411,8 +1472,7 @@ function DashboardContent() {
               {/* Tarefas sem seção */}
               <Card
                   className={cn(
-                    "bg-card border-border overflow-hidden shadow-card transition-all duration-200",
-                    dragOverSectionId === 'unsectioned' && "ring-2 ring-primary/40 bg-primary/5 shadow-card-hover"
+                    "bg-card border-border overflow-hidden shadow-card transition-all duration-200"
                   )}
                 >
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/60">
@@ -1424,12 +1484,7 @@ function DashboardContent() {
                       </span>
                     </div>
                   </div>
-                  <div
-                    className="min-h-[48px] transition-all duration-200"
-                    onDragOver={(e) => handleDragOverSection(e, 'unsectioned')}
-                    onDragLeave={handleDragLeaveSection}
-                    onDrop={(e) => handleDropOnSection(e, null)}
-                  >
+                  <DroppableSection sectionId={'unsectioned'}>
                     {renderStatusGroups(null)}
                     {getTasksBySection(null).length === 0 && (
                       <div className="px-4 py-3 text-xs text-muted-foreground/50 text-center italic">
@@ -1449,7 +1504,7 @@ function DashboardContent() {
                         }}
                       />
                     </div>
-                  </div>
+                  </DroppableSection>
                 </Card>
 
               {/* Botão nova seção */}
@@ -1517,7 +1572,7 @@ function DashboardContent() {
                       )}
                     </div>
                     <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
-                      {groupTasks.map((task) => renderTaskItem(task, undefined, groupId.startsWith('group:') ? parseInt(groupId.split(':')[1]) : undefined))}
+                      {renderTasksList(groupTasks, undefined, groupId.startsWith('group:') ? parseInt(groupId.split(':')[1]) : undefined)}
                       {groupId.startsWith('group:') && (
                         <div className="flex items-center gap-2 px-[14px] py-2 border-t border-border/40">
                           <Plus className="w-3 h-3 text-muted-foreground flex-shrink-0" />
@@ -1542,7 +1597,7 @@ function DashboardContent() {
               {/* Quando tem grupo selecionado: lista compacta única */}
               {selectedGroup && (
                 <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
-                  {filteredTasks.map((task) => renderTaskItem(task, undefined, selectedGroup.id))}
+                  {renderTasksList(filteredTasks, undefined, selectedGroup.id)}
                   <div className="flex items-center gap-2 px-[14px] py-2 border-t border-border/40">
                     <Plus className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                     <input
@@ -1584,7 +1639,9 @@ function DashboardContent() {
 export default function DashboardPage() {
   return (
     <Suspense fallback={<div className="p-4 text-center">Carregando...</div>}>
-      <DashboardContent />
+      <ToastProvider>
+        <DashboardContent />
+      </ToastProvider>
     </Suspense>
   );
 }

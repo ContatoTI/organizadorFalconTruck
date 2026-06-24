@@ -5,6 +5,7 @@ import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
 import { Plus, X, Edit, Trash2, Check, XCircle } from 'lucide-react';
 import { taskAPI } from '@/app/lib/taskAPI';
+import { onTaskMoved, onTaskMoveError, shouldSkipRealtimeFetch, TaskMovedEvent, TaskMoveErrorEvent } from '@/app/lib/taskEvents';
 import type { Task, Group } from '@/types/index';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card } from '@/components/ui/card';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
+import { ToastProvider, useToast } from '@/app/components/Toast';
 
 export default function TodosPage() {
   const [user, setUser] = useState<any>(null);
@@ -26,6 +28,7 @@ export default function TodosPage() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const router = useRouter();
   const client = createClient();
+  const { toast } = useToast();
 
   useEffect(() => {
     const getUser = async () => {
@@ -51,12 +54,35 @@ export default function TodosPage() {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'todos' },
-          () => fetchTasks(false)
+          () => {
+            if (shouldSkipRealtimeFetch()) return;
+            fetchTasks(false);
+          }
         )
         .subscribe();
 
+      const handleTasksUpdated = () => {
+        fetchTasks(false);
+      };
+      window.addEventListener('tasks-updated', handleTasksUpdated);
+
+      // Reage a moves otimistas vindos do dashboard/outras origens:
+      // atualiza APENAS a tarefa especifica (sem refetch) e reverte em caso de erro.
+      const handleTaskMoved = (detail: TaskMovedEvent) => {
+        setTasks(prev => prev.map(t => t.id === detail.taskId ? detail.taskSnapshot : t));
+      };
+      const handleTaskMoveError = (detail: TaskMoveErrorEvent) => {
+        setTasks(prev => prev.map(t => t.id === detail.taskId ? detail.originalTask : t));
+        alert(`Erro ao mover a tarefa: ${detail.error}`);
+      };
+      const offMoved = onTaskMoved(handleTaskMoved);
+      const offMoveError = onTaskMoveError(handleTaskMoveError);
+
       return () => {
         client.removeChannel(channel);
+        window.removeEventListener('tasks-updated', handleTasksUpdated);
+        offMoved();
+        offMoveError();
       };
     }
   }, [user]);
@@ -83,8 +109,8 @@ export default function TodosPage() {
     if (showLoading) setLoading(false);
   };
 
-  const addTask = async () => {
-    const raw = newTaskTitle.trim();
+  const addTask = async (titleOverride?: string) => {
+    const raw = (titleOverride ?? newTaskTitle).trim();
     if (!raw || !user) return;
 
     const titles = raw.split('\n').map(t => t.trim()).filter(Boolean);
@@ -106,6 +132,7 @@ export default function TodosPage() {
       priority: null,
       status: 'a_fazer',
       creator_name: (user as any).user_metadata?.full_name || user.email,
+      isSyncing: true,
     } as Task));
 
     setTasks(prev => [...newOptimisticTasks, ...prev]);
@@ -121,51 +148,66 @@ export default function TodosPage() {
       )
     ));
 
-    // Se houve erro, re-faz fetch
     if (results.some(r => !r.success)) {
-      await fetchTasks();
-    } else {
-      // Atualiza IDs temporários pelos reais
-      setTasks(prev => {
-        const next = [...prev];
-        results.forEach((res, i) => {
-          if (res.success && res.data) {
-            const idx = next.findIndex(t => t.id === newOptimisticTasks[i].id);
-            if (idx !== -1) next[idx] = res.data;
-          }
-        });
-        return next;
-      });
+      const failedTempIds = new Set(newOptimisticTasks.filter((_, i) => !results[i].success).map(t => t.id));
+      setTasks(prev => prev.filter(t => !failedTempIds.has(t.id)));
+      toast('Erro ao criar tarefa(s)', 'error');
     }
+
+    results.forEach((res, i) => {
+      if (res.success && res.data) {
+        setTasks(prev => {
+          const idx = prev.findIndex(t => t.id === newOptimisticTasks[i].id);
+          if (idx !== -1) {
+            const next = [...prev];
+            next[idx] = res.data as Task;
+            return next;
+          }
+          if (!prev.some(t => t.id === res.data!.id)) {
+            return [res.data as Task, ...prev];
+          }
+          return prev;
+        });
+      }
+    });
   };
 
   const toggleTask = async (task: Task) => {
     // OPTIMISTIC UPDATE
     const newState = !task.is_completed;
     setTasks(prev => prev.map(t =>
-      t.id === task.id ? { ...t, is_completed: newState } : t
+      t.id === task.id ? { ...t, is_completed: newState, isSyncing: true } : t
     ));
 
     const result = await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
     if (!result.success) {
-      // Revert on error
       setTasks(prev => prev.map(t =>
-        t.id === task.id ? { ...t, is_completed: !newState } : t
+        t.id === task.id ? { ...t, is_completed: !newState, isSyncing: false } : t
       ));
-      await fetchTasks();
+      toast('Erro ao atualizar tarefa', 'error');
+    } else {
+      setTasks(prev => prev.map(t =>
+        t.id === task.id ? { ...t, isSyncing: false } : t
+      ));
     }
   };
 
   const deleteTask = async (taskId: number) => {
     // OPTIMISTIC UPDATE
     const taskToDelete = tasks.find(t => t.id === taskId);
-    setTasks(prev => prev.filter(t => t.id !== taskId));
+    if (!taskToDelete) return;
+    const originalTask = { ...taskToDelete };
+
+    setTasks(prev => prev.map(t => 
+      t.id === taskId ? { ...t, isSyncing: true } : t
+    ));
 
     const result = await taskAPI.deleteTask(taskId);
-    if (!result.success && taskToDelete) {
-      // Revert on error
-      setTasks(prev => [...prev, taskToDelete]);
-      await fetchTasks();
+    if (result.success) {
+      setTasks(prev => prev.filter(t => t.id !== taskId));
+    } else {
+      setTasks(prev => prev.map(t => t.id === taskId ? originalTask : t));
+      toast('Erro ao excluir tarefa', 'error');
     }
   };
 
@@ -186,11 +228,10 @@ export default function TodosPage() {
     });
 
     if (!result.success && originalTask) {
-      // Revert on error
-      setTasks(prev => prev.map(t => 
+      setTasks(prev => prev.map(t =>
         t.id === originalTask.id ? originalTask : t
       ));
-      await fetchTasks();
+      toast('Erro ao atualizar tarefa', 'error');
     }
   };
 
@@ -199,6 +240,7 @@ export default function TodosPage() {
   }
 
   return (
+    <ToastProvider>
     <div className="p-6 w-full max-w-4xl mx-auto">
       <h1 className="text-3xl font-bold mb-8">Todas as Tarefas</h1>
 
@@ -208,21 +250,12 @@ export default function TodosPage() {
           value={newTaskTitle}
           onChange={(e) => setNewTaskTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && addTask()}
-          onPaste={async (e) => {
+          onPaste={(e) => {
             const text = e.clipboardData.getData('text');
             const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
             if (lines.length > 1) {
               e.preventDefault();
-              for (const title of lines) {
-                await taskAPI.createTask(
-                  user.id,
-                  title,
-                  undefined,
-                  undefined,
-                  selectedGroupId || undefined
-                );
-              }
-              setNewTaskTitle('');
+              addTask(text);
             }
           }}
           placeholder="Adicionar nova tarefa..."
@@ -242,7 +275,7 @@ export default function TodosPage() {
             ))}
           </SelectContent>
         </Select>
-        <Button onClick={addTask}>
+        <Button onClick={() => addTask()}>
           <Plus className="w-5 h-5" />
         </Button>
       </div>
@@ -380,5 +413,6 @@ export default function TodosPage() {
         />
       )}
     </div>
+    </ToastProvider>
   );
 }

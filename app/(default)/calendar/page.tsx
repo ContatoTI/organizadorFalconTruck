@@ -5,6 +5,7 @@ import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
 import { Plus, X, ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import { taskAPI } from '@/app/lib/taskAPI';
+import { onTaskMoved, onTaskMoveError, shouldSkipRealtimeFetch, TaskMovedEvent, TaskMoveErrorEvent } from '@/app/lib/taskEvents';
 import { cn } from '@/app/lib/utils';
 import type { Task, Group, User } from '@/types/index';
 import { Button } from '@/components/ui/button';
@@ -51,12 +52,38 @@ export default function CalendarPage() {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'todos', filter: `user_id=eq.${user.id}` },
-          () => fetchTasks(false)
+          () => {
+            if (shouldSkipRealtimeFetch()) return;
+            fetchTasks(false);
+          }
         )
         .subscribe();
 
+      const handleTasksUpdated = () => {
+        fetchTasks(false);
+      };
+      window.addEventListener('tasks-updated', handleTasksUpdated);
+
+      // Reage a moves otimistas vindos do dashboard/outras origens:
+      // atualiza APENAS a tarefa especifica (sem refetch) e reverte em caso de erro.
+      // No calendario a tarefa so e visivel se tiver due_date; ainda assim mantemos
+      // o snapshot atualizado no estado para o filtro do calendario exibir corretamente
+      // quando o usuario navegar para outra data.
+      const handleTaskMoved = (detail: TaskMovedEvent) => {
+        setTasks(prev => prev.map(t => t.id === detail.taskId ? detail.taskSnapshot : t));
+      };
+      const handleTaskMoveError = (detail: TaskMoveErrorEvent) => {
+        setTasks(prev => prev.map(t => t.id === detail.taskId ? detail.originalTask : t));
+        alert(`Erro ao mover a tarefa: ${detail.error}`);
+      };
+      const offMoved = onTaskMoved(handleTaskMoved);
+      const offMoveError = onTaskMoveError(handleTaskMoveError);
+
       return () => {
         client.removeChannel(channel);
+        window.removeEventListener('tasks-updated', handleTasksUpdated);
+        offMoved();
+        offMoveError();
       };
     }
   }, [user]);
@@ -182,6 +209,45 @@ export default function CalendarPage() {
         });
         return next;
       });
+    }
+  };
+
+  const deleteTask = async (taskId: number) => {
+    // OPTIMISTIC UPDATE
+    const taskToDelete = tasks.find(t => t.id === taskId);
+    if (!taskToDelete) return;
+    const originalTask = { ...taskToDelete };
+
+    setTasks(prev => prev.map(t => 
+      t.id === taskId ? { ...t, isSyncing: true } as any : t
+    ));
+
+    const result = await taskAPI.deleteTask(taskId);
+    if (result.success) {
+      setTasks(prev => prev.filter(t => t.id !== taskId));
+    } else {
+      setTasks(prev => prev.map(t => t.id === taskId ? originalTask : t));
+      alert('Erro ao excluir tarefa');
+    }
+  };
+
+  const toggleTask = async (task: Task) => {
+    // OPTIMISTIC UPDATE
+    const newState = !task.is_completed;
+    setTasks(prev => prev.map(t =>
+      t.id === task.id ? { ...t, is_completed: newState, isSyncing: true } as any : t
+    ));
+
+    const result = await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
+    if (!result.success) {
+      setTasks(prev => prev.map(t =>
+        t.id === task.id ? { ...t, is_completed: !newState, isSyncing: false } as any : t
+      ));
+      alert('Erro ao atualizar tarefa');
+    } else {
+      setTasks(prev => prev.map(t =>
+        t.id === task.id ? { ...t, isSyncing: false } as any : t
+      ));
     }
   };
 
