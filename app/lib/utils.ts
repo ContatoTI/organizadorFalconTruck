@@ -67,3 +67,15 @@ export function GroupIcon({ icon, fallback: Fallback, className }: {
   const Icon = getGroupIcon(icon) || Fallback;
   return createElement(Icon, { className });
 }
+
+export function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
+  if (!json || typeof json !== 'string' || json.trim() === '') {
+    return fallback;
+  }
+  try {
+    return JSON.parse(json) as T;
+  } catch (error) {
+    console.error('[safeJsonParse] Error parsing JSON:', error, 'Input:', json);
+    return fallback;
+  }
+}

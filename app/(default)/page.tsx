@@ -46,6 +46,20 @@ function DroppableSection({ sectionId, children }: { sectionId: number | 'unsect
   );
 }
 
+function DroppableBlock({ blockId, blockType, children }: { blockId: string; blockType: 'group' | 'project'; children: React.ReactNode }) {
+  const numericId = parseInt(blockId.split(':')[1], 10);
+  const { setNodeRef, isOver } = useDroppable({
+    id: `${blockType}-${numericId}`,
+    data: { type: blockType, id: numericId }
+  });
+
+  return (
+    <div ref={setNodeRef} className={cn(isOver && "ring-2 ring-primary/30 rounded-[10px]")}>
+      {children}
+    </div>
+  );
+}
+
 function DashboardContent() {
   const STATUS_GROUPS = [
     { key: 'a_fazer', label: 'A fazer', match: (s: string | null | undefined) => !s || s === 'a_fazer' },
@@ -53,6 +67,7 @@ function DashboardContent() {
     { key: 'concluida', label: 'Concluído', match: (s: string | null | undefined) => s === 'concluida' },
   ] as const;
   const [user, setUser] = useState<AppUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [groups, setGroups] = useState<Group[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -106,7 +121,7 @@ function DashboardContent() {
       }
       setUser(authUser as any);
     };
-    getUser();
+    getUser().finally(() => setAuthChecked(true));
   }, []);
 
   useEffect(() => {
@@ -962,29 +977,49 @@ function DashboardContent() {
     }
   };
 
+  const handleDragOver = (event: any) => {
+    const { active } = event;
+    if (active.data.current?.type === 'Task') {
+      const pos = lastPointerPos.current;
+      const elements = document.elementsFromPoint(pos.x, pos.y);
+      const el = elements.find(el => el.closest('[data-sidebar-type]'))?.closest('[data-sidebar-type]');
+      
+      if (el) {
+        const id = parseInt(el.getAttribute('data-sidebar-id')!);
+        const type = el.getAttribute('data-sidebar-type') as 'group' | 'project';
+        window.dispatchEvent(new CustomEvent('sidebar-drag-over', { detail: { id, type } }));
+      } else {
+        window.dispatchEvent(new CustomEvent('sidebar-drag-leave'));
+      }
+    }
+  };
+
   const handleDragCancel = () => {
     setActiveDragTask(null);
+    window.dispatchEvent(new CustomEvent('sidebar-drag-leave'));
   };
 
   const handleDragEnd = (event: any) => {
       setActiveDragTask(null);
+      window.dispatchEvent(new CustomEvent('sidebar-drag-leave'));
       const { active, over } = event;
 
       // ponytail: sidebar fallback – dnd-kit blocks native HTML5 drag,
       // so we detect sidebar drops by cursor position
       if (active.data.current?.type === 'Task') {
         const activeTask = active.data.current.task as Task;
-        if (!over || active.id === over.id) {
-          const pos = lastPointerPos.current;
-          const el = document.elementsFromPoint(pos.x, pos.y)
-            .find(el => el.hasAttribute('data-sidebar-type'));
-          if (el) {
-            const sidebarType = el.getAttribute('data-sidebar-type');
-            const sidebarId = parseInt(el.getAttribute('data-sidebar-id')!);
-            if (sidebarType === 'group') { execGroupDrop(activeTask, sidebarId); return; }
-            if (sidebarType === 'project') { execProjectDrop(activeTask, sidebarId); return; }
-          }
-          return;
+        
+        // Melhorei aqui: detectamos sidebar SEMPRE que o mouse estiver lá no drop,
+        // ignorando se o dnd-kit acha que está "over" algo (como uma seção de fundo)
+        const pos = lastPointerPos.current;
+        const elements = document.elementsFromPoint(pos.x, pos.y);
+        const el = elements.find(e => e.closest('[data-sidebar-type]'))?.closest('[data-sidebar-type]');
+          
+        if (el) {
+          const sidebarType = el.getAttribute('data-sidebar-type');
+          const sidebarId = parseInt(el.getAttribute('data-sidebar-id')!);
+          if (sidebarType === 'group') { execGroupDrop(activeTask, sidebarId); return; }
+          if (sidebarType === 'project') { execProjectDrop(activeTask, sidebarId); return; }
         }
       }
 
@@ -1004,6 +1039,10 @@ function DashboardContent() {
         } else if (idStr.startsWith('project-')) {
           overType = 'project';
           overId = parseInt(idStr.slice(8), 10);
+        } else if (idStr.startsWith('section-')) {
+          const raw = idStr.slice(8);
+          overType = 'Section';
+          overId = raw === 'unsectioned' ? 'unsectioned' : parseInt(raw, 10);
         }
       }
 
@@ -1148,8 +1187,11 @@ function DashboardContent() {
     });
   };
 
-  if (!user) {
+  if (!authChecked) {
     return <div className="p-6">Carregando...</div>;
+  }
+  if (!user) {
+    return null;
   }
 
   const todayDisplay = new Intl.DateTimeFormat('pt-BR', {
@@ -1159,7 +1201,7 @@ function DashboardContent() {
   const pageTitle = selectedProject ? selectedProject.name : selectedGroup ? selectedGroup.title : 'Dashboard';
 
   return (
-    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
+    <DndContext onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
     <div className="flex flex-col min-h-full">
       {/* Modal de Convites */}
       <Dialog open={showInviteModal && pendingInvites.length > 0} onOpenChange={(open) => !open && setShowInviteModal(false)}>
@@ -1580,8 +1622,10 @@ function DashboardContent() {
                 const groupTasks = groupedTasks[groupId];
                 if (!groupTasks || groupTasks.length === 0) return null;
                 const pendingCount = groupTasks.filter(t => !t.is_completed).length;
-                return (
-                  <div key={groupId} className="mb-5">
+                const blockType = groupId.startsWith('project:') ? 'project' as const :
+                                  groupId.startsWith('group:') ? 'group' as const : null;
+                const inner = (
+                  <div className="mb-5">
                     {/* DS group header: 3px bar | name | count pill | Ver → */}
                     <div className="flex items-center justify-between mb-2 px-1">
                       <div className="flex items-center gap-2">
@@ -1629,6 +1673,10 @@ function DashboardContent() {
                     </div>
                   </div>
                 );
+                if (blockType) {
+                  return <DroppableBlock key={groupId} blockId={groupId} blockType={blockType}>{inner}</DroppableBlock>;
+                }
+                return <div key={groupId}>{inner}</div>;
               })}
 
               {/* Quando tem grupo selecionado: lista compacta única */}

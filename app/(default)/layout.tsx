@@ -274,6 +274,18 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
   const totalNotifications = pendingInvites.length + declineNotifications.length;
 
+  // Helper para lidar com strings que podem ser JSON ou não
+  const getParsedValue = useCallback((val: any) => {
+    if (typeof val === 'string') {
+      try {
+        return JSON.parse(val);
+      } catch (e) {
+        return val;
+      }
+    }
+    return val;
+  }, []);
+
   // Faz merge dos projetos retornados pelo servidor com o estado local.
   // - Projetos vindos do servidor sobrescrevem entradas locais com mesmo id (atualização).
   // - Projetos que existem apenas localmente (ex: recém-aceito, ainda não visível por RLS) são MANTIDOS.
@@ -361,6 +373,26 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   };
 
   const [isDragOver, setIsDragOver] = useState<number | null>(null);
+  const [dragOverType, setDragOverType] = useState<'group' | 'project' | null>(null);
+
+  useEffect(() => {
+    const handleDragOverEvent = (e: any) => {
+      const { id, type } = e.detail;
+      setIsDragOver(id);
+      setDragOverType(type);
+    };
+    const handleDragLeaveEvent = () => {
+      setIsDragOver(null);
+      setDragOverType(null);
+    };
+
+    window.addEventListener('sidebar-drag-over', handleDragOverEvent);
+    window.addEventListener('sidebar-drag-leave', handleDragLeaveEvent);
+    return () => {
+      window.removeEventListener('sidebar-drag-over', handleDragOverEvent);
+      window.removeEventListener('sidebar-drag-leave', handleDragLeaveEvent);
+    };
+  }, []);
 
   const handleDragOver = (e: React.DragEvent, id: number) => {
     e.preventDefault();
@@ -372,12 +404,14 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
   const handleDragLeave = () => {
     setIsDragOver(null);
+    setDragOverType(null);
   };
 
   const handleDropOnGroup = (e: React.DragEvent, groupId: number) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(null);
+    setDragOverType(null);
     
     const taskIdStr = e.dataTransfer.getData('taskId');
     const taskId = parseInt(taskIdStr);
@@ -425,6 +459,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(null);
+    setDragOverType(null);
     
     const taskId = parseInt(e.dataTransfer.getData('taskId'));
     if (!taskId || isNaN(taskId)) return;
@@ -596,6 +631,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                     {timeGroups.map((group) => (
                       <div
                         key={group.id}
+                        id={`group-${group.id}`}
                         onDragOver={(e) => handleDragOver(e, group.id)}
                         onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDropOnGroup(e, group.id)}
@@ -603,7 +639,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                         data-sidebar-id={group.id}
                         className={cn(
                           "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
-                          isDragOver === group.id ? "bg-primary/10 ring-2 ring-primary/40" : "hover:bg-sidebar-accent"
+                          (isDragOver === group.id && dragOverType === 'group') ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm" : "hover:bg-sidebar-accent"
                         )}
                       >
                         <Link
@@ -612,7 +648,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                         >
                             <span className="flex items-center gap-2">
                               <span style={{ color: group.color ?? undefined }}>
-                                <GroupIcon icon={group.icon} fallback={Clock} className="w-4 h-4" />
+                                <GroupIcon icon={getParsedValue(group.icon)} fallback={Clock} className="w-4 h-4" />
                               </span>
                               <span className="truncate">{group.title}</span>
                             </span>
@@ -658,6 +694,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                     {listGroups.map((group) => (
                       <div
                         key={group.id}
+                        id={`group-${group.id}`}
                         onDragOver={(e) => handleDragOver(e, group.id)}
                         onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDropOnGroup(e, group.id)}
@@ -665,7 +702,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                         data-sidebar-id={group.id}
                         className={cn(
                           "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
-                          isDragOver === group.id ? "bg-primary/10 ring-2 ring-primary/40" : "hover:bg-sidebar-accent"
+                          (isDragOver === group.id && dragOverType === 'group') ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm" : "hover:bg-sidebar-accent"
                         )}
                       >
                         <Link
@@ -674,7 +711,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                         >
                             <span className="flex items-center gap-2">
                               <span style={{ color: group.color ?? undefined }}>
-                                <GroupIcon icon={group.icon} fallback={List} className="w-4 h-4" />
+                                <GroupIcon icon={getParsedValue(group.icon)} fallback={List} className="w-4 h-4" />
                               </span>
                               <span className="truncate">{group.title}</span>
                             </span>
@@ -742,6 +779,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                         return (
                         <div
                           key={project.id}
+                          id={`project-${project.id}`}
                           onDragOver={(e) => handleDragOver(e, project.id)}
                           onDragLeave={handleDragLeave}
                           onDrop={(e) => handleDropOnProject(e, project.id)}
@@ -749,7 +787,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                           data-sidebar-id={project.id}
                           className={cn(
                             "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors",
-                            isDragOver === project.id ? "bg-primary/20 ring-2 ring-primary" : "hover:bg-accent/50"
+                            (isDragOver === project.id && dragOverType === 'project') ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm" : "hover:bg-accent/50"
                           )}
                         >
                           <Link
