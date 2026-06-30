@@ -33,12 +33,14 @@ import {
   List,
   Trash2,
   User,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 export default function DefaultLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [user, setUser] = useState<any>(null);
-  const { groups, loading: loadingGroups, deleteGroup: deleteGroupFromState } = useGroups();
+  const { groups, loading: loadingGroups, refreshGroups, deleteGroup: deleteGroupFromState } = useGroups();
   const client = createClient();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -94,11 +96,12 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
         setProjects((prev) => {
           if (prev.some((p) => p.id === detail.projectId)) return prev;
           return [...prev, {
-            id: detail.projectId,
-            owner_id: '',
-            name: detail.name || 'Projeto',
-            color: detail.color || '#6366f1',
-          }];
+          id: detail.projectId,
+          owner_id: '',
+          name: detail.name || 'Projeto',
+          color: detail.color || '#6366f1',
+          show_on_dashboard: true,
+        }];
         });
       }
       fetchProjectsRef.current();
@@ -205,6 +208,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
           owner_id: '',
           name: inviteNotification?.project_title || 'Projeto',
           color: inviteNotification?.project_color || '#6366f1',
+          show_on_dashboard: true,
         }];
       });
 
@@ -341,6 +345,21 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
       window.dispatchEvent(new CustomEvent('tasks-updated'));
     } catch (error) {
       console.error('Erro ao excluir grupo:', error);
+    }
+  };
+
+  const toggleGroupVisibility = async (group: any) => {
+    const next = !group.show_on_dashboard;
+    const { error } = await client.from('view_groups').update({ show_on_dashboard: next }).eq('id', group.id);
+    if (!error) refreshGroups();
+  };
+
+  const toggleProjectVisibility = async (project: any) => {
+    const next = !project.show_on_dashboard;
+    setProjects(prev => prev.map(p => p.id === project.id ? { ...p, show_on_dashboard: next } : p));
+    const { error } = await client.from('projects').update({ show_on_dashboard: next }).eq('id', project.id);
+    if (error) {
+      setProjects(prev => prev.map(p => p.id === project.id ? { ...p, show_on_dashboard: !next } : p));
     }
   };
 
@@ -654,6 +673,16 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                             </span>
                         </Link>
                         <button
+                          onClick={(e) => { e.preventDefault(); toggleGroupVisibility(group); }}
+                          className={cn(
+                            "p-1 rounded opacity-0 group-hover/link:opacity-100 transition-opacity",
+                            group.show_on_dashboard ? "text-sidebar-muted hover:text-primary" : "text-destructive"
+                          )}
+                          title={group.show_on_dashboard ? "Ocultar do Dashboard" : "Mostrar no Dashboard"}
+                        >
+                          {group.show_on_dashboard ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                        </button>
+                        <button
                           onClick={(e) => {
                             e.preventDefault();
                             deleteGroup(group);
@@ -716,6 +745,16 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                               <span className="truncate">{group.title}</span>
                             </span>
                         </Link>
+                        <button
+                          onClick={(e) => { e.preventDefault(); toggleGroupVisibility(group); }}
+                          className={cn(
+                            "p-1 rounded opacity-0 group-hover/link:opacity-100 transition-opacity",
+                            group.show_on_dashboard ? "text-sidebar-muted hover:text-primary" : "text-destructive"
+                          )}
+                          title={group.show_on_dashboard ? "Ocultar do Dashboard" : "Mostrar no Dashboard"}
+                        >
+                          {group.show_on_dashboard ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                        </button>
                         <button
                           onClick={(e) => {
                             e.preventDefault();
@@ -786,7 +825,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                           data-sidebar-type="project"
                           data-sidebar-id={project.id}
                           className={cn(
-                            "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors",
+                            "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
                             (isDragOver === project.id && dragOverType === 'project') ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm" : "hover:bg-accent/50"
                           )}
                         >
@@ -804,6 +843,16 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                               <span className="text-xs text-muted-foreground ml-auto">compartilhado</span>
                             )}
                           </Link>
+                          <button
+                            onClick={(e) => { e.preventDefault(); toggleProjectVisibility(project); }}
+                            className={cn(
+                              "p-1 rounded opacity-0 group-hover/link:opacity-100 transition-opacity",
+                              project.show_on_dashboard ? "text-sidebar-muted hover:text-primary" : "text-destructive"
+                            )}
+                            title={project.show_on_dashboard ? "Ocultar do Dashboard" : "Mostrar no Dashboard"}
+                          >
+                            {project.show_on_dashboard ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                          </button>
                         </div>
                       )})
                     )}

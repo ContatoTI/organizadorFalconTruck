@@ -23,6 +23,7 @@ export interface Group {
   end_time: string | null;
   recurrence_type: string | null;
   recurrence_days: number[] | null;
+  show_on_dashboard: boolean;
   created_at: string;
 }
 
@@ -60,6 +61,7 @@ export interface Project {
   owner_id: string;
   name: string;
   color: string;
+  show_on_dashboard: boolean;
   created_at?: string;
   updated_at?: string;
 }

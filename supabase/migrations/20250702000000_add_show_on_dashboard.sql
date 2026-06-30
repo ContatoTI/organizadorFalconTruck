@@ -1,0 +1,9 @@
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS show_on_dashboard boolean DEFAULT true;
+ALTER TABLE public.view_groups ADD COLUMN IF NOT EXISTS show_on_dashboard boolean DEFAULT true;
+
+-- Garante que usuários possam atualizar show_on_dashboard nos seus próprios grupos
+CREATE POLICY "Users can update their own view_groups"
+  ON public.view_groups
+  FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);

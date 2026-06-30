@@ -57,7 +57,7 @@ export async function fetchUserProjects(userId: string): Promise<Project[]> {
   // Projetos próprios
   const { data: ownProjects } = await client
     .from('projects')
-    .select('id, owner_id, name, color, created_at, updated_at')
+    .select('id, owner_id, name, color, show_on_dashboard, created_at, updated_at')
     .eq('owner_id', userId);
 
   // Projetos compartilhados (via project_members)
@@ -72,7 +72,7 @@ export async function fetchUserProjects(userId: string): Promise<Project[]> {
   if (memberProjectIds.length > 0) {
     const { data } = await client
       .from('projects')
-      .select('id, owner_id, name, color, created_at, updated_at')
+      .select('id, owner_id, name, color, show_on_dashboard, created_at, updated_at')
       .in('id', memberProjectIds);
     sharedProjects = data || [];
   }

@@ -68,6 +68,9 @@ export interface Tables {
       icon: string | null
       color: string | null
       project_id: number | null
+      recurrence_days: number[] | null
+      recurrence_type: string | null
+      show_on_dashboard: boolean
       created_at: string
     }
     Insert: {
@@ -80,6 +83,9 @@ export interface Tables {
       icon?: string | null
       color?: string | null
       project_id?: number | null
+      recurrence_days?: number[] | null
+      recurrence_type?: string | null
+      show_on_dashboard?: boolean
       created_at?: string
     }
     Update: {
@@ -92,6 +98,9 @@ export interface Tables {
       icon?: string | null
       color?: string | null
       project_id?: number | null
+      recurrence_days?: number[] | null
+      recurrence_type?: string | null
+      show_on_dashboard?: boolean
       created_at?: string
     }
   }
@@ -162,6 +171,7 @@ export interface Tables {
       owner_id: string
       name: string
       color: string | null
+      show_on_dashboard: boolean
       created_at: string
     }
     Insert: {
@@ -169,6 +179,7 @@ export interface Tables {
       owner_id: string
       name: string
       color?: string | null
+      show_on_dashboard?: boolean
       created_at?: string
     }
     Update: {
@@ -176,6 +187,7 @@ export interface Tables {
       owner_id?: string
       name?: string
       color?: string | null
+      show_on_dashboard?: boolean
       created_at?: string
     }
   }

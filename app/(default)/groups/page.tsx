@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useGroups } from '@/app/lib/GroupsContext';
-import { Plus, X, Edit2, Trash2, Clock, List } from 'lucide-react';
+import { Plus, X, Edit2, Trash2, Clock, List, Eye, EyeOff } from 'lucide-react';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { GroupIcon } from '@/app/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 
 function GroupsContent() {
   const { groups, loading, refreshGroups, addGroup } = useGroups();
@@ -28,6 +29,7 @@ function GroupsContent() {
     end_time: '',
     recurrence_type: 'weekly',
     recurrence_days: [] as number[],
+    show_on_dashboard: true,
   });
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -87,6 +89,7 @@ function GroupsContent() {
       end_time: currentForm.type === 'time' ? currentForm.end_time : null,
       recurrence_type: currentForm.type === 'time' ? currentForm.recurrence_type : null,
       recurrence_days: currentForm.type === 'time' ? currentForm.recurrence_days : null,
+      show_on_dashboard: currentForm.show_on_dashboard,
     };
 
     const { data, error } = await client
@@ -115,6 +118,7 @@ function GroupsContent() {
       end_time: '',
       recurrence_type: 'weekly',
       recurrence_days: [],
+      show_on_dashboard: true,
     });
     
     // Go back to groups list
@@ -131,6 +135,13 @@ function GroupsContent() {
     window.dispatchEvent(new CustomEvent('tasks-updated'));
   };
 
+  const toggleGroupVisibility = async (group: any) => {
+    const next = !group.show_on_dashboard;
+    refreshGroups(); // recarrega os grupos após toggle
+    const { error } = await client.from('view_groups').update({ show_on_dashboard: next }).eq('id', group.id);
+    if (error) console.error('Erro ao alterar visibilidade:', error);
+  };
+
   const editGroup = (group: any) => {
     setEditingGroup(group);
     setFormData({
@@ -142,6 +153,7 @@ function GroupsContent() {
       end_time: group.end_time || '',
       recurrence_type: group.recurrence_type || 'weekly',
       recurrence_days: group.recurrence_days || [],
+      show_on_dashboard: group.show_on_dashboard !== false,
     });
     setShowForm(true);
   };
@@ -158,6 +170,7 @@ function GroupsContent() {
       end_time: '',
       recurrence_type: 'weekly',
       recurrence_days: [],
+      show_on_dashboard: true,
     });
   };
 
@@ -208,6 +221,14 @@ function GroupsContent() {
                     )}
                   </p>
                 </div>
+                <Button
+                  variant="ghost" size="sm"
+                  onClick={() => toggleGroupVisibility(group)}
+                  className={group.show_on_dashboard ? "text-muted-foreground hover:text-primary" : "text-destructive"}
+                  title={group.show_on_dashboard ? "Ocultar do Dashboard" : "Mostrar no Dashboard"}
+                >
+                  {group.show_on_dashboard ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </Button>
                 <Button variant="ghost" size="sm" onClick={() => editGroup(group)} className="text-muted-foreground hover:text-primary">
                   <Edit2 className="w-4 h-4" />
                 </Button>
@@ -273,6 +294,14 @@ function GroupsContent() {
                   className="h-10 p-1 cursor-pointer"
                 />
               </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <Label>Mostrar no Dashboard</Label>
+              <Switch
+                checked={formData.show_on_dashboard}
+                onCheckedChange={(checked) => setFormData({ ...formData, show_on_dashboard: checked })}
+              />
             </div>
 
             {formData.type === 'time' && (

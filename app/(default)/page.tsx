@@ -500,6 +500,7 @@ function DashboardContent() {
           owner_id: '',
           name: inviteNotification?.project_title || 'Projeto',
           color: inviteNotification?.project_color || '#6366f1',
+          show_on_dashboard: true,
         }];
       });
 
@@ -885,6 +886,26 @@ function DashboardContent() {
     return a.localeCompare(b);
   });
 
+  // Filtra chaves por tipo e visibilidade no Dashboard
+  const dashboardProjectKeys = sortedGroupKeys.filter(k => {
+    if (!k.startsWith('project:')) return false;
+    const id = parseInt(k.split(':')[1]);
+    return projects.find(p => p.id === id)?.show_on_dashboard !== false;
+  });
+  const dashboardTimeKeys = sortedGroupKeys.filter(k => {
+    if (!k.startsWith('group:')) return false;
+    const id = parseInt(k.split(':')[1]);
+    const g = groups.find(gr => gr.id === id);
+    return g?.type === 'time' && g?.show_on_dashboard !== false;
+  });
+  const dashboardListKeys = sortedGroupKeys.filter(k => {
+    if (!k.startsWith('group:')) return false;
+    const id = parseInt(k.split(':')[1]);
+    const g = groups.find(gr => gr.id === id);
+    return g?.type === 'list' && g?.show_on_dashboard !== false;
+  });
+  const inboxKey = sortedGroupKeys.find(k => k === 'inbox');
+
   const handleRemoveFromGroup = async (taskId: number, currentGroupId: number) => {
     let snapshot: Task[] = [];
     setTasks(prev => {
@@ -1254,6 +1275,62 @@ function DashboardContent() {
         </div>
       );
     });
+  };
+
+  const renderDashboardBlock = (groupId: string, blockType: 'project' | 'group') => {
+    const groupInfo = getGroupInfo(groupId);
+    const groupTasks = groupedTasks[groupId];
+    if (!groupTasks || groupTasks.length === 0) return null;
+    const pendingCount = groupTasks.filter(t => !t.is_completed).length;
+    const inner = (
+      <div className="mb-5">
+        <div className="flex items-center justify-between mb-2 px-1">
+          <div className="flex items-center gap-2">
+            <div
+              className="w-[3px] h-[15px] rounded-full flex-shrink-0"
+              style={{ backgroundColor: groupInfo.color || 'hsl(var(--primary))' }}
+            />
+            <span
+              className="text-[13px] font-semibold"
+              style={groupInfo.color ? { color: groupInfo.color } : undefined}
+            >
+              {groupInfo.title}
+            </span>
+            <span className="text-[10px] font-medium bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full tabular-nums">
+              {pendingCount}
+            </span>
+          </div>
+          {groupInfo.link && (
+            <button
+              onClick={() => router.push(groupInfo.link!)}
+              className="text-[11px] text-muted-foreground hover:text-primary flex items-center gap-0.5 transition-colors"
+            >
+              Ver <ArrowRight className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+        <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
+          {renderTasksList(groupTasks, undefined, blockType === 'group' ? parseInt(groupId.split(':')[1]) : undefined)}
+          {blockType === 'group' && (
+            <div className="flex items-center gap-2 px-[14px] py-2 border-t border-border/40">
+              <Plus className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+              <input
+                placeholder="Adicionar tarefa..."
+                className="flex-1 text-[12px] text-slate-500 placeholder:text-slate-400 bg-transparent outline-none"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                    const title = e.currentTarget.value.trim();
+                    e.currentTarget.value = '';
+                    handleAddTask(undefined, title, parseInt(groupId.split(':')[1]));
+                  }
+                }}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+    return <DroppableBlock key={groupId} blockId={groupId} blockType={blockType}>{inner}</DroppableBlock>;
   };
 
   if (!authChecked) {
@@ -1691,69 +1768,56 @@ function DashboardContent() {
               <p className="text-sm mt-2">Adicione uma tarefa acima para começar.</p>
             </div>
           ) : (
-            /* Cabeçalho para cada grupo quando não tem grupo selecionado */
+            /* Seções organizadas do Dashboard */
             <>
-              {!selectedGroup && sortedGroupKeys.map((groupId) => {
-                const groupInfo = getGroupInfo(groupId);
-                const groupTasks = groupedTasks[groupId];
-                if (!groupTasks || groupTasks.length === 0) return null;
-                const pendingCount = groupTasks.filter(t => !t.is_completed).length;
-                const blockType = groupId.startsWith('project:') ? 'project' as const :
-                                  groupId.startsWith('group:') ? 'group' as const : null;
-                const inner = (
-                  <div className="mb-5">
-                    {/* DS group header: 3px bar | name | count pill | Ver → */}
-                    <div className="flex items-center justify-between mb-2 px-1">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-[3px] h-[15px] rounded-full flex-shrink-0"
-                          style={{ backgroundColor: groupInfo.color || 'hsl(var(--primary))' }}
-                        />
-                        <span
-                          className="text-[13px] font-semibold"
-                          style={groupInfo.color ? { color: groupInfo.color } : undefined}
-                        >
-                          {groupInfo.title}
-                        </span>
-                        <span className="text-[10px] font-medium bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full tabular-nums">
-                          {pendingCount}
-                        </span>
-                      </div>
-                      {groupInfo.link && (
-                        <button
-                          onClick={() => router.push(groupInfo.link!)}
-                          className="text-[11px] text-muted-foreground hover:text-primary flex items-center gap-0.5 transition-colors"
-                        >
-                          Ver <ArrowRight className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                    <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
-                      {renderTasksList(groupTasks, undefined, groupId.startsWith('group:') ? parseInt(groupId.split(':')[1]) : undefined)}
-                      {groupId.startsWith('group:') && (
-                        <div className="flex items-center gap-2 px-[14px] py-2 border-t border-border/40">
-                          <Plus className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                          <input
-                            placeholder="Adicionar tarefa..."
-                            className="flex-1 text-[12px] text-slate-500 placeholder:text-slate-400 bg-transparent outline-none"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                                const title = e.currentTarget.value.trim();
-                                e.currentTarget.value = '';
-                                handleAddTask(undefined, title, parseInt(groupId.split(':')[1]));
-                              }
-                            }}
-                          />
+              {!selectedGroup && (
+                <>
+                  {/* Caixa de Entrada */}
+                  {inboxKey && (() => {
+                    const tasks = groupedTasks[inboxKey];
+                    if (!tasks || tasks.length === 0) return null;
+                    const pendingCount = tasks.filter(t => !t.is_completed).length;
+                    return (
+                      <div key={inboxKey} className="mb-5">
+                        <div className="flex items-center justify-between mb-2 px-1">
+                          <div className="flex items-center gap-2">
+                            <div className="w-[3px] h-[15px] rounded-full flex-shrink-0 bg-primary" />
+                            <span className="text-[13px] font-semibold">Caixa de Entrada</span>
+                            <span className="text-[10px] font-medium bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full tabular-nums">{pendingCount}</span>
+                          </div>
                         </div>
-                      )}
+                        <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
+                          {renderTasksList(tasks)}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Projetos */}
+                  {dashboardProjectKeys.length > 0 && (
+                    <div className="mb-6">
+                      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Projetos</h2>
+                      {dashboardProjectKeys.map(groupId => renderDashboardBlock(groupId, 'project'))}
                     </div>
-                  </div>
-                );
-                if (blockType) {
-                  return <DroppableBlock key={groupId} blockId={groupId} blockType={blockType}>{inner}</DroppableBlock>;
-                }
-                return <div key={groupId}>{inner}</div>;
-              })}
+                  )}
+
+                  {/* Blocos de Tempo */}
+                  {dashboardTimeKeys.length > 0 && (
+                    <div className="mb-6">
+                      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Blocos de Tempo</h2>
+                      {dashboardTimeKeys.map(groupId => renderDashboardBlock(groupId, 'group'))}
+                    </div>
+                  )}
+
+                  {/* Listas */}
+                  {dashboardListKeys.length > 0 && (
+                    <div className="mb-6">
+                      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Listas</h2>
+                      {dashboardListKeys.map(groupId => renderDashboardBlock(groupId, 'group'))}
+                    </div>
+                  )}
+                </>
+              )}
 
               {/* Quando tem grupo selecionado: lista compacta única */}
               {selectedGroup && (
