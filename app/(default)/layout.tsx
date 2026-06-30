@@ -351,12 +351,16 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const toggleGroupVisibility = async (group: any) => {
     const next = !group.show_on_dashboard;
     const { error } = await client.from('view_groups').update({ show_on_dashboard: next }).eq('id', group.id);
-    if (!error) refreshGroups();
+    if (!error) {
+      refreshGroups();
+      window.dispatchEvent(new CustomEvent('groups_updated'));
+    }
   };
 
   const toggleProjectVisibility = async (project: any) => {
     const next = !project.show_on_dashboard;
     setProjects(prev => prev.map(p => p.id === project.id ? { ...p, show_on_dashboard: next } : p));
+    window.dispatchEvent(new CustomEvent('projects_updated'));
     const { error } = await client.from('projects').update({ show_on_dashboard: next }).eq('id', project.id);
     if (error) {
       setProjects(prev => prev.map(p => p.id === project.id ? { ...p, show_on_dashboard: !next } : p));

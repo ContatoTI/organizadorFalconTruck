@@ -3,11 +3,12 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, X, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search } from 'lucide-react';
+import { Check, X, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search, Eye, EyeOff, Settings } from 'lucide-react';
 import { cn } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { projectAPI } from '@/app/lib/projectAPI';
 import { notificationAPI } from '@/app/lib/notificationAPI';
+import { useGroups } from '@/app/lib/GroupsContext';
 import { emitTaskMoved, emitTaskMoveError, TaskMovedEvent, shouldSkipRealtimeFetch } from '@/app/lib/taskEvents';
 import type { Task, Group, Project, Section, ProjectInviteNotification, User as AppUser } from '@/types/index';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import {
   DndContext,
   DragOverlay,
@@ -75,7 +77,7 @@ function DashboardContent() {
   ] as const;
   const [user, setUser] = useState<AppUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [groups, setGroups] = useState<Group[]>([]);
+  const { groups, refreshGroups } = useGroups();
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
@@ -115,6 +117,20 @@ function DashboardContent() {
     })
   );
 
+  const [showDashboardConfig, setShowDashboardConfig] = useState(false);
+
+  const toggleProjectOnDashboard = async (project: Project) => {
+    const next = !project.show_on_dashboard;
+    setProjects(prev => prev.map(p => p.id === project.id ? { ...p, show_on_dashboard: next } : p));
+    await client.from('projects').update({ show_on_dashboard: next }).eq('id', project.id);
+  };
+
+  const toggleGroupOnDashboard = async (group: Group) => {
+    const next = !group.show_on_dashboard;
+    const { error } = await client.from('view_groups').update({ show_on_dashboard: next }).eq('id', group.id);
+    if (!error) refreshGroups();
+  };
+
   useEffect(() => {
     const handler = (e: PointerEvent) => {
       lastPointerPos.current = { x: e.clientX, y: e.clientY };
@@ -142,7 +158,6 @@ function DashboardContent() {
 
   useEffect(() => {
     if (user) {
-      fetchGroups();
       fetchProjects();
       fetchPendingInvites(true);
       
@@ -176,6 +191,11 @@ function DashboardContent() {
         )
         .on(
           'postgres_changes',
+          { event: '*', schema: 'public', table: 'view_groups' },
+          () => refreshGroups()
+        )
+        .on(
+          'postgres_changes',
           {
             event: '*',
             schema: 'public',
@@ -196,13 +216,18 @@ function DashboardContent() {
       const handleInviteProcessed = () => {
         fetchPendingInvites();
       };
+      const handleGroupsUpdated = () => {
+        refreshGroups();
+      };
       window.addEventListener('projects_updated', handleProjectsUpdated);
       window.addEventListener('invite_processed', handleInviteProcessed);
+      window.addEventListener('groups_updated', handleGroupsUpdated);
 
       return () => {
         client.removeChannel(channel);
         window.removeEventListener('projects_updated', handleProjectsUpdated);
         window.removeEventListener('invite_processed', handleInviteProcessed);
+        window.removeEventListener('groups_updated', handleGroupsUpdated);
       };
     }
   }, [user, selectedProjectId]);
@@ -320,24 +345,6 @@ function DashboardContent() {
       setSections(prev => prev.length === 0 ? prev : []);
     }
   }, [user, selectedProjectId]);
-
-  const fetchGroups = async () => {
-    const { data: { user } } = await client.auth.getUser();
-    if (!user) return;
-
-    const { data } = await client
-      .from('view_groups')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at');
-
-    if (data) setGroups(prev => {
-      if (prev.length === data.length && prev.every((g, i) => g.id === data[i].id)) {
-        return prev;
-      }
-      return data as Group[];
-    });
-  };
 
   // Faz merge dos projetos retornados pelo servidor com o estado local.
   // Preserva projetos recém-adicionados que o servidor ainda não enxerga (cache de RLS).
@@ -1508,6 +1515,79 @@ function DashboardContent() {
         </DialogContent>
       </Dialog>
 
+      {/* Modal de Personalização do Dashboard */}
+      <Dialog open={showDashboardConfig} onOpenChange={(open) => !open && setShowDashboardConfig(false)}>
+        <DialogContent className="sm:max-w-md max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Personalizar Dashboard</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+            {/* Projetos */}
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Projetos</h3>
+              {projects.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">Nenhum projeto encontrado.</p>
+              ) : (
+                <div className="space-y-2">
+                  {projects.map(p => (
+                    <div key={p.id} className="flex items-center justify-between py-1.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
+                        <span className="text-sm">{p.name}</span>
+                      </div>
+                      <Switch
+                        checked={p.show_on_dashboard !== false}
+                        onCheckedChange={() => toggleProjectOnDashboard(p)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Blocos de Tempo */}
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Blocos de Tempo</h3>
+              {groups.filter(g => g.type === 'time').length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">Nenhum bloco de tempo encontrado.</p>
+              ) : (
+                <div className="space-y-2">
+                  {groups.filter(g => g.type === 'time').map(g => (
+                    <div key={g.id} className="flex items-center justify-between py-1.5">
+                      <span className="text-sm">{g.title}</span>
+                      <Switch
+                        checked={g.show_on_dashboard !== false}
+                        onCheckedChange={() => toggleGroupOnDashboard(g)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Listas */}
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Listas</h3>
+              {groups.filter(g => g.type === 'list').length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">Nenhuma lista encontrada.</p>
+              ) : (
+                <div className="space-y-2">
+                  {groups.filter(g => g.type === 'list').map(g => (
+                    <div key={g.id} className="flex items-center justify-between py-1.5">
+                      <span className="text-sm">{g.title}</span>
+                      <Switch
+                        checked={g.show_on_dashboard !== false}
+                        onCheckedChange={() => toggleGroupOnDashboard(g)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Sticky topbar */}
       <div className="sticky top-0 z-10 bg-card border-b border-border">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -1531,6 +1611,9 @@ function DashboardContent() {
                 </Button>
               </>
             )}
+            <Button variant="ghost" size="sm" onClick={() => setShowDashboardConfig(true)} className="rounded-full h-7 text-xs gap-1" title="Personalizar Dashboard">
+              <Settings className="w-3 h-3" /> Personalizar
+            </Button>
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <div
                 onClick={() => setShowCompleted(!showCompleted)}

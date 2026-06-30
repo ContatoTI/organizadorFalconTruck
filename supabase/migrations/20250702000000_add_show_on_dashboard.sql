@@ -7,3 +7,7 @@ CREATE POLICY "Users can update their own view_groups"
   FOR UPDATE
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
+
+-- Adiciona view_groups à publicação do Realtime para sincronizar o Dashboard
+alter publication supabase_realtime add table public.view_groups;
+
