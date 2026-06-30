@@ -77,6 +77,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
       <div 
         {...attributes} 
         {...listeners}
+        style={{ touchAction: 'none' }}
         className={cn(
           "flex-shrink-0 cursor-grab active:cursor-grabbing outline-none",
           isOverlay ? "opacity-100" : "opacity-0 group-hover/task:opacity-100 transition-opacity"

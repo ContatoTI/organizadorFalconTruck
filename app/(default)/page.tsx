@@ -16,7 +16,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { DndContext, DragOverlay } from '@dnd-kit/core';
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableTaskItem } from '@/app/components/SortableTaskItem';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
@@ -98,6 +105,14 @@ function DashboardContent() {
   const client = createClient();
   const skipRealtimeFetchRef = useRef(false);
   const lastPointerPos = useRef({ x: 0, y: 0 });
+
+  // Sensors do dnd-kit: activationConstraint evita que um simples clique/tap
+  // dispare um drag acidental (especialmente importante em telas touch)
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    })
+  );
 
   useEffect(() => {
     const handler = (e: PointerEvent) => {
@@ -1065,7 +1080,12 @@ function DashboardContent() {
 
       let targetSectionId: number | null = null;
       let targetIndex = 0;
-      
+      // NOVO: status de destino — por padrão mantém o status atual da tarefa.
+      // Como as colunas visuais (A fazer / Em andamento / Concluído) são
+      // SortableContexts separados, soltar numa coluna diferente precisa
+      // persistir o novo status, senão a tarefa "volta" no próximo fetch.
+      let targetStatus: string | null = activeTask.status ?? 'a_fazer';
+
       if (overType === 'Section') {
          targetSectionId = over.data.current!.id === 'unsectioned' ? null : over.data.current!.id as number;
          const tasksInSection = getTasksBySection(targetSectionId);
@@ -1073,7 +1093,10 @@ function DashboardContent() {
       } else if (overType === 'Task') {
          const overTask = over.data.current!.task as Task;
          targetSectionId = overTask.section_id;
-         const tasksInSection = getTasksBySection(targetSectionId);
+         // NOVO: herda o status da tarefa sobre a qual foi solto
+         targetStatus = overTask.status ?? 'a_fazer';
+
+         const tasksInSection = getTasksBySectionAndStatus(targetSectionId, targetStatus ?? 'a_fazer');
          targetIndex = tasksInSection.findIndex(t => t.id === overTask.id);
          
          const activeIndex = tasksInSection.findIndex(t => t.id === activeTask.id);
@@ -1085,6 +1108,7 @@ function DashboardContent() {
       if (targetSectionId === undefined) return;
 
       const originalTaskForReorder = { ...activeTask };
+      const statusChanged = targetStatus !== (activeTask.status ?? 'a_fazer');
 
       // Optimistic update
       setTasks(prev => {
@@ -1093,23 +1117,18 @@ function DashboardContent() {
         if (taskIndex > -1) {
            const [movedTask] = next.splice(taskIndex, 1);
            movedTask.section_id = targetSectionId;
+           movedTask.status = targetStatus ?? movedTask.status; // NOVO: aplica status otimisticamente
+           movedTask.is_completed = targetStatus === 'concluida'; // NOVO: mantém is_completed coerente
            movedTask.isSyncing = true;
            
-           // We need to insert it at targetIndex but relative to the WHOLE tasks array, 
-           // not just the section. However, the section tasks might be interleaved.
-           // It's safer to just change the section_id and isSyncing, and let the UI 
-           // group it. To fix order, we should re-insert it correctly.
-           // Actually, getTasksBySection filters them, and SortableContext uses them.
-           // If we don't reorder the main array, it might appear at the end.
-           // Let's insert it back. We will just push it for now, and the position 
-           // will be updated by the backend. But to avoid lag, let's place it at targetIndex within its section.
-           
-           // Find the absolute index in `next` corresponding to `targetIndex` in `targetSectionId`
+           // NOVO: calcula a posição absoluta considerando section_id + status,
+           // já que agora as colunas visuais são separadas por status
            let absoluteIndex = 0;
            let sectionCount = 0;
            for (let i = 0; i < next.length; i++) {
-             // In Inbox/Group view, we don't have sections, but targetSectionId is null, which matches
-             if (next[i].section_id === targetSectionId) {
+             const sameSection = next[i].section_id === targetSectionId;
+             const sameStatus = (next[i].status ?? 'a_fazer') === (targetStatus ?? 'a_fazer');
+             if (sameSection && sameStatus) {
                if (sectionCount === targetIndex) {
                  absoluteIndex = i;
                  break;
@@ -1127,20 +1146,36 @@ function DashboardContent() {
       skipRealtimeFetchRef.current = true;
       setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
 
-      taskAPI.moveTaskAndReorder(
-        activeTask.id, 
-        targetSectionId, 
-        targetIndex, 
-        selectedProjectId ? parseInt(selectedProjectId) : null,
-        selectedGroupId ? parseInt(selectedGroupId) : null
-      ).then(result => {
-           if (!result.success) {
-             setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTaskForReorder : t));
-             toast('Erro ao reorganizar tarefa', 'error');
-           } else {
-             setTasks(prev => prev.map(t => t.id === activeTask.id ? { ...t, isSyncing: false } : t));
-           }
-        });
+      // NOVO: além de mover/reordenar, persiste o status se ele mudou
+      (async () => {
+        const moveResult = await taskAPI.moveTaskAndReorder(
+          activeTask.id,
+          targetSectionId,
+          targetIndex,
+          selectedProjectId ? parseInt(selectedProjectId) : null,
+          selectedGroupId ? parseInt(selectedGroupId) : null
+        );
+
+        if (!moveResult.success) {
+          setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTaskForReorder : t));
+          toast('Erro ao reorganizar tarefa', 'error');
+          return;
+        }
+
+        if (statusChanged) {
+          const statusResult = await taskAPI.updateTask(activeTask.id, {
+            status: targetStatus,
+            is_completed: targetStatus === 'concluida',
+          });
+          if (!statusResult.success) {
+            setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTaskForReorder : t));
+            toast('Erro ao atualizar status da tarefa', 'error');
+            return;
+          }
+        }
+
+        setTasks(prev => prev.map(t => t.id === activeTask.id ? { ...t, isSyncing: false } : t));
+      })();
   };
 
   const renderTasksList = (tasksList: Task[], sectionId?: number, currentGroupId?: number) => {
@@ -1201,7 +1236,14 @@ function DashboardContent() {
   const pageTitle = selectedProject ? selectedProject.name : selectedGroup ? selectedGroup.title : 'Dashboard';
 
   return (
-    <DndContext onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd} onDragCancel={handleDragCancel}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
+    >
     <div className="flex flex-col min-h-full">
       {/* Modal de Convites */}
       <Dialog open={showInviteModal && pendingInvites.length > 0} onOpenChange={(open) => !open && setShowInviteModal(false)}>
