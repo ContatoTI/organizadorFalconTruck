@@ -83,6 +83,7 @@ function DashboardContent() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [showCompleted, setShowCompleted] = useState(true);
   const [onlyToday, setOnlyToday] = useState(false);
+  const [now, setNow] = useState(new Date());
   const [expandedSections, setExpandedSections] = useState<Record<number, boolean>>({});
   const [newSectionTitle, setNewSectionTitle] = useState('');
   const [editingSection, setEditingSection] = useState<number | null>(null);
@@ -290,6 +291,12 @@ function DashboardContent() {
       };
     }
   }, [user, selectedProjectId, selectedGroupId]);
+
+  // ponytail: auto-refresh a cada 30s para reavaliar janelas de horário
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Função para atualizar dados do ShareModal
   const refreshShareModalData = async () => {
@@ -747,6 +754,33 @@ function DashboardContent() {
     return getTasksBySection(sectionId).filter(t => group.match(t.status));
   };
 
+  // ponytail: só exibe tarefa de bloco de horário se a janela estiver aberta agora
+  const isTimeWindowActive = (group: Group, currentTime: Date): boolean => {
+    if (group.type !== 'time' || !group.start_time) return false;
+    if (group.recurrence_type === 'weekly' && group.recurrence_days?.length) {
+      if (!group.recurrence_days.includes(currentTime.getDay())) return false;
+    }
+    if (group.recurrence_type === 'monthly' && group.recurrence_days?.length) {
+      if (!group.recurrence_days.includes(currentTime.getDate())) return false;
+    }
+    const pad2 = (n: number) => n.toString().padStart(2, '0');
+    const cur = `${pad2(currentTime.getHours())}:${pad2(currentTime.getMinutes())}`;
+    const end = group.end_time || group.start_time;
+    return cur >= group.start_time && cur < end;
+  };
+
+  const shouldShowByTime = (task: Task, groupsList: Group[], currentTime: Date): boolean => {
+    const ids = new Set<number>();
+    if (task.view_group_id) ids.add(task.view_group_id);
+    task.linked_view_group_ids?.forEach(id => ids.add(id));
+    if (ids.size === 0) return true;
+    for (const gid of ids) {
+      const g = groupsList.find(gr => gr.id === gid);
+      if (g && (g.type === 'list' || isTimeWindowActive(g, currentTime))) return true;
+    }
+    return false;
+  };
+
   const filteredTasks = tasks.filter(t => {
     if (onlyToday) {
       const today = new Date().toISOString().split('T')[0];
@@ -755,11 +789,11 @@ function DashboardContent() {
     if (!showCompleted && t.is_completed) return false;
     if (selectedProjectId) return t.project_id === parseInt(selectedProjectId);
     if (selectedGroupId) {
-      // Mostra tarefas com view_group_id direto OU vinculadas via task_view_groups
       if (t.view_group_id === parseInt(selectedGroupId)) return true;
       if (t.linked_view_group_ids?.includes(parseInt(selectedGroupId))) return true;
       return false;
     }
+    if (!shouldShowByTime(t, groups, now)) return false;
     return true;
   });
 
