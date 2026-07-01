@@ -199,7 +199,7 @@ export function TaskDetailPanel({ task, onClose, onUpdate }: TaskDetailPanelProp
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent side="bottom" align="start" className="bg-white dark:bg-neutral-900 border border-border shadow-lg z-[100]">
+                <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
                   {STATUS_OPTIONS.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       {opt.label}
@@ -218,7 +218,7 @@ export function TaskDetailPanel({ task, onClose, onUpdate }: TaskDetailPanelProp
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Sem prioridade" />
                 </SelectTrigger>
-                <SelectContent side="bottom" align="start" className="bg-white dark:bg-neutral-900 border border-border shadow-lg z-[100]">
+                <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
                   {PRIORITY_OPTIONS.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       <div className="flex items-center gap-2">
