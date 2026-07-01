@@ -80,10 +80,11 @@ export const SortableTaskItem = memo(function SortableTaskItem({
         style={{ touchAction: 'none' }}
         className={cn(
           "flex-shrink-0 cursor-grab active:cursor-grabbing outline-none",
-          isOverlay ? "opacity-100" : "opacity-0 group-hover/task:opacity-100 transition-opacity"
+          isOverlay ? "opacity-100" : "opacity-10 hover:opacity-100 group-hover/task:opacity-100 transition-opacity"
         )}
+        title="Arrastar para reordenar"
       >
-        <svg width="10" height="12" viewBox="0 0 10 12" fill="#cbd5e1">
+        <svg width="10" height="12" viewBox="0 0 10 12" fill="#94a3b8">
           <circle cx="3" cy="2.5" r="1"/><circle cx="7" cy="2.5" r="1"/>
           <circle cx="3" cy="6" r="1"/><circle cx="7" cy="6" r="1"/>
           <circle cx="3" cy="9.5" r="1"/><circle cx="7" cy="9.5" r="1"/>
@@ -130,8 +131,8 @@ export const SortableTaskItem = memo(function SortableTaskItem({
         )}
       </div>
 
-      {/* Creator avatar (only for shared tasks) */}
-      {task.creator_name && task.creator_name !== userEmail && (
+      {/* Creator avatar */}
+      {task.creator_name && (
         <div
           className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-[9px] font-semibold text-white flex-shrink-0"
           style={{ backgroundColor: getColorFromString(task.creator_name) }}
@@ -167,7 +168,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
             onRemoveFromGroup(task.id, currentGroupId);
           }}
           title="Remover deste bloco/lista"
-          className="flex-shrink-0 opacity-0 group-hover/task:opacity-100 transition-opacity text-slate-300 hover:text-orange-400"
+          className="flex-shrink-0 opacity-10 hover:opacity-100 group-hover/task:opacity-100 transition-opacity text-slate-400 hover:text-orange-400"
         >
           <XCircle className="w-3.5 h-3.5" />
         </button>
@@ -176,7 +177,8 @@ export const SortableTaskItem = memo(function SortableTaskItem({
       {/* Delete */}
       <button
         onClick={() => onDelete(task.id)}
-        className="flex-shrink-0 opacity-0 group-hover/task:opacity-100 transition-opacity text-slate-300 hover:text-red-400"
+        title="Remover tarefa"
+        className="flex-shrink-0 opacity-10 hover:opacity-100 group-hover/task:opacity-100 transition-opacity text-slate-400 hover:text-red-400"
       >
         <X className="w-3.5 h-3.5" />
       </button>

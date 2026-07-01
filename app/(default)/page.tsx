@@ -87,11 +87,15 @@ function DashboardContent() {
   const [onlyToday, setOnlyToday] = useState(false);
   const [now, setNow] = useState(new Date());
   const [expandedSections, setExpandedSections] = useState<Record<number, boolean>>({});
+  const [sectionQuickAddOpen, setSectionQuickAddOpen] = useState<Record<number, boolean>>({});
+  const [unsectionedQuickAddOpen, setUnsectionedQuickAddOpen] = useState(false);
   const [editingSection, setEditingSection] = useState<number | null>(null);
   const [editingSectionTitle, setEditingSectionTitle] = useState('');
   const [unsectionedTitle, setUnsectionedTitle] = useState('Sem Pasta');
   const [editingUnsectionedTitle, setEditingUnsectionedTitle] = useState(false);
   const [unsectionedTitleDraft, setUnsectionedTitleDraft] = useState('Sem Pasta');
+  const [editingProjectName, setEditingProjectName] = useState(false);
+  const [editingProjectNameDraft, setEditingProjectNameDraft] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
   const [searchUsers, setSearchUsers] = useState('');
   const [allUsers, setAllUsers] = useState<AppUser[]>([]);
@@ -626,7 +630,7 @@ function DashboardContent() {
     });
   };
 
-  const handleAddTask = async (sectionId: number | undefined, titleParam: string, groupOverrideId?: number) => {
+  const handleAddTask = async (sectionId: number | undefined, titleParam: string, groupOverrideId?: number, description?: string | null) => {
     const raw = titleParam.trim();
     if (!raw || !user) return;
 
@@ -634,6 +638,7 @@ function DashboardContent() {
     if (titles.length === 0) return;
 
     const effectiveGroupId = groupOverrideId ?? (selectedGroupId && !selectedProjectId ? parseInt(selectedGroupId) : undefined);
+    const desc = description?.trim() || null;
     
     // OPTIMISTIC UPDATE
     const newOptimisticTasks = titles.map((title, index) => ({
@@ -647,7 +652,7 @@ function DashboardContent() {
       position: 99999,
       created_at: new Date().toISOString(),
       due_date: null,
-      description: null,
+      description: desc,
       priority: null,
       status: 'a_fazer',
       creator_name: (user as any).user_metadata?.full_name || user.email,
@@ -662,7 +667,9 @@ function DashboardContent() {
         title,
         selectedProjectId ? parseInt(selectedProjectId) : undefined,
         sectionId,
-        effectiveGroupId
+        effectiveGroupId,
+        undefined,
+        desc
       )
     ));
 
@@ -787,6 +794,14 @@ function DashboardContent() {
     }
   };
 
+  const updateProjectName = async (newName: string) => {
+    if (!selectedProject || !newName.trim()) return;
+    const trimmed = newName.trim();
+    await projectAPI.updateProject(selectedProject.id, { name: trimmed });
+    setProjects(prev => prev.map(p => p.id === selectedProject.id ? { ...p, name: trimmed } : p));
+    setEditingProjectName(false);
+  };
+
   const deleteProject = async () => {
     if (!selectedProject || !user || selectedProject.owner_id !== user.id) return;
     if (!confirm(`Excluir "${selectedProject.name}"? As tarefas associadas voltarão para a Caixa de Entrada.`)) return;
@@ -812,6 +827,15 @@ function DashboardContent() {
 
   const toggleSectionExpand = (sectionId: number) => {
     setExpandedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
+  };
+
+  const toggleSectionQuickAdd = (sectionId: number) => {
+    setSectionQuickAddOpen(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
+  };
+
+  const openSectionEdit = (section: Section) => {
+    setEditingSection(section.id);
+    setEditingSectionTitle(section.title);
   };
 
   const isToday = (dateStr: string | null) => {
@@ -973,11 +997,17 @@ function DashboardContent() {
   });
 
   // Filtra chaves por tipo e visibilidade no Dashboard
-  const dashboardProjectKeys = sortedGroupKeys.filter(k => {
-    if (!k.startsWith('project:')) return false;
-    const id = parseInt(k.split(':')[1]);
-    return projects.find(p => p.id === id)?.show_on_dashboard !== false;
-  });
+  const dashboardProjectKeys = Array.from(new Set([
+    ...sortedGroupKeys.filter(k => {
+      if (!k.startsWith('project:')) return false;
+      const id = parseInt(k.split(':')[1]);
+      return projects.find(p => p.id === id)?.show_on_dashboard !== false;
+    }),
+    ...projects
+      .filter(p => p.show_on_dashboard !== false)
+      .map(p => `project:${p.id}`),
+  ]));
+
   const dashboardTimeKeys = sortedGroupKeys.filter(k => {
     if (!k.startsWith('group:')) return false;
     const id = parseInt(k.split(':')[1]);
@@ -1703,7 +1733,33 @@ function DashboardContent() {
       <div className="sticky top-0 z-10 bg-card border-b border-border">
         <div className="max-w-4xl mx-auto px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-foreground">{pageTitle}</h1>
+            {selectedProject && editingProjectName ? (
+              <Input
+                value={editingProjectNameDraft}
+                onChange={(e) => setEditingProjectNameDraft(e.target.value)}
+                onBlur={() => updateProjectName(editingProjectNameDraft)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') updateProjectName(editingProjectNameDraft);
+                  if (e.key === 'Escape') { setEditingProjectName(false); setEditingProjectNameDraft(''); }
+                }}
+                className="h-9 text-xl font-semibold w-64"
+                autoFocus
+              />
+            ) : (
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-semibold text-foreground">{pageTitle}</h1>
+                {selectedProject && user && selectedProject.owner_id === user.id && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => { setEditingProjectName(true); setEditingProjectNameDraft(selectedProject.name); }}
+                    className="h-7 w-7 text-muted-foreground/50 hover:text-primary"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </Button>
+                )}
+              </div>
+            )}
             <p className="text-[11px] text-muted-foreground mt-0.5">{todayDisplay}</p>
           </div>
           {(selectedProject || selectedGroup) && user ? (
@@ -1817,18 +1873,48 @@ function DashboardContent() {
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : (
-                        <span className="text-sm font-semibold">{section.title}</span>
+                        <button
+                          type="button"
+                          className="text-sm font-semibold text-left hover:text-primary transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openSectionEdit(section);
+                          }}
+                        >
+                          {section.title}
+                        </button>
                       )}
                       <span className="text-xs text-muted-foreground">
                         ({getTasksBySection(section.id).length})
                       </span>
                     </div>
                     <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      {sectionQuickAddOpen[section.id] ? (
+                        <InlineTaskCreator
+                          autoFocus
+                          className="h-8 text-sm"
+                          onCreateSimpleTask={(title, desc) => handleAddTask(section.id, title, undefined, desc)}
+                          onCancel={() => toggleSectionQuickAdd(section.id)}
+                          placeholder="Nova tarefa..."
+                          buttonText=""
+                        />
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => toggleSectionQuickAdd(section.id)}
+                          className="h-8 w-8 text-muted-foreground/50 hover:text-primary"
+                          title="Adicionar tarefa nesta pasta"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => { setEditingSection(section.id); setEditingSectionTitle(section.title); }}
+                        onClick={() => openSectionEdit(section)}
                         className="h-8 w-8 text-muted-foreground/50 hover:text-primary"
+                        title="Editar nome da pasta"
                       >
                         <Edit2 className="w-4 h-4" />
                       </Button>
@@ -1849,7 +1935,7 @@ function DashboardContent() {
                       {renderStatusGroups(section.id)}
                       <div className="px-4 py-3 border-t border-border/60">
                         <InlineTaskCreator
-                          onCreateSimpleTask={(title) => handleAddTask(section.id, title)}
+                          onCreateSimpleTask={(title, desc) => handleAddTask(section.id, title, undefined, desc)}
                           buttonText="Adicionar tarefa"
                           placeholder="Adicionar nova tarefa"
                         />
@@ -1905,6 +1991,26 @@ function DashboardContent() {
                       </span>
                     </div>
                     <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      {unsectionedQuickAddOpen ? (
+                        <InlineTaskCreator
+                          autoFocus
+                          className="h-8 text-sm"
+                          onCreateSimpleTask={(title, desc) => handleAddTask(undefined, title, undefined, desc)}
+                          onCancel={() => setUnsectionedQuickAddOpen(false)}
+                          placeholder="Nova tarefa..."
+                          buttonText=""
+                        />
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setUnsectionedQuickAddOpen(true)}
+                          className="h-8 w-8 text-muted-foreground/50 hover:text-primary"
+                          title="Adicionar tarefa nesta pasta"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -1918,6 +2024,7 @@ function DashboardContent() {
                       </Button>
                     </div>
                   </div>
+
                   <DroppableSection sectionId={'unsectioned'}>
                     {renderStatusGroups(null)}
                     {getTasksBySection(null).length === 0 && (
@@ -1927,7 +2034,7 @@ function DashboardContent() {
                     )}
                     <div className="px-4 py-3 border-t border-border/60">
                       <InlineTaskCreator
-                        onCreateSimpleTask={(title) => handleAddTask(undefined, title)}
+                        onCreateSimpleTask={(title, desc) => handleAddTask(undefined, title, undefined, desc)}
                         buttonText="Adicionar tarefa"
                         placeholder="Adicionar nova tarefa"
                       />
