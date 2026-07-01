@@ -161,6 +161,28 @@ class ProjectAPI {
   }
 
   /**
+   * Atualizar projeto (nome, cor, descrição)
+   * Persiste no banco para todos os membros verem
+   */
+  async updateProject(
+    projectId: number,
+    data: { name?: string; color?: string; description?: string | null }
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const client = createClient();
+      const { error } = await client
+        .from('projects')
+        .update(data)
+        .eq('id', projectId);
+
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
    * Convidar usuário para projeto
    */
   async inviteUserToProject(

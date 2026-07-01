@@ -193,7 +193,7 @@ class TaskAPI {
     sectionId?: number,
     groupId?: number,
     dueDate?: string,
-    description?: string,
+    description?: string | null,
     priority?: string,
     status?: string
   ): Promise<{ success: boolean; data?: Task; error?: string }> {
@@ -247,9 +247,6 @@ class TaskAPI {
         is_completed: false,
       };
 
-      // description, priority e status só são enviados se explicitamente fornecidos,
-      // pois as colunas podem não existir (migration 20250628000000 pendente).
-      // Se houver erro PGRST204, a requisição é repetida sem esses campos.
       if (description !== undefined && description !== null) insertPayload.description = description;
       if (priority !== undefined && priority !== null) insertPayload.priority = priority;
       if (status !== undefined && status !== null) insertPayload.status = status;
@@ -261,22 +258,6 @@ class TaskAPI {
         .single();
 
       if (error) {
-        if (error.code === 'PGRST204') {
-          // Coluna não existe na tabela — tenta novamente sem campos opcionais
-          delete insertPayload.description;
-          delete insertPayload.priority;
-          delete insertPayload.status;
-          const { data: retryData, error: retryError } = await client
-            .from('todos')
-            .insert(insertPayload)
-            .select()
-            .single();
-          if (retryError) {
-            console.error('[taskAPI.createTask] erro Supabase (retry):', JSON.stringify(retryError, null, 2));
-            return { success: false, error: retryError.message };
-          }
-          return { success: true, data: retryData as Task };
-        }
         console.error('[taskAPI.createTask] erro Supabase:', JSON.stringify(error, null, 2));
         return { success: false, error: error.message };
       }
@@ -301,19 +282,7 @@ class TaskAPI {
         .eq('id', taskId);
 
       if (error) {
-        if (error.code === 'PGRST204') {
-          // Remove colunas que não existem e tenta novamente
-          const safeUpdates = { ...updates };
-          delete (safeUpdates as Record<string, unknown>).description;
-          delete (safeUpdates as Record<string, unknown>).priority;
-          delete (safeUpdates as Record<string, unknown>).status;
-          const { error: retryError } = await client
-            .from('todos')
-            .update(safeUpdates)
-            .eq('id', taskId);
-          if (retryError) return { success: false, error: retryError.message };
-          return { success: true };
-        }
+        console.error('[taskAPI.updateTask] erro Supabase:', JSON.stringify(error, null, 2));
         return { success: false, error: error.message };
       }
       return { success: true };

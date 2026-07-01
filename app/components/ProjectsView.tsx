@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { Edit2, X, FolderKanban } from 'lucide-react';
 import { cn, PROJECT_COLORS } from '@/app/lib/utils';
-import { createClient } from '@/app/lib/supabase/Client';
+import { projectAPI } from '@/app/lib/projectAPI';
 import type { Project } from '@/types/index';
 
 interface ProjectsViewProps {
@@ -18,8 +18,8 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose }: Pr
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState('#6366f1');
+  const [editDescription, setEditDescription] = useState('');
   const [saving, setSaving] = useState(false);
-  const client = createClient();
 
   const openEdit = (project: Project, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -27,22 +27,24 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose }: Pr
     setEditingProject(project);
     setEditName(project.name);
     setEditColor(project.color);
+    setEditDescription(project.description ?? '');
   };
 
   const saveEdit = async () => {
     if (!editingProject || !editName.trim() || saving) return;
     setSaving(true);
 
-    const { error } = await client
-      .from('projects')
-      .update({ name: editName.trim(), color: editColor })
-      .eq('id', editingProject.id);
+    const { success } = await projectAPI.updateProject(editingProject.id, {
+      name: editName.trim(),
+      color: editColor,
+      description: editDescription.trim() || null,
+    });
 
-    if (!error) {
+    if (success) {
       onUpdateProjects(
         projects.map(p =>
           p.id === editingProject.id
-            ? { ...p, name: editName.trim(), color: editColor }
+            ? { ...p, name: editName.trim(), color: editColor, description: editDescription.trim() || null }
             : p
         )
       );
@@ -97,6 +99,9 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose }: Pr
                       <Edit2 className="w-4 h-4 text-muted-foreground" />
                     </button>
                   </div>
+                  {project.description && (
+                    <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{project.description}</p>
+                  )}
                   {!isOwner && (
                     <span className="text-xs text-muted-foreground mt-2 block">Compartilhado</span>
                   )}
@@ -152,6 +157,16 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose }: Pr
                     />
                   ))}
                 </div>
+              </div>
+              <div>
+                <label className="text-sm text-muted-foreground block mb-1">Descrição</label>
+                <textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Descrição do projeto"
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                />
               </div>
               <button
                 onClick={saveEdit}

@@ -112,16 +112,23 @@ export const SortableTaskItem = memo(function SortableTaskItem({
         )}
       </button>
 
-      {/* Task title */}
-      <button
-        onClick={() => onSelect(task)}
-        className={cn(
-          "flex-1 text-[13px] text-left truncate bg-transparent border-none p-0 cursor-pointer hover:text-primary transition-colors min-w-0",
-          task.is_completed ? "line-through text-slate-400" : "text-slate-800"
+      {/* Task title and description preview */}
+      <div className="flex-1 min-w-0">
+        <button
+          onClick={() => onSelect(task)}
+          className={cn(
+            "block w-full text-[13px] text-left truncate bg-transparent border-none p-0 cursor-pointer hover:text-primary transition-colors",
+            task.is_completed ? "line-through text-slate-400" : "text-slate-800"
+          )}
+        >
+          {task.title}
+        </button>
+        {task.description && (
+          <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-2">
+            {task.description}
+          </p>
         )}
-      >
-        {task.title}
-      </button>
+      </div>
 
       {/* Creator avatar (only for shared tasks) */}
       {task.creator_name && task.creator_name !== userEmail && (

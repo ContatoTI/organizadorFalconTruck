@@ -171,6 +171,7 @@ export interface Tables {
       owner_id: string
       name: string
       color: string | null
+      description: string | null
       show_on_dashboard: boolean
       created_at: string
     }
@@ -179,6 +180,7 @@ export interface Tables {
       owner_id: string
       name: string
       color?: string | null
+      description?: string | null
       show_on_dashboard?: boolean
       created_at?: string
     }
@@ -187,6 +189,7 @@ export interface Tables {
       owner_id?: string
       name?: string
       color?: string | null
+      description?: string | null
       show_on_dashboard?: boolean
       created_at?: string
     }

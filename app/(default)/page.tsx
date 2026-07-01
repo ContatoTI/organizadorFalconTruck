@@ -395,12 +395,7 @@ function DashboardContent() {
       .order('order');
 
     if (data) {
-      setSections(prev => {
-        if (prev.length === data.length && prev.every((s, i) => s.id === data[i].id)) {
-          return prev;
-        }
-        return data as Section[];
-      });
+      setSections(data as Section[]);
       setExpandedSections(prev => {
         const next: Record<number, boolean> = {};
         data.forEach(s => { next[s.id] = s.id in prev ? prev[s.id] : true; });
@@ -485,24 +480,14 @@ function DashboardContent() {
       ...(selectedProjectId ? { projectId: parseInt(selectedProjectId) } : {}),
       ...(selectedGroupId && !selectedProjectId ? { groupId: parseInt(selectedGroupId) } : {}),
     });
-    setTasks(prev => {
-      if (prev.length === data.length && prev.every((t, i) => t.id === data[i].id)) {
-        return prev;
-      }
-      return data;
-    });
+    setTasks(data);
     if (showLoading) setLoading(false);
   };
 
   const fetchPendingInvites = async (isInitialLoad = false) => {
     if (!user) return;
     const invites = await notificationAPI.getPendingInvites(user.id);
-    setPendingInvites(prev => {
-      if (prev.length === invites.length && prev.every((p, i) => p.id === invites[i].id)) {
-        return prev;
-      }
-      return invites;
-    });
+    setPendingInvites(invites);
     if (isInitialLoad && invites.length > 0) {
       setShowInviteModal(true);
     }
@@ -569,7 +554,11 @@ function DashboardContent() {
     window.dispatchEvent(new CustomEvent('invite_processed'));
   };
 
-  const handleCreateTask = async (title: string, destination: { type: 'project' | 'group' | 'inbox'; id?: number }) => {
+  const handleCreateTask = async (
+    title: string,
+    destination: { type: 'project' | 'group' | 'inbox'; id?: number },
+    description?: string | null
+  ) => {
     const trimmed = title.trim();
     if (!trimmed || !user) return;
 
@@ -587,7 +576,7 @@ function DashboardContent() {
       position: 99999,
       created_at: new Date().toISOString(),
       due_date: null,
-      description: null,
+      description: description?.trim() || null,
       priority: null,
       status: 'a_fazer',
       creator_name: (user as any).user_metadata?.full_name || user.email,
@@ -602,7 +591,9 @@ function DashboardContent() {
         titleItem,
         destination.type === 'project' ? destination.id : undefined,
         undefined,
-        destination.type === 'group' ? destination.id : undefined
+        destination.type === 'group' ? destination.id : undefined,
+        undefined,
+        description?.trim() || null
       )
     ));
 
@@ -1778,6 +1769,9 @@ function DashboardContent() {
       {/* MODO PROJETO: Seções expansíveis */}
       {selectedProject ? (
         <div className="space-y-4">
+          {selectedProject.description && (
+            <p className="text-sm text-muted-foreground px-1">{selectedProject.description}</p>
+          )}
           {loading ? (
             <div className="text-center py-8 text-muted-foreground">Carregando...</div>
           ) : sections.length === 0 && getProjectTasks().length === 0 ? (
