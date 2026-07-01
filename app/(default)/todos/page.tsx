@@ -185,13 +185,13 @@ export default function TodosPage() {
     // OPTIMISTIC UPDATE
     const newState = !task.is_completed;
     setTasks(prev => prev.map(t =>
-      t.id === task.id ? { ...t, is_completed: newState, isSyncing: true } : t
+      t.id === task.id ? { ...t, is_completed: newState, status: newState ? 'concluida' : 'a_fazer', isSyncing: true } : t
     ));
 
     const result = await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
     if (!result.success) {
       setTasks(prev => prev.map(t =>
-        t.id === task.id ? { ...t, is_completed: !newState, isSyncing: false } : t
+        t.id === task.id ? { ...t, is_completed: !newState, status: !newState ? 'concluida' : 'a_fazer', isSyncing: false } : t
       ));
       toast('Erro ao atualizar tarefa', 'error');
     } else {

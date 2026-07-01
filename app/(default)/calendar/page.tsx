@@ -245,13 +245,13 @@ export default function CalendarPage() {
     // OPTIMISTIC UPDATE
     const newState = !task.is_completed;
     setTasks(prev => prev.map(t =>
-      t.id === task.id ? { ...t, is_completed: newState, isSyncing: true } as any : t
+      t.id === task.id ? { ...t, is_completed: newState, status: newState ? 'concluida' : 'a_fazer', isSyncing: true } as any : t
     ));
 
     const result = await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
     if (!result.success) {
       setTasks(prev => prev.map(t =>
-        t.id === task.id ? { ...t, is_completed: !newState, isSyncing: false } as any : t
+        t.id === task.id ? { ...t, is_completed: !newState, status: !newState ? 'concluida' : 'a_fazer', isSyncing: false } as any : t
       ));
       alert('Erro ao atualizar tarefa');
     } else {
