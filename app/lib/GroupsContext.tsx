@@ -10,6 +10,7 @@ interface GroupsContextType {
   refreshGroups: () => void;
   addGroup: (group: Group) => void;
   deleteGroup: (groupId: number) => void;
+  updateGroup: (id: number, updates: Partial<Group>) => void;
 }
 
 const GroupsContext = createContext<GroupsContextType>({
@@ -18,6 +19,7 @@ const GroupsContext = createContext<GroupsContextType>({
   refreshGroups: () => {},
   addGroup: () => {},
   deleteGroup: () => {},
+  updateGroup: () => {},
 });
 
 export function useGroups() {
@@ -44,7 +46,13 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       .eq('user_id', user.id)
       .order('created_at');
 
-    if (data) setGroups(data as Group[]);
+    if (data) {
+      setGroups(prev => {
+        const byId = new Map(prev.map(g => [g.id, g]));
+        (data as Group[]).forEach(g => byId.set(g.id, g));
+        return Array.from(byId.values());
+      });
+    }
     setLoading(false);
   };
 
@@ -73,8 +81,12 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     setGroups(prev => prev.filter(g => g.id !== groupId));
   };
 
+  const updateGroup = (id: number, updates: Partial<Group>) => {
+    setGroups(prev => prev.map(g => g.id === id ? { ...g, ...updates } : g));
+  };
+
   return (
-    <GroupsContext.Provider value={{ groups, loading, refreshGroups, addGroup, deleteGroup }}>
+    <GroupsContext.Provider value={{ groups, loading, refreshGroups, addGroup, deleteGroup, updateGroup }}>
       {children}
     </GroupsContext.Provider>
   );

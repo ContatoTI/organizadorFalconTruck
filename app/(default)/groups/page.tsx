@@ -137,9 +137,9 @@ function GroupsContent() {
 
   const toggleGroupVisibility = async (group: any) => {
     const next = !group.show_on_dashboard;
-    refreshGroups(); // recarrega os grupos após toggle
     const { error } = await client.from('view_groups').update({ show_on_dashboard: next }).eq('id', group.id);
     if (error) console.error('Erro ao alterar visibilidade:', error);
+    refreshGroups();
   };
 
   const editGroup = (group: any) => {

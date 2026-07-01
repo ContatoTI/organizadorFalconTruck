@@ -29,6 +29,7 @@ import {
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SortableTaskItem } from '@/app/components/SortableTaskItem';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
+import { InlineTaskCreator } from '@/app/components/InlineTaskCreator';
 import { ToastProvider, useToast } from '@/app/components/Toast';
 
 import { useDroppable } from '@dnd-kit/core';
@@ -77,12 +78,11 @@ function DashboardContent() {
   ] as const;
   const [user, setUser] = useState<AppUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const { groups, refreshGroups } = useGroups();
+  const { groups, updateGroup } = useGroups();
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
   const [showCompleted, setShowCompleted] = useState(true);
   const [onlyToday, setOnlyToday] = useState(false);
   const [now, setNow] = useState(new Date());
@@ -118,17 +118,37 @@ function DashboardContent() {
   );
 
   const [showDashboardConfig, setShowDashboardConfig] = useState(false);
+  const togglingItemsRef = useRef<Set<number>>(new Set());
 
   const toggleProjectOnDashboard = async (project: Project) => {
+    if (togglingItemsRef.current.has(project.id)) return;
+    togglingItemsRef.current.add(project.id);
     const next = !project.show_on_dashboard;
     setProjects(prev => prev.map(p => p.id === project.id ? { ...p, show_on_dashboard: next } : p));
     await client.from('projects').update({ show_on_dashboard: next }).eq('id', project.id);
+    toast(
+      next ? `${project.name} adicionado ao Dashboard` : `${project.name} ocultado do Dashboard`,
+      'success'
+    );
+    togglingItemsRef.current.delete(project.id);
   };
 
   const toggleGroupOnDashboard = async (group: Group) => {
+    if (togglingItemsRef.current.has(group.id)) return;
+    togglingItemsRef.current.add(group.id);
     const next = !group.show_on_dashboard;
+    updateGroup(group.id, { show_on_dashboard: next });
     const { error } = await client.from('view_groups').update({ show_on_dashboard: next }).eq('id', group.id);
-    if (!error) refreshGroups();
+    if (error) {
+      console.error('Erro ao alterar visibilidade do grupo:', error);
+      toast(`Erro ao alterar visibilidade de "${group.title}"`, 'error');
+    } else {
+      toast(
+        next ? `${group.title} adicionado ao Dashboard` : `${group.title} ocultado do Dashboard`,
+        'success'
+      );
+    }
+    togglingItemsRef.current.delete(group.id);
   };
 
   useEffect(() => {
@@ -191,11 +211,6 @@ function DashboardContent() {
         )
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'view_groups' },
-          () => refreshGroups()
-        )
-        .on(
-          'postgres_changes',
           {
             event: '*',
             schema: 'public',
@@ -216,18 +231,13 @@ function DashboardContent() {
       const handleInviteProcessed = () => {
         fetchPendingInvites();
       };
-      const handleGroupsUpdated = () => {
-        refreshGroups();
-      };
       window.addEventListener('projects_updated', handleProjectsUpdated);
       window.addEventListener('invite_processed', handleInviteProcessed);
-      window.addEventListener('groups_updated', handleGroupsUpdated);
 
       return () => {
         client.removeChannel(channel);
         window.removeEventListener('projects_updated', handleProjectsUpdated);
         window.removeEventListener('invite_processed', handleInviteProcessed);
-        window.removeEventListener('groups_updated', handleGroupsUpdated);
       };
     }
   }, [user, selectedProjectId]);
@@ -552,8 +562,74 @@ function DashboardContent() {
     window.dispatchEvent(new CustomEvent('invite_processed'));
   };
 
-  const handleAddTask = async (sectionId?: number, titleParam?: string, groupOverrideId?: number) => {
-    const raw = (titleParam ?? newTaskTitle).trim();
+  const handleCreateTask = async (title: string, destination: { type: 'project' | 'group' | 'inbox'; id?: number }) => {
+    const trimmed = title.trim();
+    if (!trimmed || !user) return;
+
+    const titles = trimmed.split('\n').map(t => t.trim()).filter(Boolean);
+    if (titles.length === 0) return;
+
+    const newOptimisticTasks = titles.map((taskTitle, index) => ({
+      id: Date.now() + index,
+      title: taskTitle,
+      user_id: user.id,
+      project_id: destination.type === 'project' ? destination.id : null,
+      section_id: null,
+      view_group_id: destination.type === 'group' ? destination.id : null,
+      is_completed: false,
+      position: 99999,
+      created_at: new Date().toISOString(),
+      due_date: null,
+      description: null,
+      priority: null,
+      status: 'a_fazer',
+      creator_name: (user as any).user_metadata?.full_name || user.email,
+      isSyncing: true,
+    } as Task));
+
+    setTasks(prev => [...newOptimisticTasks, ...prev]);
+
+    const results = await Promise.all(titles.map(titleItem =>
+      taskAPI.createTask(
+        user.id,
+        titleItem,
+        destination.type === 'project' ? destination.id : undefined,
+        undefined,
+        destination.type === 'group' ? destination.id : undefined
+      )
+    ));
+
+    const hasError = results.some(r => !r.success);
+    if (hasError) {
+      const failedTempIds = new Set(newOptimisticTasks.filter((_, i) => !results[i].success).map(t => t.id));
+      setTasks(prev => prev.filter(t => !failedTempIds.has(t.id)));
+      toast('Erro ao criar tarefa(s)', 'error');
+    }
+
+    results.forEach((res, i) => {
+      if (res.success && res.data) {
+        const taskWithMeta = {
+          ...res.data,
+          creator_name: (user as any).user_metadata?.full_name || user.email,
+        } as Task;
+        setTasks(prev => {
+          const idx = prev.findIndex(t => t.id === newOptimisticTasks[i].id);
+          if (idx !== -1) {
+            const next = [...prev];
+            next[idx] = { ...taskWithMeta, isSyncing: false };
+            return next;
+          }
+          if (!prev.some(t => t.id === taskWithMeta.id)) {
+            return [{ ...taskWithMeta, isSyncing: false }, ...prev];
+          }
+          return prev;
+        });
+      }
+    });
+  };
+
+  const handleAddTask = async (sectionId: number | undefined, titleParam: string, groupOverrideId?: number) => {
+    const raw = titleParam.trim();
     if (!raw || !user) return;
 
     const titles = raw.split('\n').map(t => t.trim()).filter(Boolean);
@@ -581,7 +657,6 @@ function DashboardContent() {
     } as Task));
 
     setTasks(prev => [...newOptimisticTasks, ...prev]);
-    if (!titleParam) setNewTaskTitle('');
 
     const results = await Promise.all(titles.map(title =>
       taskAPI.createTask(
@@ -1291,7 +1366,7 @@ function DashboardContent() {
     const pendingCount = groupTasks.filter(t => !t.is_completed).length;
     const inner = (
       <div className="mb-5">
-        <div className="flex items-center justify-between mb-2 px-1">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 px-1 gap-2">
           <div className="flex items-center gap-2">
             <div
               className="w-[3px] h-[15px] rounded-full flex-shrink-0"
@@ -1307,33 +1382,27 @@ function DashboardContent() {
               {pendingCount}
             </span>
           </div>
-          {groupInfo.link && (
-            <button
-              onClick={() => router.push(groupInfo.link!)}
-              className="text-[11px] text-muted-foreground hover:text-primary flex items-center gap-0.5 transition-colors"
-            >
-              Ver <ArrowRight className="w-3 h-3" />
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {groupInfo.link && (
+              <button
+                onClick={() => router.push(groupInfo.link!)}
+                className="text-[11px] text-muted-foreground hover:text-primary flex items-center gap-0.5 transition-colors"
+              >
+                Ver <ArrowRight className="w-3 h-3" />
+              </button>
+            )}
+            <InlineTaskCreator
+              destination={blockType === 'project'
+                ? { type: 'project', id: parseInt(groupId.split(':')[1], 10) }
+                : { type: 'group', id: parseInt(groupId.split(':')[1], 10) }}
+              onCreateTask={handleCreateTask}
+              buttonText="Adicionar"
+              placeholder="Nova tarefa..."
+            />
+          </div>
         </div>
         <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
           {renderTasksList(groupTasks, undefined, blockType === 'group' ? parseInt(groupId.split(':')[1]) : undefined)}
-          {blockType === 'group' && (
-            <div className="flex items-center gap-2 px-[14px] py-2 border-t border-border/40">
-              <Plus className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-              <input
-                placeholder="Adicionar tarefa..."
-                className="flex-1 text-[12px] text-slate-500 placeholder:text-slate-400 bg-transparent outline-none"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                    const title = e.currentTarget.value.trim();
-                    e.currentTarget.value = '';
-                    handleAddTask(undefined, title, parseInt(groupId.split(':')[1]));
-                  }
-                }}
-              />
-            </div>
-          )}
         </div>
       </div>
     );
@@ -1521,68 +1590,104 @@ function DashboardContent() {
           <DialogHeader>
             <DialogTitle>Personalizar Dashboard</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+          <div className="flex-1 overflow-y-auto space-y-5 pr-2">
             {/* Projetos */}
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Projetos</h3>
-              {projects.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic">Nenhum projeto encontrado.</p>
-              ) : (
-                <div className="space-y-2">
-                  {projects.map(p => (
-                    <div key={p.id} className="flex items-center justify-between py-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
-                        <span className="text-sm">{p.name}</span>
+            <div className="rounded-xl border border-border/60 bg-card/30 overflow-hidden">
+              <div className="px-4 py-3 border-b border-border/40">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Projetos</h3>
+              </div>
+              <div className="p-4">
+                {projects.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">Nenhum projeto encontrado.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {projects.map(p => (
+                      <div key={p.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-accent/50 transition-colors">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
+                          <span className="text-sm font-medium truncate">{p.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {p.show_on_dashboard !== false ? (
+                            <Eye className="w-3.5 h-3.5 text-primary" />
+                          ) : (
+                            <EyeOff className="w-3.5 h-3.5 text-muted-foreground/40" />
+                          )}
+                          <Switch
+                            checked={p.show_on_dashboard !== false}
+                            onCheckedChange={() => toggleProjectOnDashboard(p)}
+                            size="sm"
+                          />
+                        </div>
                       </div>
-                      <Switch
-                        checked={p.show_on_dashboard !== false}
-                        onCheckedChange={() => toggleProjectOnDashboard(p)}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Blocos de Tempo */}
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Blocos de Tempo</h3>
-              {groups.filter(g => g.type === 'time').length === 0 ? (
-                <p className="text-xs text-muted-foreground italic">Nenhum bloco de tempo encontrado.</p>
-              ) : (
-                <div className="space-y-2">
-                  {groups.filter(g => g.type === 'time').map(g => (
-                    <div key={g.id} className="flex items-center justify-between py-1.5">
-                      <span className="text-sm">{g.title}</span>
-                      <Switch
-                        checked={g.show_on_dashboard !== false}
-                        onCheckedChange={() => toggleGroupOnDashboard(g)}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="rounded-xl border border-border/60 bg-card/30 overflow-hidden">
+              <div className="px-4 py-3 border-b border-border/40">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Blocos de Tempo</h3>
+              </div>
+              <div className="p-4">
+                {groups.filter(g => g.type === 'time').length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">Nenhum bloco de tempo encontrado.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {groups.filter(g => g.type === 'time').map(g => (
+                      <div key={g.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-accent/50 transition-colors">
+                        <span className="text-sm font-medium truncate">{g.title}</span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {g.show_on_dashboard !== false ? (
+                            <Eye className="w-3.5 h-3.5 text-primary" />
+                          ) : (
+                            <EyeOff className="w-3.5 h-3.5 text-muted-foreground/40" />
+                          )}
+                          <Switch
+                            checked={g.show_on_dashboard !== false}
+                            onCheckedChange={() => toggleGroupOnDashboard(g)}
+                            size="sm"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Listas */}
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Listas</h3>
-              {groups.filter(g => g.type === 'list').length === 0 ? (
-                <p className="text-xs text-muted-foreground italic">Nenhuma lista encontrada.</p>
-              ) : (
-                <div className="space-y-2">
-                  {groups.filter(g => g.type === 'list').map(g => (
-                    <div key={g.id} className="flex items-center justify-between py-1.5">
-                      <span className="text-sm">{g.title}</span>
-                      <Switch
-                        checked={g.show_on_dashboard !== false}
-                        onCheckedChange={() => toggleGroupOnDashboard(g)}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="rounded-xl border border-border/60 bg-card/30 overflow-hidden">
+              <div className="px-4 py-3 border-b border-border/40">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Listas</h3>
+              </div>
+              <div className="p-4">
+                {groups.filter(g => g.type === 'list').length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">Nenhuma lista encontrada.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {groups.filter(g => g.type === 'list').map(g => (
+                      <div key={g.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-accent/50 transition-colors">
+                        <span className="text-sm font-medium truncate">{g.title}</span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {g.show_on_dashboard !== false ? (
+                            <Eye className="w-3.5 h-3.5 text-primary" />
+                          ) : (
+                            <EyeOff className="w-3.5 h-3.5 text-muted-foreground/40" />
+                          )}
+                          <Switch
+                            checked={g.show_on_dashboard !== false}
+                            onCheckedChange={() => toggleGroupOnDashboard(g)}
+                            size="sm"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </DialogContent>
@@ -1590,11 +1695,21 @@ function DashboardContent() {
 
       {/* Sticky topbar */}
       <div className="sticky top-0 z-10 bg-card border-b border-border">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold text-foreground">{pageTitle}</h1>
             <p className="text-[11px] text-muted-foreground mt-0.5">{todayDisplay}</p>
           </div>
+          {(selectedProject || selectedGroup) && user ? (
+            <div className="flex items-center gap-2">
+              <InlineTaskCreator
+                destination={selectedProject ? { type: 'project', id: selectedProject.id } : { type: 'group', id: selectedGroup!.id }}
+                onCreateTask={handleCreateTask}
+                buttonText="Nova tarefa"
+                placeholder="Digite o nome da tarefa"
+              />
+            </div>
+          ) : null}
           <div className="flex items-center gap-4 pr-10">
             {(selectedGroup || selectedProject) && (
               <Button variant="ghost" size="sm" onClick={() => router.push('/')} className="rounded-full h-7 text-xs gap-1">
@@ -1644,41 +1759,6 @@ function DashboardContent() {
 
       {/* Page content */}
       <div className="max-w-4xl mx-auto w-full px-6 py-5 flex-1">
-
-      {/* Dashed task input */}
-      <div className="mb-5 bg-card rounded-[10px] border border-dashed border-slate-300">
-        <div className="flex items-center gap-3 px-4 py-3">
-          <Plus className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-          <input
-            type="text"
-            value={newTaskTitle}
-            onChange={(e) => setNewTaskTitle(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); handleAddTask(); }
-            }}
-            onPaste={(e) => {
-              const text = e.clipboardData.getData('text');
-              const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-              if (lines.length > 1) {
-                e.preventDefault();
-                handleAddTask(undefined, text);
-              }
-            }}
-            placeholder="Nova tarefa — pressione Enter para adicionar"
-            className="flex-1 text-[13px] text-slate-500 placeholder:text-slate-400 bg-transparent outline-none"
-          />
-          <button
-            onClick={() => handleAddTask()}
-            className="text-slate-300 hover:text-primary transition-colors flex-shrink-0"
-          >
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="px-4 pb-2.5 flex items-center gap-1.5">
-          <span className="text-[11px]">💡</span>
-          <span className="text-[11px] text-amber-600">Cole uma lista e crie várias tarefas de uma vez</span>
-        </div>
-      </div>
 
       {/* MODO PROJETO: Seções expansíveis */}
       {selectedProject ? (
@@ -1758,27 +1838,6 @@ function DashboardContent() {
                     <DroppableSection sectionId={section.id}>
                       {renderStatusGroups(section.id)}
                       {/* Input para nova tarefa na seção */}
-                      <div className="px-10 py-2">
-                        <Input
-                          placeholder="Adicionar tarefa..."
-                          className="h-8 text-sm bg-transparent border-none shadow-none focus-visible:ring-0 px-0"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                              const title = e.currentTarget.value.trim();
-                              e.currentTarget.value = '';
-                              handleAddTask(section.id, title);
-                            }
-                          }}
-                          onPaste={(e) => {
-                            const text = e.clipboardData.getData('text');
-                            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-                            if (lines.length > 1) {
-                              e.preventDefault();
-                              handleAddTask(section.id, text);
-                            }
-                          }}
-                        />
-                      </div>
                     </DroppableSection>
                   )}
                 </Card>
@@ -1806,19 +1865,6 @@ function DashboardContent() {
                         Solte tarefas aqui para removê-las da organização
                       </div>
                     )}
-                    <div className="px-4 py-2 border-t border-border/40">
-                      <Input
-                        placeholder="Adicionar tarefa..."
-                        className="h-8 text-sm bg-transparent border-none shadow-none focus-visible:ring-0 px-0"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                            const title = e.currentTarget.value.trim();
-                            e.currentTarget.value = '';
-                            handleAddTask(undefined, title);
-                          }
-                        }}
-                      />
-                    </div>
                   </DroppableSection>
                 </Card>
 
@@ -1906,20 +1952,6 @@ function DashboardContent() {
               {selectedGroup && (
                 <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
                   {renderTasksList(filteredTasks, undefined, selectedGroup.id)}
-                  <div className="flex items-center gap-2 px-[14px] py-2 border-t border-border/40">
-                    <Plus className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                    <input
-                      placeholder="Adicionar tarefa..."
-                      className="flex-1 text-[12px] text-slate-500 placeholder:text-slate-400 bg-transparent outline-none"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                          const title = e.currentTarget.value.trim();
-                          e.currentTarget.value = '';
-                          handleAddTask(undefined, title);
-                        }
-                      }}
-                    />
-                  </div>
                 </div>
               )}
             </>

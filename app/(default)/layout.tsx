@@ -40,7 +40,7 @@ import {
 export default function DefaultLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [user, setUser] = useState<any>(null);
-  const { groups, loading: loadingGroups, refreshGroups, deleteGroup: deleteGroupFromState } = useGroups();
+  const { groups, loading: loadingGroups, refreshGroups, deleteGroup: deleteGroupFromState, updateGroup } = useGroups();
   const client = createClient();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -65,6 +65,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   pendingInvitesRef.current = pendingInvites;
   declineNotificationsRef.current = declineNotifications;
 
+  const togglingVisibilityRef = useRef<Set<number>>(new Set());
   const fetchProjectsRef = useRef<() => Promise<void>>(async () => {});
   const mergeProjectsRef = useRef<(serverProjects: Project[]) => void>(() => {});
   const fetchNotificationsRef = useRef<() => Promise<void>>(async () => {});
@@ -187,6 +188,14 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
           )) {
             fetchProjectsRef.current!();
           }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'view_groups' },
+        (payload) => {
+          const data = payload.new as any;
+          if (data?.id) updateGroup(data.id, data as any);
         }
       )
       .subscribe();
@@ -349,22 +358,27 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   };
 
   const toggleGroupVisibility = async (group: any) => {
+    if (togglingVisibilityRef.current.has(group.id)) return;
+    togglingVisibilityRef.current.add(group.id);
     const next = !group.show_on_dashboard;
+    updateGroup(group.id, { show_on_dashboard: next });
     const { error } = await client.from('view_groups').update({ show_on_dashboard: next }).eq('id', group.id);
-    if (!error) {
-      refreshGroups();
-      window.dispatchEvent(new CustomEvent('groups_updated'));
+    if (error) {
+      updateGroup(group.id, { show_on_dashboard: group.show_on_dashboard });
     }
+    togglingVisibilityRef.current.delete(group.id);
   };
 
   const toggleProjectVisibility = async (project: any) => {
+    if (togglingVisibilityRef.current.has(project.id)) return;
+    togglingVisibilityRef.current.add(project.id);
     const next = !project.show_on_dashboard;
     setProjects(prev => prev.map(p => p.id === project.id ? { ...p, show_on_dashboard: next } : p));
-    window.dispatchEvent(new CustomEvent('projects_updated'));
     const { error } = await client.from('projects').update({ show_on_dashboard: next }).eq('id', project.id);
     if (error) {
       setProjects(prev => prev.map(p => p.id === project.id ? { ...p, show_on_dashboard: !next } : p));
     }
+    togglingVisibilityRef.current.delete(project.id);
   };
 
   const createProject = async () => {
