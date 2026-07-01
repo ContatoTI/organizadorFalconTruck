@@ -1328,7 +1328,7 @@ function DashboardContent() {
       })();
   };
 
-  const renderTasksList = (tasksList: Task[], sectionId?: number, currentGroupId?: number) => {
+  const renderTasksList = (tasksList: Task[], sectionId?: number, currentGroupId?: number, projectColor?: string | null) => {
     return (
       <SortableContext items={tasksList.map(t => `task-${t.id}`)} strategy={verticalListSortingStrategy}>
         {tasksList.map(task => (
@@ -1343,13 +1343,14 @@ function DashboardContent() {
             onRemoveFromGroup={currentGroupId ? handleRemoveFromGroup : undefined}
             onDelete={deleteTask}
             isPending={!!pendingTaskIds[task.id]}
+            taskColor={projectColor}
           />
         ))}
       </SortableContext>
     );
   };
 
-  const renderStatusGroups = (sectionId: number | null) => {
+  const renderStatusGroups = (sectionId: number | null, projectColor?: string | null) => {
     return STATUS_GROUPS.flatMap(group => {
       const groupTasks = getTasksBySectionAndStatus(sectionId, group.key);
       if (groupTasks.length === 0) return [];
@@ -1366,7 +1367,7 @@ function DashboardContent() {
               ({groupTasks.length})
             </span>
           </div>
-          {renderTasksList(groupTasks, sectionId ?? undefined)}
+          {renderTasksList(groupTasks, sectionId ?? undefined, undefined, projectColor)}
         </div>
       );
     });
@@ -1415,7 +1416,7 @@ function DashboardContent() {
           </div>
         </div>
         <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
-          {renderTasksList(groupTasks, undefined, blockType === 'group' ? parseInt(groupId.split(':')[1]) : undefined)}
+          {renderTasksList(groupTasks, undefined, blockType === 'group' ? parseInt(groupId.split(':')[1]) : undefined, groupInfo.color)}
         </div>
       </div>
     );
@@ -1849,7 +1850,7 @@ function DashboardContent() {
                   {/* Tarefas da seção */}
                   {expandedSections[section.id] && (
                     <DroppableSection sectionId={section.id}>
-                      {renderStatusGroups(section.id)}
+                      {renderStatusGroups(section.id, selectedProject?.color)}
                       <div className="px-4 py-3 border-t border-border/60">
                         <InlineTaskCreator
                           onCreateSimpleTask={(title) => handleAddTask(section.id, title)}
@@ -1921,7 +1922,7 @@ function DashboardContent() {
                     </div>
                   </div>
                   <DroppableSection sectionId={'unsectioned'}>
-                    {renderStatusGroups(null)}
+                    {renderStatusGroups(null, selectedProject?.color)}
                     {getTasksBySection(null).length === 0 && (
                       <div className="px-4 py-3 text-xs text-muted-foreground/50 text-center italic">
                         Solte tarefas aqui para removê-las da organização
@@ -2023,7 +2024,7 @@ function DashboardContent() {
               {/* Quando tem grupo selecionado: lista compacta única */}
               {selectedGroup && (
                 <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
-                  {renderTasksList(filteredTasks, undefined, selectedGroup.id)}
+                  {renderTasksList(filteredTasks, undefined, selectedGroup.id, selectedGroup.color)}
                 </div>
               )}
             </>

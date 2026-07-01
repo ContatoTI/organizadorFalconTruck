@@ -17,6 +17,7 @@ interface SortableTaskItemProps {
   onDelete: (taskId: number) => void;
   isOverlay?: boolean;
   isPending?: boolean;
+  taskColor?: string | null;
 }
 
 export const SortableTaskItem = memo(function SortableTaskItem({
@@ -30,6 +31,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
   onDelete,
   isOverlay = false,
   isPending = false,
+  taskColor,
 }: SortableTaskItemProps) {
   const {
     attributes,
@@ -71,6 +73,14 @@ export const SortableTaskItem = memo(function SortableTaskItem({
         <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary/20 overflow-hidden">
           <div className="h-full w-full bg-primary animate-pulse origin-left" />
         </div>
+      )}
+
+      {/* Left color bar */}
+      {taskColor && (
+        <div
+          className="absolute left-0 top-0 bottom-0 w-[4px] rounded-l-[3px]"
+          style={{ backgroundColor: taskColor }}
+        />
       )}
 
       {/* 6-dot drag handle */}
