@@ -17,7 +17,6 @@ interface SortableTaskItemProps {
   onDelete: (taskId: number) => void;
   isOverlay?: boolean;
   isPending?: boolean;
-  taskColor?: string | null;
 }
 
 export const SortableTaskItem = memo(function SortableTaskItem({
@@ -31,7 +30,6 @@ export const SortableTaskItem = memo(function SortableTaskItem({
   onDelete,
   isOverlay = false,
   isPending = false,
-  taskColor,
 }: SortableTaskItemProps) {
   const {
     attributes,
@@ -62,7 +60,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
       ref={setNodeRef}
       style={style}
       className={cn(
-        "relative group/task flex items-center gap-[10px] py-[9px] px-[14px] border-b border-border/40 last:border-b-0 bg-card transition-all duration-300",
+        "relative group/task flex items-center gap-[10px] py-[9px] px-[14px] border-b border-border/40 last:border-b-0 transition-all duration-300",
         isDragging && !isOverlay && "opacity-20 bg-accent/30 border-dashed border-2 border-primary/30",
     isOverlay && "opacity-90 rounded-xl shadow-2xl border-2 border-primary ring-4 ring-primary/20 scale-[1.05] pointer-events-none cursor-grabbing z-50",
     (isPending || task.isSyncing) && "opacity-60 border-dashed border-primary/50"
@@ -73,14 +71,6 @@ export const SortableTaskItem = memo(function SortableTaskItem({
         <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary/20 overflow-hidden">
           <div className="h-full w-full bg-primary animate-pulse origin-left" />
         </div>
-      )}
-
-      {/* Left color bar */}
-      {taskColor && (
-        <div
-          className="absolute left-0 top-0 bottom-0 w-[4px] rounded-l-[3px]"
-          style={{ backgroundColor: taskColor }}
-        />
       )}
 
       {/* 6-dot drag handle */}

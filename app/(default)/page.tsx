@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Check, X, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search, Eye, EyeOff, Settings } from 'lucide-react';
-import { cn } from '@/app/lib/utils';
+import { cn, getSoftCardStyle } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { projectAPI } from '@/app/lib/projectAPI';
 import { notificationAPI } from '@/app/lib/notificationAPI';
@@ -1328,7 +1328,7 @@ function DashboardContent() {
       })();
   };
 
-  const renderTasksList = (tasksList: Task[], sectionId?: number, currentGroupId?: number, projectColor?: string | null) => {
+  const renderTasksList = (tasksList: Task[], sectionId?: number, currentGroupId?: number) => {
     return (
       <SortableContext items={tasksList.map(t => `task-${t.id}`)} strategy={verticalListSortingStrategy}>
         {tasksList.map(task => (
@@ -1343,14 +1343,13 @@ function DashboardContent() {
             onRemoveFromGroup={currentGroupId ? handleRemoveFromGroup : undefined}
             onDelete={deleteTask}
             isPending={!!pendingTaskIds[task.id]}
-            taskColor={projectColor}
           />
         ))}
       </SortableContext>
     );
   };
 
-  const renderStatusGroups = (sectionId: number | null, projectColor?: string | null) => {
+  const renderStatusGroups = (sectionId: number | null) => {
     return STATUS_GROUPS.flatMap(group => {
       const groupTasks = getTasksBySectionAndStatus(sectionId, group.key);
       if (groupTasks.length === 0) return [];
@@ -1367,7 +1366,7 @@ function DashboardContent() {
               ({groupTasks.length})
             </span>
           </div>
-          {renderTasksList(groupTasks, sectionId ?? undefined, undefined, projectColor)}
+          {renderTasksList(groupTasks, sectionId ?? undefined)}
         </div>
       );
     });
@@ -1378,45 +1377,47 @@ function DashboardContent() {
     const groupTasks = groupedTasks[groupId];
     if (!groupTasks || groupTasks.length === 0) return null;
     const pendingCount = groupTasks.filter(t => !t.is_completed).length;
+    const surfaceStyle = getSoftCardStyle(groupInfo.color);
     const inner = (
       <div className="mb-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 px-1 gap-2">
-          <div className="flex items-center gap-2">
-            <div
-              className="w-[3px] h-[15px] rounded-full flex-shrink-0"
-              style={{ backgroundColor: groupInfo.color || 'hsl(var(--primary))' }}
-            />
-            <span
-              className="text-[13px] font-semibold"
-              style={groupInfo.color ? { color: groupInfo.color } : undefined}
-            >
-              {groupInfo.title}
-            </span>
-            <span className="text-[10px] font-medium bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full tabular-nums">
-              {pendingCount}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            {groupInfo.link && (
-              <button
-                onClick={() => router.push(groupInfo.link!)}
-                className="text-[11px] text-muted-foreground hover:text-primary flex items-center gap-0.5 transition-colors"
+        <div
+          className="border border-border/60 rounded-[10px] overflow-hidden shadow-xs transition-colors duration-200"
+          style={surfaceStyle}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 border-b border-border/40 gap-2" style={surfaceStyle}>
+            <div className="flex items-center gap-2">
+              <span
+                className="text-[13px] font-semibold"
+                style={groupInfo.color ? { color: groupInfo.color } : undefined}
               >
-                Ver <ArrowRight className="w-3 h-3" />
-              </button>
-            )}
-            <InlineTaskCreator
-              destination={blockType === 'project'
-                ? { type: 'project', id: parseInt(groupId.split(':')[1], 10) }
-                : { type: 'group', id: parseInt(groupId.split(':')[1], 10) }}
-              onCreateTask={handleCreateTask}
-              buttonText="Adicionar"
-              placeholder="Nova tarefa..."
-            />
+                {groupInfo.title}
+              </span>
+              <span className="text-[10px] font-medium bg-white/70 text-slate-500 px-2 py-0.5 rounded-full tabular-nums">
+                {pendingCount}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {groupInfo.link && (
+                <button
+                  onClick={() => router.push(groupInfo.link!)}
+                  className="text-[11px] text-muted-foreground hover:text-primary flex items-center gap-0.5 transition-colors"
+                >
+                  Ver <ArrowRight className="w-3 h-3" />
+                </button>
+              )}
+              <InlineTaskCreator
+                destination={blockType === 'project'
+                  ? { type: 'project', id: parseInt(groupId.split(':')[1], 10) }
+                  : { type: 'group', id: parseInt(groupId.split(':')[1], 10) }}
+                onCreateTask={handleCreateTask}
+                buttonText="Adicionar"
+                placeholder="Nova tarefa..."
+              />
+            </div>
           </div>
-        </div>
-        <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
-          {renderTasksList(groupTasks, undefined, blockType === 'group' ? parseInt(groupId.split(':')[1]) : undefined, groupInfo.color)}
+          <div className="px-0 py-1">
+            {renderTasksList(groupTasks, undefined, blockType === 'group' ? parseInt(groupId.split(':')[1]) : undefined)}
+          </div>
         </div>
       </div>
     );
@@ -1791,8 +1792,9 @@ function DashboardContent() {
                 <Card
                   key={section.id}
                   className={cn(
-                    "bg-card border-border overflow-hidden shadow-card transition-all duration-200"
+                    "border-border/60 overflow-hidden shadow-card transition-all duration-200"
                   )}
+                  style={getSoftCardStyle(selectedProject?.color)}
                 >
                   {/* Header da seção */}
                   <div
@@ -1850,7 +1852,7 @@ function DashboardContent() {
                   {/* Tarefas da seção */}
                   {expandedSections[section.id] && (
                     <DroppableSection sectionId={section.id}>
-                      {renderStatusGroups(section.id, selectedProject?.color)}
+                      {renderStatusGroups(section.id)}
                       <div className="px-4 py-3 border-t border-border/60">
                         <InlineTaskCreator
                           onCreateSimpleTask={(title) => handleAddTask(section.id, title)}
@@ -1866,8 +1868,9 @@ function DashboardContent() {
               {/* Tarefas sem seção */}
               <Card
                   className={cn(
-                    "bg-card border-border overflow-hidden shadow-card transition-all duration-200"
+                    "border-border/60 overflow-hidden shadow-card transition-all duration-200"
                   )}
+                  style={getSoftCardStyle(selectedProject?.color)}
                 >
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/60">
                     <div className="flex items-center gap-3">
@@ -1922,7 +1925,7 @@ function DashboardContent() {
                     </div>
                   </div>
                   <DroppableSection sectionId={'unsectioned'}>
-                    {renderStatusGroups(null, selectedProject?.color)}
+                    {renderStatusGroups(null)}
                     {getTasksBySection(null).length === 0 && (
                       <div className="px-4 py-3 text-xs text-muted-foreground/50 text-center italic">
                         Solte tarefas aqui para removê-las da organização
@@ -2023,8 +2026,11 @@ function DashboardContent() {
 
               {/* Quando tem grupo selecionado: lista compacta única */}
               {selectedGroup && (
-                <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
-                  {renderTasksList(filteredTasks, undefined, selectedGroup.id, selectedGroup.color)}
+                <div
+                  className="border border-border/60 rounded-[10px] overflow-hidden shadow-xs transition-colors duration-200"
+                  style={getSoftCardStyle(selectedGroup.color)}
+                >
+                  {renderTasksList(filteredTasks, undefined, selectedGroup.id)}
                 </div>
               )}
             </>
