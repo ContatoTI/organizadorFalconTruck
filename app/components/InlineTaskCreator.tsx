@@ -7,24 +7,29 @@ import { Plus, X } from 'lucide-react';
 import type { Destination } from './NewTaskDialog'; // Reutiliza o tipo Destination
 
 interface InlineTaskCreatorProps {
-  onCreateTask: (title: string, destination: Destination) => void;
-  destination: Destination;
+  onCreateTask?: (title: string, destination: Destination) => Promise<void> | void;
+  onCreateSimpleTask?: (title: string) => Promise<void> | void;
+  destination?: Destination;
   placeholder?: string;
   buttonText?: string;
 }
 
-export function InlineTaskCreator({ onCreateTask, destination, placeholder = 'Nova tarefa...', buttonText = 'Adicionar Tarefa' }: InlineTaskCreatorProps) {
+export function InlineTaskCreator({ onCreateTask, onCreateSimpleTask, destination, placeholder = 'Nova tarefa...', buttonText = 'Adicionar Tarefa' }: InlineTaskCreatorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [taskTitle, setTaskTitle] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleCreateTask = useCallback(() => {
+  const handleCreateTask = useCallback(async () => {
     const trimmedTitle = taskTitle.trim();
     if (trimmedTitle) {
-      onCreateTask(trimmedTitle, destination);
+      if (onCreateSimpleTask) {
+        await onCreateSimpleTask(trimmedTitle);
+      } else if (onCreateTask && destination) {
+        await onCreateTask(trimmedTitle, destination);
+      }
       setTaskTitle('');
     }
-  }, [taskTitle, onCreateTask, destination]);
+  }, [taskTitle, onCreateTask, onCreateSimpleTask, destination]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {

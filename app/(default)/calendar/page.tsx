@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
-import { Plus, X, ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
+import { Plus, X, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { onTaskMoved, onTaskMoveError, shouldSkipRealtimeFetch, TaskMovedEvent, TaskMoveErrorEvent } from '@/app/lib/taskEvents';
 import { cn } from '@/app/lib/utils';
@@ -26,6 +26,7 @@ export default function CalendarPage() {
   const [showModal, setShowModal] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const [showCompleted, setShowCompleted] = useState(true);
   const router = useRouter();
   const client = createClient();
 
@@ -39,6 +40,11 @@ export default function CalendarPage() {
       setUser(authUser as any);
     };
     getUser();
+  }, []);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('showCompleted');
+    if (stored !== null) setShowCompleted(stored !== 'false');
   }, []);
 
   useEffect(() => {
@@ -129,6 +135,7 @@ export default function CalendarPage() {
 
   const getTasksForDate = (date: Date) => {
     return tasks.filter((task) => {
+      if (!showCompleted && task.is_completed) return false;
       if (!task.due_date) return false;
       const taskDate = new Date(task.due_date);
       return taskDate.toDateString() === date.toDateString();
@@ -270,6 +277,18 @@ export default function CalendarPage() {
       <div className="flex items-center gap-3 mb-8">
         <CalendarIcon className="w-8 h-8 text-primary" />
         <h1 className="text-3xl font-bold">Calendário</h1>
+        <label className="flex items-center gap-1.5 cursor-pointer select-none ml-auto">
+          <div
+            onClick={() => { const v = !showCompleted; setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }}
+            className={cn(
+              "w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0",
+              showCompleted ? "bg-primary border-primary" : "border-slate-300 bg-white"
+            )}
+          >
+            {showCompleted && <Check className="w-2.5 h-2.5 text-white" strokeWidth={2.5} />}
+          </div>
+          <span className="text-[12px] text-slate-500">Concluídas</span>
+        </label>
       </div>
 
       <Card className="p-6 shadow-card border-border">

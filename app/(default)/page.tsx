@@ -87,9 +87,11 @@ function DashboardContent() {
   const [onlyToday, setOnlyToday] = useState(false);
   const [now, setNow] = useState(new Date());
   const [expandedSections, setExpandedSections] = useState<Record<number, boolean>>({});
-  const [newSectionTitle, setNewSectionTitle] = useState('');
   const [editingSection, setEditingSection] = useState<number | null>(null);
   const [editingSectionTitle, setEditingSectionTitle] = useState('');
+  const [unsectionedTitle, setUnsectionedTitle] = useState('Sem Pasta');
+  const [editingUnsectionedTitle, setEditingUnsectionedTitle] = useState(false);
+  const [unsectionedTitleDraft, setUnsectionedTitleDraft] = useState('Sem Pasta');
   const [showShareModal, setShowShareModal] = useState(false);
   const [searchUsers, setSearchUsers] = useState('');
   const [allUsers, setAllUsers] = useState<AppUser[]>([]);
@@ -108,6 +110,11 @@ function DashboardContent() {
   const client = createClient();
   const skipRealtimeFetchRef = useRef(false);
   const lastPointerPos = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const stored = localStorage.getItem('showCompleted');
+    if (stored !== null) setShowCompleted(stored !== 'false');
+  }, []);
 
   // Sensors do dnd-kit: activationConstraint evita que um simples clique/tap
   // dispare um drag acidental (especialmente importante em telas touch)
@@ -751,9 +758,15 @@ function DashboardContent() {
       .single();
 
     if (data) {
-      setSections(prev => [...prev, data as Section]);
-      setExpandedSections(prev => ({ ...prev, [data.id]: true }));
+      const newSection = data as Section;
+      setSections(prev => [...prev, newSection]);
+      setExpandedSections(prev => ({ ...prev, [newSection.id]: true }));
+      setEditingSection(newSection.id);
+      setEditingSectionTitle(newSection.title);
+      return newSection;
     }
+
+    return undefined;
   };
 
   const updateSection = async (sectionId: number, newTitle: string) => {
@@ -950,13 +963,13 @@ function DashboardContent() {
       const id = parseInt(key.split(':')[1]);
       const group = groups.find(g => g.id === id);
       return {
-        title: group?.title ?? 'Sem Categoria',
+        title: group?.title ?? 'Sem Pasta',
         color: group?.color ?? null,
         link: `/?group=${id}`,
       };
     }
 
-    return { title: 'Sem Categoria', color: null, link: null };
+    return { title: 'Sem Pasta', color: null, link: null };
   };
 
   // Ordena as seções: Caixa de Entrada primeiro, depois projetos, depois blocos/listas
@@ -1731,7 +1744,7 @@ function DashboardContent() {
             </Button>
             <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <div
-                onClick={() => setShowCompleted(!showCompleted)}
+                onClick={() => { const v = !showCompleted; setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }}
                 className={cn(
                   "w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0",
                   showCompleted ? "bg-primary border-primary" : "border-slate-300 bg-white"
@@ -1767,8 +1780,8 @@ function DashboardContent() {
             <div className="text-center py-8 text-muted-foreground">Carregando...</div>
           ) : sections.length === 0 && getProjectTasks().length === 0 ? (
             <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
-              <p>Nenhuma organização encontrada neste projeto.</p>
-              <p className="text-sm mt-2">Clique em "+ Nova organização" para começar.</p>
+              <p>Nenhuma pasta encontrada neste projeto.</p>
+              <p className="text-sm mt-2">Clique em "+ Nova pasta" para começar.</p>
             </div>
           ) : (
             <>
@@ -1837,7 +1850,13 @@ function DashboardContent() {
                   {expandedSections[section.id] && (
                     <DroppableSection sectionId={section.id}>
                       {renderStatusGroups(section.id)}
-                      {/* Input para nova tarefa na seção */}
+                      <div className="px-4 py-3 border-t border-border/60">
+                        <InlineTaskCreator
+                          onCreateSimpleTask={(title) => handleAddTask(section.id, title)}
+                          buttonText="Adicionar tarefa"
+                          placeholder="Adicionar nova tarefa"
+                        />
+                      </div>
                     </DroppableSection>
                   )}
                 </Card>
@@ -1852,10 +1871,53 @@ function DashboardContent() {
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/60">
                     <div className="flex items-center gap-3">
                       <Folder className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm font-semibold text-muted-foreground">Sem organização</span>
+                      {editingUnsectionedTitle ? (
+                        <Input
+                          value={unsectionedTitleDraft}
+                          onChange={(e) => setUnsectionedTitleDraft(e.target.value)}
+                          onBlur={() => {
+                            if (unsectionedTitleDraft.trim()) {
+                              setUnsectionedTitle(unsectionedTitleDraft.trim());
+                            } else {
+                              setUnsectionedTitleDraft(unsectionedTitle);
+                            }
+                            setEditingUnsectionedTitle(false);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              if (unsectionedTitleDraft.trim()) {
+                                setUnsectionedTitle(unsectionedTitleDraft.trim());
+                              }
+                              setEditingUnsectionedTitle(false);
+                            }
+                            if (e.key === 'Escape') {
+                              setUnsectionedTitleDraft(unsectionedTitle);
+                              setEditingUnsectionedTitle(false);
+                            }
+                          }}
+                          className="h-8 py-1 text-sm font-semibold w-40"
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <span className="text-sm font-semibold text-muted-foreground">{unsectionedTitle}</span>
+                      )}
                       <span className="text-xs text-muted-foreground">
                         ({getTasksBySection(null).length})
                       </span>
+                    </div>
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setEditingUnsectionedTitle(true);
+                          setUnsectionedTitleDraft(unsectionedTitle);
+                        }}
+                        className="h-8 w-8 text-muted-foreground/50 hover:text-primary"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
                   <DroppableSection sectionId={'unsectioned'}>
@@ -1865,6 +1927,13 @@ function DashboardContent() {
                         Solte tarefas aqui para removê-las da organização
                       </div>
                     )}
+                    <div className="px-4 py-3 border-t border-border/60">
+                      <InlineTaskCreator
+                        onCreateSimpleTask={(title) => handleAddTask(undefined, title)}
+                        buttonText="Adicionar tarefa"
+                        placeholder="Adicionar nova tarefa"
+                      />
+                    </div>
                   </DroppableSection>
                 </Card>
 
@@ -1873,14 +1942,17 @@ function DashboardContent() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => {
-                    const title = prompt('Nome da nova organização:');
-                    if (title?.trim()) { createSection(title.trim()); }
+                  onClick={async () => {
+                    const newSection = await createSection('Nova pasta');
+                    if (newSection) {
+                      setEditingSection(newSection.id);
+                      setEditingSectionTitle(newSection.title);
+                    }
                   }}
                   className="text-primary hover:bg-primary/10"
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Nova organização
+                  Nova pasta
                 </Button>
               </div>
             </>

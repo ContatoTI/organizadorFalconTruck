@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
 import { Plus, X, Edit, Trash2, Check, XCircle } from 'lucide-react';
+import { cn } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { onTaskMoved, onTaskMoveError, shouldSkipRealtimeFetch, TaskMovedEvent, TaskMoveErrorEvent } from '@/app/lib/taskEvents';
 import type { Task, Group } from '@/types/index';
@@ -24,6 +25,7 @@ export default function TodosPage() {
   const [loading, setLoading] = useState(true);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
+  const [showCompleted, setShowCompleted] = useState(true);
   const [editingTask, setEditingTask] = useState<Partial<Task> | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const router = useRouter();
@@ -40,6 +42,11 @@ export default function TodosPage() {
       setUser(user);
     };
     getUser();
+  }, []);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('showCompleted');
+    if (stored !== null) setShowCompleted(stored !== 'false');
   }, []);
 
   useEffect(() => {
@@ -108,6 +115,8 @@ export default function TodosPage() {
     setTasks(data);
     if (showLoading) setLoading(false);
   };
+
+  const displayedTasks = tasks.filter(t => showCompleted || !t.is_completed);
 
   const addTask = async (titleOverride?: string) => {
     const raw = (titleOverride ?? newTaskTitle).trim();
@@ -278,17 +287,29 @@ export default function TodosPage() {
         <Button onClick={() => addTask()}>
           <Plus className="w-5 h-5" />
         </Button>
+        <label className="flex items-center gap-1.5 cursor-pointer select-none ml-auto">
+          <div
+            onClick={() => { const v = !showCompleted; setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }}
+            className={cn(
+              "w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0",
+              showCompleted ? "bg-primary border-primary" : "border-slate-300 bg-white"
+            )}
+          >
+            {showCompleted && <Check className="w-2.5 h-2.5 text-white" strokeWidth={2.5} />}
+          </div>
+          <span className="text-[12px] text-slate-500">Concluídas</span>
+        </label>
       </div>
 
       <div className="space-y-2">
         {loading ? (
           <div className="text-center py-8 text-muted-foreground">Carregando...</div>
-        ) : tasks.length === 0 ? (
+        ) : displayedTasks.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed border-border">
             <p>Nenhuma tarefa encontrada.</p>
           </div>
         ) : (
-          tasks.map((task) => (
+          displayedTasks.map((task) => (
             <Card
               key={task.id}
               className="flex items-center gap-3 p-4 hover:bg-accent/50 transition-colors group shadow-xs"

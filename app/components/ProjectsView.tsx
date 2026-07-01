@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { Edit2, X, FolderKanban } from 'lucide-react';
-import { cn } from '@/app/lib/utils';
+import { cn, PROJECT_COLORS } from '@/app/lib/utils';
 import { createClient } from '@/app/lib/supabase/Client';
 import type { Project } from '@/types/index';
 
@@ -13,8 +13,6 @@ interface ProjectsViewProps {
   onUpdateProjects: (projects: Project[]) => void;
   onClose: () => void;
 }
-
-const PROJECT_COLORS = ['#6366f1', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#a855f7'];
 
 export function ProjectsView({ projects, userId, onUpdateProjects, onClose }: ProjectsViewProps) {
   const [editingProject, setEditingProject] = useState<Project | null>(null);

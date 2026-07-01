@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 
 function GroupsContent() {
-  const { groups, loading, refreshGroups, addGroup } = useGroups();
+  const { groups, loading, refreshGroups, addGroup, updateGroup } = useGroups();
   const [user, setUser] = useState<any>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingGroup, setEditingGroup] = useState<any>(null);
@@ -38,6 +38,7 @@ function GroupsContent() {
   // Refs para evitar closure
   const userRef = useRef(user);
   const formDataRef = useRef(formData);
+  const editingRef = useRef(editingGroup);
   
   useEffect(() => {
     userRef.current = user;
@@ -46,6 +47,10 @@ function GroupsContent() {
   useEffect(() => {
     formDataRef.current = formData;
   }, [formData]);
+
+  useEffect(() => {
+    editingRef.current = editingGroup;
+  }, [editingGroup]);
 
   // Handle query params for opening form
   useEffect(() => {
@@ -76,11 +81,11 @@ function GroupsContent() {
   const saveGroup = useCallback(async () => {
     const currentForm = formDataRef.current;
     const currentUser = userRef.current;
+    const editing = editingRef.current;
     
     if (!currentForm.title.trim() || !currentUser) return;
 
-    const groupData = {
-      user_id: currentUser.id,
+    const groupData: Record<string, any> = {
       title: currentForm.title,
       type: currentForm.type,
       icon: currentForm.icon || null,
@@ -92,19 +97,33 @@ function GroupsContent() {
       show_on_dashboard: currentForm.show_on_dashboard,
     };
 
-    const { data, error } = await client
-      .from('view_groups')
-      .insert(groupData)
-      .select()
-      .single();
+    if (editing) {
+      const { error } = await client
+        .from('view_groups')
+        .update(groupData)
+        .eq('id', editing.id);
 
-    if (error) {
-      console.error('Error creating group:', error);
-      return;
-    }
+      if (error) {
+        console.error('Error updating group:', error);
+        return;
+      }
+      updateGroup(editing.id, groupData);
+    } else {
+      groupData.user_id = currentUser.id;
+      const { data, error } = await client
+        .from('view_groups')
+        .insert(groupData)
+        .select()
+        .single();
 
-    if (data) {
-      addGroup(data);
+      if (error) {
+        console.error('Error creating group:', error);
+        return;
+      }
+
+      if (data) {
+        addGroup(data);
+      }
     }
 
     setShowForm(false);
@@ -123,7 +142,7 @@ function GroupsContent() {
     
     // Go back to groups list
     router.push('/groups');
-  }, [client, router, addGroup]);
+  }, [client, router, addGroup, updateGroup]);
 
   const deleteGroup = async (groupId: number) => {
     if (!confirm('Excluir este grupo? As tarefas associadas voltarão para a Caixa de Entrada.')) return;

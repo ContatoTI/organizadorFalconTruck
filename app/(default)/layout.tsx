@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
-import { cn, GroupIcon } from '@/app/lib/utils';
+import { cn, GroupIcon, PROJECT_COLORS } from '@/app/lib/utils';
 import { useGroups } from '@/app/lib/GroupsContext';
 import { projectAPI } from '@/app/lib/projectAPI';
 import { notificationAPI } from '@/app/lib/notificationAPI';
@@ -47,6 +47,8 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     projetos: true,
     planejamento: true,
+    listas: true,
+    blocos: true,
   });
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -560,7 +562,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
               <div>
                 <label className="text-sm text-muted-foreground block mb-1">Cor</label>
                 <div className="flex gap-2 flex-wrap">
-                  {['#6366f1', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#a855f7'].map((color) => (
+                  {PROJECT_COLORS.map((color) => (
                     <button
                       key={color}
                       onClick={() => setNewProjectColor(color)}
@@ -649,9 +651,20 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
               {/* BLOCOS DE TEMPO */}
               <div>
-                <div className="flex items-center justify-between px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  <span>Blocos de Tempo</span>
-                  <div className="flex items-center gap-1">
+                <div
+                  onClick={() => toggleSection('blocos')}
+                  className="flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <ChevronRight
+                      className={cn(
+                        'w-3 h-3 transition-transform',
+                        expandedSections.blocos && 'rotate-90'
+                      )}
+                    />
+                    <span>Blocos de Tempo</span>
+                  </div>
+                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                     <Link href="/groups?action=create&type=time" className="hover:text-foreground">
                       <Plus className="w-3 h-3" />
                     </Link>
@@ -661,60 +674,61 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                   </div>
                 </div>
 
-                {loadingGroups ? (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">Carregando...</div>
-                ) : (
-                  <div className="space-y-1">
-                    {timeGroups.map((group) => (
-                      <div
-                        key={group.id}
-                        id={`group-${group.id}`}
-                        onDragOver={(e) => handleDragOver(e, group.id)}
-                        onDragLeave={handleDragLeave}
-                        onDrop={(e) => handleDropOnGroup(e, group.id)}
-                        data-sidebar-type="group"
-                        data-sidebar-id={group.id}
-                        className={cn(
-                          "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
-                          (isDragOver === group.id && dragOverType === 'group') ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm" : "hover:bg-sidebar-accent"
-                        )}
-                      >
-                        <Link
-                          href={`/?group=${group.id}`}
-                          className="flex-1 flex items-center gap-2"
-                        >
-                            <span className="flex items-center gap-2">
-                              <span style={{ color: group.color ?? undefined }}>
-                                <GroupIcon icon={getParsedValue(group.icon)} fallback={Clock} className="w-4 h-4" />
-                              </span>
-                              <span className="truncate">{group.title}</span>
-                            </span>
-                        </Link>
-                        <button
-                          onClick={(e) => { e.preventDefault(); toggleGroupVisibility(group); }}
-                          className={cn(
-                            "p-1 rounded opacity-0 group-hover/link:opacity-100 transition-opacity",
-                            group.show_on_dashboard ? "text-sidebar-muted hover:text-primary" : "text-destructive"
-                          )}
-                          title={group.show_on_dashboard ? "Ocultar do Dashboard" : "Mostrar no Dashboard"}
-                        >
-                          {group.show_on_dashboard ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            deleteGroup(group);
-                          }}
-                          className="p-1 hover:bg-destructive/20 hover:text-destructive rounded opacity-0 group-hover/link:opacity-100 transition-opacity"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                    {timeGroups.length === 0 && (
+                {expandedSections.blocos && (
+                  <div className="space-y-1 mt-1">
+                    {loadingGroups ? (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">Carregando...</div>
+                    ) : timeGroups.length === 0 ? (
                       <div className="px-3 text-xs text-muted-foreground italic">
                         Nenhum bloco definido
                       </div>
+                    ) : (
+                      timeGroups.map((group) => (
+                        <div
+                          key={group.id}
+                          id={`group-${group.id}`}
+                          onDragOver={(e) => handleDragOver(e, group.id)}
+                          onDragLeave={handleDragLeave}
+                          onDrop={(e) => handleDropOnGroup(e, group.id)}
+                          data-sidebar-type="group"
+                          data-sidebar-id={group.id}
+                          className={cn(
+                            "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
+                            (isDragOver === group.id && dragOverType === 'group') ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm" : "hover:bg-sidebar-accent"
+                          )}
+                        >
+                          <Link
+                            href={`/?group=${group.id}`}
+                            className="flex-1 flex items-center gap-2"
+                          >
+                              <span className="flex items-center gap-2">
+                                <span style={{ color: group.color ?? undefined }}>
+                                  <GroupIcon icon={getParsedValue(group.icon)} fallback={Clock} className="w-4 h-4" />
+                                </span>
+                                <span className="truncate">{group.title}</span>
+                              </span>
+                          </Link>
+                          <button
+                            onClick={(e) => { e.preventDefault(); toggleGroupVisibility(group); }}
+                            className={cn(
+                              "p-1 rounded opacity-0 group-hover/link:opacity-100 transition-opacity",
+                              group.show_on_dashboard ? "text-sidebar-muted hover:text-primary" : "text-destructive"
+                            )}
+                            title={group.show_on_dashboard ? "Ocultar do Dashboard" : "Mostrar no Dashboard"}
+                          >
+                            {group.show_on_dashboard ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              deleteGroup(group);
+                            }}
+                            className="p-1 hover:bg-destructive/20 hover:text-destructive rounded opacity-0 group-hover/link:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))
                     )}
                   </div>
                 )}
@@ -722,9 +736,20 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
               {/* LISTAS */}
               <div>
-                <div className="flex items-center justify-between px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  <span>Listas</span>
-                  <div className="flex items-center gap-1">
+                <div
+                  onClick={() => toggleSection('listas')}
+                  className="flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <ChevronRight
+                      className={cn(
+                        'w-3 h-3 transition-transform',
+                        expandedSections.listas && 'rotate-90'
+                      )}
+                    />
+                    <span>Listas</span>
+                  </div>
+                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                     <Link href="/groups?action=create&type=list" className="hover:text-foreground">
                       <Plus className="w-3 h-3" />
                     </Link>
@@ -734,60 +759,61 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                   </div>
                 </div>
 
-                {loadingGroups ? (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">Carregando...</div>
-                ) : (
-                  <div className="space-y-1">
-                    {listGroups.map((group) => (
-                      <div
-                        key={group.id}
-                        id={`group-${group.id}`}
-                        onDragOver={(e) => handleDragOver(e, group.id)}
-                        onDragLeave={handleDragLeave}
-                        onDrop={(e) => handleDropOnGroup(e, group.id)}
-                        data-sidebar-type="group"
-                        data-sidebar-id={group.id}
-                        className={cn(
-                          "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
-                          (isDragOver === group.id && dragOverType === 'group') ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm" : "hover:bg-sidebar-accent"
-                        )}
-                      >
-                        <Link
-                          href={`/?group=${group.id}`}
-                          className="flex-1 flex items-center gap-2"
-                        >
-                            <span className="flex items-center gap-2">
-                              <span style={{ color: group.color ?? undefined }}>
-                                <GroupIcon icon={getParsedValue(group.icon)} fallback={List} className="w-4 h-4" />
-                              </span>
-                              <span className="truncate">{group.title}</span>
-                            </span>
-                        </Link>
-                        <button
-                          onClick={(e) => { e.preventDefault(); toggleGroupVisibility(group); }}
-                          className={cn(
-                            "p-1 rounded opacity-0 group-hover/link:opacity-100 transition-opacity",
-                            group.show_on_dashboard ? "text-sidebar-muted hover:text-primary" : "text-destructive"
-                          )}
-                          title={group.show_on_dashboard ? "Ocultar do Dashboard" : "Mostrar no Dashboard"}
-                        >
-                          {group.show_on_dashboard ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            deleteGroup(group);
-                          }}
-                          className="p-1 hover:bg-destructive/20 hover:text-destructive rounded opacity-0 group-hover/link:opacity-100 transition-opacity"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                    {listGroups.length === 0 && (
+                {expandedSections.listas && (
+                  <div className="space-y-1 mt-1">
+                    {loadingGroups ? (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">Carregando...</div>
+                    ) : listGroups.length === 0 ? (
                       <div className="px-3 text-xs text-muted-foreground italic">
                         Nenhuma lista definida
                       </div>
+                    ) : (
+                      listGroups.map((group) => (
+                        <div
+                          key={group.id}
+                          id={`group-${group.id}`}
+                          onDragOver={(e) => handleDragOver(e, group.id)}
+                          onDragLeave={handleDragLeave}
+                          onDrop={(e) => handleDropOnGroup(e, group.id)}
+                          data-sidebar-type="group"
+                          data-sidebar-id={group.id}
+                          className={cn(
+                            "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
+                            (isDragOver === group.id && dragOverType === 'group') ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm" : "hover:bg-sidebar-accent"
+                          )}
+                        >
+                          <Link
+                            href={`/?group=${group.id}`}
+                            className="flex-1 flex items-center gap-2"
+                          >
+                              <span className="flex items-center gap-2">
+                                <span style={{ color: group.color ?? undefined }}>
+                                  <GroupIcon icon={getParsedValue(group.icon)} fallback={List} className="w-4 h-4" />
+                                </span>
+                                <span className="truncate">{group.title}</span>
+                              </span>
+                          </Link>
+                          <button
+                            onClick={(e) => { e.preventDefault(); toggleGroupVisibility(group); }}
+                            className={cn(
+                              "p-1 rounded opacity-0 group-hover/link:opacity-100 transition-opacity",
+                              group.show_on_dashboard ? "text-sidebar-muted hover:text-primary" : "text-destructive"
+                            )}
+                            title={group.show_on_dashboard ? "Ocultar do Dashboard" : "Mostrar no Dashboard"}
+                          >
+                            {group.show_on_dashboard ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              deleteGroup(group);
+                            }}
+                            className="p-1 hover:bg-destructive/20 hover:text-destructive rounded opacity-0 group-hover/link:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))
                     )}
                   </div>
                 )}
