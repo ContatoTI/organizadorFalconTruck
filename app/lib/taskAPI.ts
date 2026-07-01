@@ -403,7 +403,9 @@ class TaskAPI {
         .update({ 
           view_group_id: targetGroupId,
           project_id: null,
-          section_id: null
+          section_id: null,
+          is_completed: false,
+          status: 'a_fazer'
         })
         .eq('id', taskId);
 

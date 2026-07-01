@@ -275,7 +275,7 @@ function DashboardContent() {
               };
             }
             if (detail.action === 'move_to_group') {
-              return { ...t, view_group_id: detail.groupId, project_id: null, section_id: null };
+              return { ...t, view_group_id: detail.groupId, project_id: null, section_id: null, is_completed: false, status: 'a_fazer' };
             }
             if (detail.action === 'move_to_project') {
               return { ...t, project_id: detail.projectId, view_group_id: null, section_id: null };
@@ -1008,12 +1008,17 @@ function DashboardContent() {
       .map(p => `project:${p.id}`),
   ]));
 
-  const dashboardTimeKeys = sortedGroupKeys.filter(k => {
-    if (!k.startsWith('group:')) return false;
-    const id = parseInt(k.split(':')[1]);
-    const g = groups.find(gr => gr.id === id);
-    return g?.type === 'time' && g?.show_on_dashboard !== false;
-  });
+  const dashboardTimeKeys = Array.from(new Set([
+    ...sortedGroupKeys.filter(k => {
+      if (!k.startsWith('group:')) return false;
+      const id = parseInt(k.split(':')[1]);
+      const g = groups.find(gr => gr.id === id);
+      return g?.type === 'time' && g?.show_on_dashboard !== false && isTimeWindowActive(g, now);
+    }),
+    ...groups
+      .filter(g => g.type === 'time' && g.show_on_dashboard !== false && isTimeWindowActive(g, now))
+      .map(g => `group:${g.id}`),
+  ]));
   const dashboardListKeys = sortedGroupKeys.filter(k => {
     if (!k.startsWith('group:')) return false;
     const id = parseInt(k.split(':')[1]);
@@ -1395,8 +1400,9 @@ function DashboardContent() {
 
   const renderDashboardBlock = (groupId: string, blockType: 'project' | 'group') => {
     const groupInfo = getGroupInfo(groupId);
-    const groupTasks = groupedTasks[groupId];
-    if (!groupTasks || groupTasks.length === 0) return null;
+    const groupTasks = groupedTasks[groupId] || [];
+    const isTimeBlock = blockType === 'group' && groups.find(g => g.id === parseInt(groupId.split(':')[1]))?.type === 'time';
+    if (!isTimeBlock && groupTasks.length === 0) return null;
     const pendingCount = groupTasks.filter(t => !t.is_completed).length;
     const surfaceStyle = getSoftCardStyle(groupInfo.color);
     const inner = (
@@ -1463,7 +1469,7 @@ function DashboardContent() {
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
+      onDragMove={handleDragOver}
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
