@@ -4,10 +4,18 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Calendar, User, Clock } from 'lucide-react';
 import { cn } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
-import type { Task } from '@/types/index';
+import type { Task, Group } from '@/types/index';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  SelectGroup,
+  SelectLabel,
+} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 
 const STATUS_OPTIONS = [
@@ -36,11 +44,13 @@ function formatDateTime(dateStr: string): string {
 
 interface TaskDetailPanelProps {
   task: Task;
+  groups: Group[];
   onClose: () => void;
   onUpdate: (updatedTask: Task) => void;
+  onMoveToGroup: (groupId: number) => void;
 }
 
-export function TaskDetailPanel({ task, onClose, onUpdate }: TaskDetailPanelProps) {
+export function TaskDetailPanel({ task, groups, onClose, onUpdate, onMoveToGroup }: TaskDetailPanelProps) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? '');
   const [status, setStatus] = useState(task.status ?? 'a_fazer');
@@ -48,6 +58,9 @@ export function TaskDetailPanel({ task, onClose, onUpdate }: TaskDetailPanelProp
   const [dueDate, setDueDate] = useState(task.due_date ?? '');
   const [saving, setSaving] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const lists = groups.filter((g) => g.type === 'list');
+  const timeBlocks = groups.filter((g) => g.type === 'time');
 
   const save = useCallback(async (updates: Partial<Task>) => {
     setSaving(true);
@@ -95,6 +108,14 @@ export function TaskDetailPanel({ task, onClose, onUpdate }: TaskDetailPanelProp
     const val = value ?? '';
     setDueDate(val);
     save({ due_date: val || null });
+  };
+
+  const handleMoveToGroup = (value: string | null) => {
+    if (!value) return;
+    const groupId = parseInt(value, 10);
+    if (groupId === task.view_group_id) return;
+    onMoveToGroup(groupId);
+    onClose();
   };
 
   const handleTitleBlur = () => {
@@ -243,6 +264,40 @@ export function TaskDetailPanel({ task, onClose, onUpdate }: TaskDetailPanelProp
                 className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
+          </div>
+
+          {/* Move to list / time block */}
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">
+              Mover para
+            </label>
+            <Select value={task.view_group_id ? String(task.view_group_id) : ''} onValueChange={handleMoveToGroup}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecione uma lista ou bloco de tempo" />
+              </SelectTrigger>
+              <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
+                {lists.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Listas</SelectLabel>
+                    {lists.map((g) => (
+                      <SelectItem key={g.id} value={String(g.id)}>
+                        {g.title}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+                {timeBlocks.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Blocos de Tempo</SelectLabel>
+                    {timeBlocks.map((g) => (
+                      <SelectItem key={g.id} value={String(g.id)}>
+                        {g.title}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Metadata */}

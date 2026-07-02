@@ -2252,11 +2252,13 @@ function DashboardContent() {
       {selectedTask && (
         <TaskDetailPanel
           task={selectedTask}
+          groups={groups}
           onClose={() => setSelectedTask(null)}
           onUpdate={(updatedTask) => {
             setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
             setSelectedTask(updatedTask);
           }}
+          onMoveToGroup={(groupId) => execGroupDrop(selectedTask, groupId)}
         />
       )}
 
