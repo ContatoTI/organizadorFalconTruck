@@ -1794,6 +1794,14 @@ function DashboardContent() {
                 </Button>
               </>
             )}
+            <InlineTaskCreator
+              destination={{ type: 'inbox' }}
+              onCreateTask={handleCreateTask}
+              buttonText="Nova tarefa"
+              placeholder="Título da tarefa…"
+              autoFocus
+              className="rounded-full h-7 text-xs gap-1"
+            />
             <Button variant="ghost" size="sm" onClick={() => setShowDashboardConfig(true)} className="rounded-full h-7 text-xs gap-1" title="Personalizar Dashboard">
               <Settings className="w-3 h-3" /> Personalizar
             </Button>
