@@ -5,7 +5,7 @@
 @layer base {
   :root {
     /* ── Superfícies ──────────────────────────────────────────────── */
-    --background: 215 54% 97%;          /* #f5f8fc — azul-cinza muito suave (DS bg-page) */
+    --background: 0 0% 100%;            /* #ffffff — branco */
     --foreground: 222 47% 11%;          /* #0f172a — navy escuro para texto */
 
     --card: 0 0% 100%;                  /* #ffffff — cards brancos sobre bg cinza */
