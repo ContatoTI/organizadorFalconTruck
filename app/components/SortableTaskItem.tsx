@@ -84,7 +84,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
         style={{ touchAction: 'none' }}
         className={cn(
           "flex-shrink-0 cursor-grab active:cursor-grabbing outline-none",
-          isOverlay ? "opacity-100" : "opacity-10 hover:opacity-100 group-hover/task:opacity-100 transition-opacity"
+          isOverlay ? "opacity-100" : "opacity-40 md:opacity-10 hover:opacity-100 group-hover/task:opacity-100 transition-opacity"
         )}
         title="Arrastar para reordenar"
       >

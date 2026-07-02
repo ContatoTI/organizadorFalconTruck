@@ -35,6 +35,7 @@ import {
   User,
   Eye,
   EyeOff,
+  Menu,
 } from 'lucide-react';
 
 export default function DefaultLayout({ children }: { children: React.ReactNode }) {
@@ -56,6 +57,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
   const [showProjectsView, setShowProjectsView] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileDialog, setShowProfileDialog] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pendingInvites, setPendingInvites] = useState<any[]>([]);
   const [declineNotifications, setDeclineNotifications] = useState<any[]>([]);
   const userRef = useRef(user);
@@ -74,6 +76,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     setShowProjectsView(false);
+    setMobileMenuOpen(false);
   }, [pathname]);
 
   useEffect(() => {
@@ -517,6 +520,26 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
 
   return (
     <div className="flex h-screen bg-background relative">
+      {/* Botão hambúrguer - visível apenas em mobile, abre/fecha a sidebar */}
+      <button
+        onClick={() => setMobileMenuOpen((prev) => !prev)}
+        className={cn(
+          'fixed top-4 z-50 p-2 rounded-full bg-card border border-border hover:bg-accent transition-colors shadow-card md:hidden',
+          mobileMenuOpen ? 'left-[196px]' : 'left-4'
+        )}
+        aria-label={mobileMenuOpen ? 'Fechar menu' : 'Abrir menu'}
+      >
+        {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+      </button>
+
+      {/* Overlay de fundo ao abrir a sidebar em mobile */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-foreground/50 z-30 md:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sino de Notificações - fixo no canto superior direito */}
       {user && (
         <div className="fixed top-4 right-4 z-40">
@@ -586,7 +609,14 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
         </div>
       )}
 
-      <aside className="w-[244px] border-r border-border bg-sidebar hidden md:flex flex-col">
+      <aside
+        className={cn(
+          'w-[244px] border-r border-border bg-sidebar flex flex-col',
+          'fixed inset-y-0 left-0 z-40 transform transition-transform duration-200 ease-in-out',
+          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full',
+          'md:static md:z-auto md:translate-x-0'
+        )}
+      >
         <div className="p-5 border-b border-border">
           <div className="flex items-center justify-between">
             <div className="flex-1 min-w-0">
