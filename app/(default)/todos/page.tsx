@@ -454,10 +454,21 @@ export default function TodosPage() {
       {selectedTask && (
         <TaskDetailPanel
           task={selectedTask}
+          groups={groups}
           onClose={() => setSelectedTask(null)}
           onUpdate={(updatedTask) => {
             setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
             setSelectedTask(updatedTask);
+          }}
+          onMoveToGroup={async (groupId) => {
+            const result = await taskAPI.moveTaskToGroup(selectedTask.id, groupId);
+            if (result.success) {
+              setTasks(prev => prev.map(t => t.id === selectedTask.id
+                ? { ...t, view_group_id: groupId, project_id: null, section_id: null }
+                : t));
+            } else {
+              toast('Erro ao mover tarefa', 'error');
+            }
           }}
         />
       )}
