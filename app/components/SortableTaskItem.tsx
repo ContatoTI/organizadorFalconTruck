@@ -4,7 +4,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { cn, getColorFromString, getInitials } from '@/app/lib/utils';
 import type { Task, Group } from '@/types/index';
 import { isToday } from 'date-fns';
-import { X, XCircle, Loader2 } from 'lucide-react';
+import { X, XCircle, Loader2, AlertCircle } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface SortableTaskItemProps {
   task: Task;
@@ -15,6 +16,7 @@ interface SortableTaskItemProps {
   onSelect: (task: Task) => void;
   onRemoveFromGroup?: (taskId: number, groupId: number) => void;
   onDelete: (taskId: number) => void;
+  onPriorityChange?: (taskId: number, priority: string | null) => void;
   isOverlay?: boolean;
   isPending?: boolean;
 }
@@ -28,6 +30,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
   onSelect,
   onRemoveFromGroup,
   onDelete,
+  onPriorityChange,
   isOverlay = false,
   isPending = false,
 }: SortableTaskItemProps) {
@@ -54,6 +57,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
   const currentGroup = currentGroupId ? groups.find(g => g.id === currentGroupId) : null;
   const timeDisplay = currentGroup?.start_time ? currentGroup.start_time.substring(0, 5) : null;
   const dateDisplay = task.due_date && isToday(task.due_date) ? 'hoje' : null;
+  const priorityLabel = task.priority === 'alta' ? 'Alta' : task.priority === 'media' ? 'Média' : 'Baixa';
 
   return (
     <div
@@ -159,6 +163,49 @@ export const SortableTaskItem = memo(function SortableTaskItem({
         {(!task.status || task.status === 'a_fazer') ? 'A fazer' :
          task.status === 'em_andamento' ? 'Em andamento' : 'Concluído'}
       </span>
+
+      {/* Priority badge */}
+      {onPriorityChange && (
+        <Select
+          value={task.priority || 'none'}
+          onValueChange={(val: string | null) => {
+            onPriorityChange(task.id, val === 'none' ? null : val);
+          }}
+        >
+          <SelectTrigger
+            className={cn(
+              "h-5 w-fit justify-center gap-1 rounded-full border-0 px-2 py-0 text-[10px] font-semibold whitespace-nowrap flex-shrink-0 cursor-pointer data-[size=default]:h-5 [&>svg:last-child]:hidden",
+              task.priority === 'alta' && "bg-red-600 text-white",
+              task.priority === 'media' && "bg-yellow-500 text-black",
+              (task.priority === 'baixa' || !task.priority) && "bg-green-600 text-white",
+            )}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <AlertCircle className="size-2.5" />
+            <span>{priorityLabel}</span>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">
+              <span className="w-2 h-2 rounded-full bg-slate-300" />
+              Sem prioridade
+            </SelectItem>
+            <SelectItem value="alta">
+              <span className="w-2 h-2 rounded-full bg-red-600" />
+              Alta
+            </SelectItem>
+            <SelectItem value="media">
+              <span className="w-2 h-2 rounded-full bg-yellow-500" />
+              Média
+            </SelectItem>
+            <SelectItem value="baixa">
+              <span className="w-2 h-2 rounded-full bg-green-600" />
+              Baixa
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      )}
 
       {/* Remove from group */}
       {currentGroupId && onRemoveFromGroup && (

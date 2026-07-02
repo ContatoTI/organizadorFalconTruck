@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
-import { Plus, X, Edit, Trash2, Check, XCircle } from 'lucide-react';
+import { X, Edit, Trash2, Check, XCircle } from 'lucide-react';
 import { cn } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { onTaskMoved, onTaskMoveError, shouldSkipRealtimeFetch, TaskMovedEvent, TaskMoveErrorEvent } from '@/app/lib/taskEvents';
@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card } from '@/components/ui/card';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
+import { InlineTaskCreator } from '@/app/components/InlineTaskCreator';
 import { ToastProvider, useToast } from '@/app/components/Toast';
 
 export default function TodosPage() {
@@ -116,7 +117,12 @@ export default function TodosPage() {
     if (showLoading) setLoading(false);
   };
 
-  const displayedTasks = tasks.filter(t => showCompleted || !t.is_completed);
+  const displayedTasks = tasks.filter(t => showCompleted || !t.is_completed).sort((a, b) => {
+    const order: Record<string, number> = { alta: 3, media: 2, baixa: 1 };
+    const pa = order[a.priority ?? ''] ?? 0;
+    const pb = order[b.priority ?? ''] ?? 0;
+    return pb - pa;
+  });
 
   const addTask = async (titleOverride?: string) => {
     const raw = (titleOverride ?? newTaskTitle).trim();
@@ -201,6 +207,20 @@ export default function TodosPage() {
     }
   };
 
+  const handlePriorityChange = async (taskId: number, priority: string | null) => {
+    const original = tasks.find(t => t.id === taskId);
+    setTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, priority, isSyncing: true } : t
+    ));
+    const result = await taskAPI.updateTask(taskId, { priority });
+    if (!result.success) {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...original!, isSyncing: false } : t));
+      toast('Erro ao atualizar prioridade', 'error');
+    } else {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isSyncing: false } : t));
+    }
+  };
+
   const deleteTask = async (taskId: number) => {
     // OPTIMISTIC UPDATE
     const taskToDelete = tasks.find(t => t.id === taskId);
@@ -233,7 +253,8 @@ export default function TodosPage() {
     const result = await taskAPI.updateTask(editingTask.id, {
       title: editingTask.title,
       view_group_id: editingTask.view_group_id,
-      due_date: editingTask.due_date
+      due_date: editingTask.due_date,
+      priority: editingTask.priority,
     });
 
     if (!result.success && originalTask) {
@@ -254,20 +275,10 @@ export default function TodosPage() {
       <h1 className="text-3xl font-bold mb-8">Todas as Tarefas</h1>
 
       <div className="flex gap-2 mb-8">
-        <Input
-          type="text"
-          value={newTaskTitle}
-          onChange={(e) => setNewTaskTitle(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addTask()}
-          onPaste={(e) => {
-            const text = e.clipboardData.getData('text');
-            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-            if (lines.length > 1) {
-              e.preventDefault();
-              addTask(text);
-            }
-          }}
+        <InlineTaskCreator
+          onCreateSimpleTask={async (title) => await addTask(title)}
           placeholder="Adicionar nova tarefa..."
+          buttonText="Nova tarefa"
           className="flex-1"
         />
         <Select
@@ -284,9 +295,6 @@ export default function TodosPage() {
             ))}
           </SelectContent>
         </Select>
-        <Button onClick={() => addTask()}>
-          <Plus className="w-5 h-5" />
-        </Button>
         <label className="flex items-center gap-1.5 cursor-pointer select-none ml-auto">
           <div
             onClick={() => { const v = !showCompleted; setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }}
@@ -318,6 +326,12 @@ export default function TodosPage() {
                 checked={task.is_completed}
                 onCheckedChange={() => toggleTask(task)}
               />
+              <div className={cn(
+                "w-1.5 h-1.5 rounded-full flex-shrink-0",
+                task.priority === 'alta' && "bg-red-600",
+                task.priority === 'media' && "bg-yellow-500",
+                (task.priority === 'baixa' || !task.priority) && "bg-green-600",
+              )} />
               <div className="flex-1">
                 <button
                   onClick={() => setSelectedTask(task)}
@@ -411,6 +425,20 @@ export default function TodosPage() {
                   {groups.map((g) => (
                     <SelectItem key={g.id} value={g.id.toString()}>{g.title}</SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={editingTask.priority || 'none'}
+                onValueChange={(val: string | null) => setEditingTask({ ...editingTask, priority: val === 'none' || !val ? null : val })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sem prioridade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem prioridade</SelectItem>
+                  <SelectItem value="alta">Alta</SelectItem>
+                  <SelectItem value="media">Média</SelectItem>
+                  <SelectItem value="baixa">Baixa</SelectItem>
                 </SelectContent>
               </Select>
             </div>

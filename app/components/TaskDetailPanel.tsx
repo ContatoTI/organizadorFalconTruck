@@ -17,10 +17,10 @@ const STATUS_OPTIONS = [
 ] as const;
 
 const PRIORITY_OPTIONS = [
-  { value: 'baixa', label: 'Baixa', color: 'bg-slate-400' },
-  { value: 'media', label: 'Média', color: 'bg-blue-500' },
-  { value: 'alta', label: 'Alta', color: 'bg-orange-500' },
-  { value: 'urgente', label: 'Urgente', color: 'bg-red-500' },
+  { value: 'baixa', label: 'Baixa', color: 'bg-green-600' },
+  { value: 'media', label: 'Média', color: 'bg-yellow-500' },
+  { value: 'alta', label: 'Alta', color: 'bg-red-600' },
+  { value: 'urgente', label: 'Urgente', color: 'bg-red-700' },
 ] as const;
 
 function formatDateTime(dateStr: string): string {

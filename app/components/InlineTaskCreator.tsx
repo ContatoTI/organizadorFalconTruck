@@ -86,7 +86,7 @@ export function InlineTaskCreator({ onCreateTask, onCreateSimpleTask, onCancel, 
         variant="ghost"
         size="sm"
         onClick={() => setIsOpen(true)}
-        className={cn("flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground", className)}
+        className={cn("rounded-full h-7 text-xs gap-1 flex items-center text-muted-foreground hover:text-foreground", className)}
       >
         <Plus className="w-3.5 h-3.5" />
         {buttonText}
@@ -109,7 +109,7 @@ export function InlineTaskCreator({ onCreateTask, onCreateSimpleTask, onCancel, 
         variant="ghost"
         size="icon"
         onClick={handleCreateTask}
-        className="h-6 w-6 text-muted-foreground hover:text-primary flex-shrink-0"
+        className="rounded-full h-7 w-7 text-muted-foreground hover:text-primary flex-shrink-0"
       >
         <Plus className="w-3.5 h-3.5" />
       </Button>
@@ -117,7 +117,7 @@ export function InlineTaskCreator({ onCreateTask, onCreateSimpleTask, onCancel, 
         variant="ghost"
         size="icon"
         onClick={handleCancel}
-        className="h-6 w-6 text-muted-foreground hover:text-destructive flex-shrink-0"
+        className="rounded-full h-7 w-7 text-muted-foreground hover:text-destructive flex-shrink-0"
       >
         <X className="w-3.5 h-3.5" />
       </Button>

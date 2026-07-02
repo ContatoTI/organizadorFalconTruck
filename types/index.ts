@@ -133,3 +133,10 @@ export interface Goal {
 export type GroupType = Group['type'];
 export type ProjectInviteStatus = ProjectInvite['status'];
 export type FinanceType = Finance['type'];
+
+// ============= PREFERENCIAS DO USUARIO =============
+export interface UserPreferences {
+  show_my_tasks_only: boolean;
+  show_only_time_blocks: boolean;
+  show_only_lists: boolean;
+}

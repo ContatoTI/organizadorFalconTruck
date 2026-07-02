@@ -9,8 +9,9 @@ import { taskAPI } from '@/app/lib/taskAPI';
 import { projectAPI } from '@/app/lib/projectAPI';
 import { notificationAPI } from '@/app/lib/notificationAPI';
 import { useGroups } from '@/app/lib/GroupsContext';
+import { fetchPreferences, savePreferences } from '@/app/lib/preferencesAPI';
 import { emitTaskMoved, emitTaskMoveError, TaskMovedEvent, shouldSkipRealtimeFetch } from '@/app/lib/taskEvents';
-import type { Task, Group, Project, Section, ProjectInviteNotification, User as AppUser } from '@/types/index';
+import type { Task, Group, Project, Section, ProjectInviteNotification, User as AppUser, UserPreferences } from '@/types/index';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -120,6 +121,12 @@ function DashboardContent() {
     if (stored !== null) setShowCompleted(stored !== 'false');
   }, []);
 
+  useEffect(() => {
+    if (user) {
+      fetchPreferences(user.id).then(setPreferences);
+    }
+  }, [user]);
+
   // Sensors do dnd-kit: activationConstraint evita que um simples clique/tap
   // dispare um drag acidental (especialmente importante em telas touch)
   const sensors = useSensors(
@@ -129,7 +136,18 @@ function DashboardContent() {
   );
 
   const [showDashboardConfig, setShowDashboardConfig] = useState(false);
+  const [preferences, setPreferences] = useState<UserPreferences>({
+    show_my_tasks_only: false,
+    show_only_time_blocks: false,
+    show_only_lists: false,
+  });
   const togglingItemsRef = useRef<Set<number>>(new Set());
+
+  const setPreference = (key: keyof UserPreferences, value: boolean) => {
+    const next: UserPreferences = { ...preferences, [key]: value };
+    setPreferences(next);
+    if (user) savePreferences(user.id, next);
+  };
 
   const toggleProjectOnDashboard = async (project: Project) => {
     if (togglingItemsRef.current.has(project.id)) return;
@@ -741,6 +759,20 @@ function DashboardContent() {
     }
   };
 
+  const handlePriorityChange = async (taskId: number, priority: string | null) => {
+    const original = tasks.find(t => t.id === taskId);
+    setTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, priority, isSyncing: true } : t
+    ));
+    const result = await taskAPI.updateTask(taskId, { priority });
+    if (!result.success) {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...original!, isSyncing: false } : t));
+      toast('Erro ao atualizar prioridade', 'error');
+    } else {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isSyncing: false } : t));
+    }
+  };
+
   const createSection = async (title: string) => {
     if (!title.trim() || !user || !selectedProjectId) return;
     const nextOrder = sections.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
@@ -904,8 +936,14 @@ function DashboardContent() {
       if (t.linked_view_group_ids?.includes(parseInt(selectedGroupId))) return true;
       return false;
     }
+    if (preferences.show_my_tasks_only && t.user_id !== user?.id) return false;
     if (!shouldShowByTime(t, groups, now)) return false;
     return true;
+  }).sort((a, b) => {
+    const order: Record<string, number> = { alta: 3, media: 2, baixa: 1 };
+    const pa = order[a.priority ?? ''] ?? 0;
+    const pb = order[b.priority ?? ''] ?? 0;
+    return pb - pa;
   });
 
   const filteredShareUsers = allUsers.filter(u =>
@@ -1368,6 +1406,7 @@ function DashboardContent() {
             onSelect={setSelectedTask}
             onRemoveFromGroup={currentGroupId ? handleRemoveFromGroup : undefined}
             onDelete={deleteTask}
+            onPriorityChange={handlePriorityChange}
             isPending={!!pendingTaskIds[task.id]}
           />
         ))}
@@ -1633,6 +1672,60 @@ function DashboardContent() {
             <DialogTitle>Personalizar Dashboard</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto space-y-5 pr-2">
+            {/* Preferências Globais */}
+            <div className="rounded-xl border border-border/60 bg-card/30 overflow-hidden">
+              <div className="px-4 py-3 border-b border-border/40">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Preferências</h3>
+              </div>
+              <div className="p-4 space-y-4">
+                <label className="flex items-center justify-between cursor-pointer select-none">
+                  <div>
+                    <span className="text-sm font-medium">Mostrar só minhas tarefas</span>
+                    <p className="text-xs text-muted-foreground">Exibe apenas tarefas criadas por você</p>
+                  </div>
+                  <div
+                    onClick={() => setPreference('show_my_tasks_only', !preferences.show_my_tasks_only)}
+                    className={cn(
+                      "w-5 h-5 rounded border flex items-center justify-center transition-colors flex-shrink-0",
+                      preferences.show_my_tasks_only ? "bg-primary border-primary" : "border-slate-300 bg-white"
+                    )}
+                  >
+                    {preferences.show_my_tasks_only && <Check className="w-3 h-3 text-white" strokeWidth={2.5} />}
+                  </div>
+                </label>
+                <label className="flex items-center justify-between cursor-pointer select-none">
+                  <div>
+                    <span className="text-sm font-medium">Mostrar só blocos de tempo</span>
+                    <p className="text-xs text-muted-foreground">Oculta Caixa de Entrada, Projetos e Listas</p>
+                  </div>
+                  <div
+                    onClick={() => setPreference('show_only_time_blocks', !preferences.show_only_time_blocks)}
+                    className={cn(
+                      "w-5 h-5 rounded border flex items-center justify-center transition-colors flex-shrink-0",
+                      preferences.show_only_time_blocks ? "bg-primary border-primary" : "border-slate-300 bg-white"
+                    )}
+                  >
+                    {preferences.show_only_time_blocks && <Check className="w-3 h-3 text-white" strokeWidth={2.5} />}
+                  </div>
+                </label>
+                <label className="flex items-center justify-between cursor-pointer select-none">
+                  <div>
+                    <span className="text-sm font-medium">Mostrar só listas</span>
+                    <p className="text-xs text-muted-foreground">Oculta Caixa de Entrada, Projetos e Blocos de Tempo</p>
+                  </div>
+                  <div
+                    onClick={() => setPreference('show_only_lists', !preferences.show_only_lists)}
+                    className={cn(
+                      "w-5 h-5 rounded border flex items-center justify-center transition-colors flex-shrink-0",
+                      preferences.show_only_lists ? "bg-primary border-primary" : "border-slate-300 bg-white"
+                    )}
+                  >
+                    {preferences.show_only_lists && <Check className="w-3 h-3 text-white" strokeWidth={2.5} />}
+                  </div>
+                </label>
+              </div>
+            </div>
+
             {/* Projetos */}
             <div className="rounded-xl border border-border/60 bg-card/30 overflow-hidden">
               <div className="px-4 py-3 border-b border-border/40">
@@ -2093,7 +2186,7 @@ function DashboardContent() {
               {!selectedGroup && (
                 <>
                   {/* Caixa de Entrada */}
-                  {inboxKey && (() => {
+                  {!preferences.show_only_time_blocks && !preferences.show_only_lists && inboxKey && (() => {
                     const tasks = groupedTasks[inboxKey];
                     if (!tasks || tasks.length === 0) return null;
                     const pendingCount = tasks.filter(t => !t.is_completed).length;
@@ -2114,7 +2207,7 @@ function DashboardContent() {
                   })()}
 
                   {/* Projetos */}
-                  {dashboardProjectKeys.length > 0 && (
+                  {!preferences.show_only_time_blocks && !preferences.show_only_lists && dashboardProjectKeys.length > 0 && (
                     <div className="mb-6">
                       <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Projetos</h2>
                       {dashboardProjectKeys.map(groupId => renderDashboardBlock(groupId, 'project'))}
@@ -2122,7 +2215,7 @@ function DashboardContent() {
                   )}
 
                   {/* Blocos de Tempo */}
-                  {dashboardTimeKeys.length > 0 && (
+                  {!preferences.show_only_lists && dashboardTimeKeys.length > 0 && (
                     <div className="mb-6">
                       <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Blocos de Tempo</h2>
                       {dashboardTimeKeys.map(groupId => renderDashboardBlock(groupId, 'group'))}
@@ -2130,7 +2223,7 @@ function DashboardContent() {
                   )}
 
                   {/* Listas */}
-                  {dashboardListKeys.length > 0 && (
+                  {!preferences.show_only_time_blocks && dashboardListKeys.length > 0 && (
                     <div className="mb-6">
                       <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Listas</h2>
                       {dashboardListKeys.map(groupId => renderDashboardBlock(groupId, 'group'))}

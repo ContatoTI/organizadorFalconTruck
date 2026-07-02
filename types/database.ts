@@ -338,6 +338,29 @@ export interface Tables {
       created_at?: string
     }
   }
+  user_preferences: {
+    Row: {
+      id: number
+      user_id: string
+      preferences: Json
+      created_at: string
+      updated_at: string
+    }
+    Insert: {
+      id?: number
+      user_id: string
+      preferences?: Json
+      created_at?: string
+      updated_at?: string
+    }
+    Update: {
+      id?: number
+      user_id?: string
+      preferences?: Json
+      created_at?: string
+      updated_at?: string
+    }
+  }
 }
 
 export type TableRow<T extends keyof Tables> = Tables[T]['Row'];

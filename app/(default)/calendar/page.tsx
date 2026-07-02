@@ -9,12 +9,12 @@ import { onTaskMoved, onTaskMoveError, shouldSkipRealtimeFetch, TaskMovedEvent, 
 import { cn } from '@/app/lib/utils';
 import type { Task, Group, User } from '@/types/index';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { InlineTaskCreator } from '@/app/components/InlineTaskCreator';
 
 export default function CalendarPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -161,8 +161,8 @@ export default function CalendarPage() {
     setShowModal(true);
   };
 
-  const addTask = async () => {
-    const raw = newTaskTitle.trim();
+  const addTask = async (titleOverride?: string) => {
+    const raw = (titleOverride ?? newTaskTitle).trim();
     if (!raw || !user || !selectedDate) return;
 
     const titles = raw.split('\n').map(t => t.trim()).filter(Boolean);
@@ -397,45 +397,12 @@ export default function CalendarPage() {
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="task-title">Título da tarefa</Label>
-              <Input
-                id="task-title"
-                value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addTask()}
-                onPaste={async (e) => {
-                  const text = e.clipboardData.getData('text');
-                  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-                  if (lines.length > 1) {
-                    e.preventDefault();
-                    const newTasks: Task[] = [];
-                    for (const title of lines) {
-                      const result = await taskAPI.createTask(
-                        user.id,
-                        title,
-                        undefined,
-                        undefined,
-                        selectedGroupId || undefined,
-                        selectedDate!.toISOString().split('T')[0]
-                      );
-                      if (result.success && result.data) newTasks.push(result.data);
-                    }
-                    setTasks(prev => [...prev, ...newTasks]);
-                    setShowModal(false);
-                  }
-                }}
-                placeholder="Ex: Reunião de planejamento"
-                autoFocus
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="task-group">Grupo (opcional)</Label>
+              <Label>Grupo (opcional)</Label>
               <Select
                 value={selectedGroupId?.toString() || "none"}
                 onValueChange={(val: string | null) => setSelectedGroupId(val === "none" || !val ? null : parseInt(val))}
               >
-                <SelectTrigger id="task-group">
+                <SelectTrigger>
                   <SelectValue placeholder="Sem grupo" />
                 </SelectTrigger>
                 <SelectContent>
@@ -446,16 +413,13 @@ export default function CalendarPage() {
                 </SelectContent>
               </Select>
             </div>
+            <InlineTaskCreator
+              onCreateSimpleTask={async (title) => await addTask(title)}
+              placeholder="Ex: Reunião de planejamento"
+              buttonText="Adicionar"
+              autoFocus
+            />
           </div>
-
-          <DialogFooter className="sm:justify-start gap-2">
-            <Button onClick={addTask} className="flex-1">
-              Adicionar
-            </Button>
-            <Button variant="outline" onClick={() => setShowModal(false)} className="flex-1">
-              Cancelar
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
