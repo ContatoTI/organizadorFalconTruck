@@ -3,21 +3,19 @@
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, X, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search, Eye, EyeOff, Settings } from 'lucide-react';
+import { Check, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search, Eye, EyeOff, Settings } from 'lucide-react';
 import { cn, getSoftCardStyle } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { projectAPI } from '@/app/lib/projectAPI';
 import { notificationAPI } from '@/app/lib/notificationAPI';
 import { useGroups } from '@/app/lib/GroupsContext';
 import { fetchPreferences, savePreferences } from '@/app/lib/preferencesAPI';
-import { emitTaskMoved, emitTaskMoveError, TaskMovedEvent, shouldSkipRealtimeFetch } from '@/app/lib/taskEvents';
+import { emitTaskMoved, emitTaskMoveError, shouldSkipRealtimeFetch } from '@/app/lib/taskEvents';
 import type { Task, Group, Project, Section, ProjectInviteNotification, User as AppUser, UserPreferences } from '@/types/index';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import {
   DndContext,
@@ -92,6 +90,7 @@ function DashboardContent() {
   const [unsectionedQuickAddOpen, setUnsectionedQuickAddOpen] = useState(false);
   const [editingSection, setEditingSection] = useState<number | null>(null);
   const [editingSectionTitle, setEditingSectionTitle] = useState('');
+  const [isCreatingSection, setIsCreatingSection] = useState(false);
   const [unsectionedTitle, setUnsectionedTitle] = useState('Sem Pasta');
   const [editingUnsectionedTitle, setEditingUnsectionedTitle] = useState(false);
   const [unsectionedTitleDraft, setUnsectionedTitleDraft] = useState('Sem Pasta');
@@ -115,6 +114,7 @@ function DashboardContent() {
   const client = createClient();
   const skipRealtimeFetchRef = useRef(false);
   const lastPointerPos = useRef({ x: 0, y: 0 });
+  const creatingSectionRef = useRef(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('showCompleted');
@@ -789,7 +789,7 @@ function DashboardContent() {
 
     if (data) {
       const newSection = data as Section;
-      setSections(prev => [...prev, newSection]);
+      setSections(prev => prev.some(s => s.id === newSection.id) ? prev : [...prev, newSection]);
       setExpandedSections(prev => ({ ...prev, [newSection.id]: true }));
       setEditingSection(newSection.id);
       setEditingSectionTitle(newSection.title);
@@ -1887,14 +1887,16 @@ function DashboardContent() {
                 </Button>
               </>
             )}
-            <InlineTaskCreator
-              destination={{ type: 'inbox' }}
-              onCreateTask={handleCreateTask}
-              buttonText="Nova tarefa"
-              placeholder="Título da tarefa…"
-              autoFocus
-              className="rounded-full h-7 text-xs gap-1"
-            />
+            {!selectedProject && (
+              <InlineTaskCreator
+                destination={{ type: 'inbox' }}
+                onCreateTask={handleCreateTask}
+                buttonText="Nova tarefa"
+                placeholder="Título da tarefa…"
+                autoFocus
+                className="rounded-full h-7 text-xs gap-1"
+              />
+            )}
             <Button variant="ghost" size="sm" onClick={() => setShowDashboardConfig(true)} className="rounded-full h-7 text-xs gap-1" title="Personalizar Dashboard">
               <Settings className="w-3 h-3" /> Personalizar
             </Button>
@@ -1940,7 +1942,30 @@ function DashboardContent() {
           ) : sections.length === 0 && getProjectTasks().length === 0 ? (
             <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
               <p>Nenhuma pasta encontrada neste projeto.</p>
-              <p className="text-sm mt-2">Clique em "+ Nova pasta" para começar.</p>
+              <Button
+                variant="default"
+                size="sm"
+                disabled={isCreatingSection}
+                onClick={async () => {
+                  if (creatingSectionRef.current) return;
+                  creatingSectionRef.current = true;
+                  setIsCreatingSection(true);
+                  try {
+                    const newSection = await createSection('Nova pasta');
+                    if (newSection) {
+                      setEditingSection(newSection.id);
+                      setEditingSectionTitle(newSection.title);
+                    }
+                  } finally {
+                    creatingSectionRef.current = false;
+                    setIsCreatingSection(false);
+                  }
+                }}
+                className="rounded-full h-7 text-xs gap-1 mt-4"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Nova pasta
+              </Button>
             </div>
           ) : (
             <>
@@ -2052,7 +2077,8 @@ function DashboardContent() {
                 </Card>
               ))}
 
-              {/* Tarefas sem seção */}
+              {/* Tarefas sem seção: só exibe o card quando houver ao menos 1 tarefa órfã */}
+              {getTasksBySection(null).length > 0 && (
               <Card
                   className={cn(
                     "border-border/60 overflow-hidden shadow-card transition-all duration-200"
@@ -2148,22 +2174,32 @@ function DashboardContent() {
                     </div>
                   </DroppableSection>
                 </Card>
+              )}
 
               {/* Botão nova seção */}
               <div className="flex items-center gap-2">
                 <Button
-                  variant="ghost"
+                  variant="default"
                   size="sm"
+                  disabled={isCreatingSection}
                   onClick={async () => {
-                    const newSection = await createSection('Nova pasta');
-                    if (newSection) {
-                      setEditingSection(newSection.id);
-                      setEditingSectionTitle(newSection.title);
+                    if (creatingSectionRef.current) return;
+                    creatingSectionRef.current = true;
+                    setIsCreatingSection(true);
+                    try {
+                      const newSection = await createSection('Nova pasta');
+                      if (newSection) {
+                        setEditingSection(newSection.id);
+                        setEditingSectionTitle(newSection.title);
+                      }
+                    } finally {
+                      creatingSectionRef.current = false;
+                      setIsCreatingSection(false);
                     }
                   }}
-                  className="text-primary hover:bg-primary/10"
+                  className="rounded-full h-7 text-xs gap-1"
                 >
-                  <Plus className="w-4 h-4 mr-2" />
+                  <Plus className="w-3.5 h-3.5" />
                   Nova pasta
                 </Button>
               </div>

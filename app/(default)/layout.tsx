@@ -58,6 +58,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectColor, setNewProjectColor] = useState('#6366f1');
+  const [newProjectSections, setNewProjectSections] = useState('');
   const [showProjectsView, setShowProjectsView] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileDialog, setShowProfileDialog] = useState(false);
@@ -400,17 +401,27 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const projectId = result.data.id;
     setProjects(prev => [...prev, result.data!]);
+
+    // Create initial sections if provided
+    const sectionNames = newProjectSections.split('\n').map(s => s.trim()).filter(Boolean);
+    if (sectionNames.length > 0) {
+      await Promise.all(sectionNames.map((title, i) =>
+        client.from('sections').insert({
+          user_id: user.id,
+          project_id: projectId,
+          title,
+          order: i,
+        })
+      ));
+    }
+
     setNewProjectName('');
     setNewProjectColor('#6366f1');
+    setNewProjectSections('');
     setShowProjectModal(false);
-    window.dispatchEvent(new CustomEvent('projects_updated', {
-      detail: {
-        projectId: result.data.id,
-        name: result.data.name,
-        color: result.data.color,
-      },
-    }));
+    window.dispatchEvent(new CustomEvent('projects_updated'));
   };
 
   const handleLogout = async () => {
@@ -601,6 +612,16 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                     />
                   ))}
                 </div>
+              </div>
+              <div>
+                <label className="text-sm text-muted-foreground block mb-1">Pastas iniciais (opcional, uma por linha)</label>
+                <textarea
+                  value={newProjectSections}
+                  onChange={(e) => setNewProjectSections(e.target.value)}
+                  placeholder="Ex: Estrutura&#10;Elétrica&#10;Hidráulica"
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                />
               </div>
               <button
                 onClick={createProject}
