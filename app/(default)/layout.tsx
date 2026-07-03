@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { cn, GroupIcon, PROJECT_COLORS } from '@/app/lib/utils';
 import { useGroups } from '@/app/lib/GroupsContext';
@@ -38,8 +38,12 @@ import {
   Menu,
 } from 'lucide-react';
 
-export default function DefaultLayout({ children }: { children: React.ReactNode }) {
+function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeGroupId = searchParams.get('group');
+  const activeProjectId = searchParams.get('project');
+  const isDashboardRoot = pathname === '/' && !activeGroupId && !activeProjectId;
   const [user, setUser] = useState<any>(null);
   const { groups, loading: loadingGroups, refreshGroups, deleteGroup: deleteGroupFromState, updateGroup } = useGroups();
   const client = createClient();
@@ -661,7 +665,7 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                   href="/"
                   className={cn(
                     'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
-                    pathname === '/' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
+                    isDashboardRoot && 'bg-sidebar-accent text-sidebar-primary font-semibold'
                   )}
                 >
                   <LayoutDashboard className="w-4 h-4" />
@@ -724,7 +728,11 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                           data-sidebar-id={group.id}
                           className={cn(
                             "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
-                            (isDragOver === group.id && dragOverType === 'group') ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm" : "hover:bg-sidebar-accent"
+                            (isDragOver === group.id && dragOverType === 'group')
+                              ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm"
+                              : activeGroupId === String(group.id)
+                                ? "bg-sidebar-accent text-sidebar-primary font-semibold"
+                                : "hover:bg-sidebar-accent"
                           )}
                         >
                           <Link
@@ -809,7 +817,11 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                           data-sidebar-id={group.id}
                           className={cn(
                             "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
-                            (isDragOver === group.id && dragOverType === 'group') ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm" : "hover:bg-sidebar-accent"
+                            (isDragOver === group.id && dragOverType === 'group')
+                              ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm"
+                              : activeGroupId === String(group.id)
+                                ? "bg-sidebar-accent text-sidebar-primary font-semibold"
+                                : "hover:bg-sidebar-accent"
                           )}
                         >
                           <Link
@@ -900,7 +912,11 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
                           data-sidebar-id={project.id}
                           className={cn(
                             "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
-                            (isDragOver === project.id && dragOverType === 'project') ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm" : "hover:bg-accent/50"
+                            (isDragOver === project.id && dragOverType === 'project')
+                              ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm"
+                              : activeProjectId === String(project.id)
+                                ? "bg-sidebar-accent text-sidebar-primary font-semibold"
+                                : "hover:bg-accent/50"
                           )}
                         >
                           <Link
@@ -1026,5 +1042,13 @@ export default function DefaultLayout({ children }: { children: React.ReactNode 
         user={user}
       />
     </div>
+  );
+}
+
+export default function DefaultLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={null}>
+      <DefaultLayoutInner>{children}</DefaultLayoutInner>
+    </Suspense>
   );
 }

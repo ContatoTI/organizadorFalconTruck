@@ -22,7 +22,7 @@ import { Switch } from '@/components/ui/switch';
 import {
   DndContext,
   DragOverlay,
-  closestCenter,
+  pointerWithin,
   PointerSensor,
   useSensor,
   useSensors,
@@ -1506,7 +1506,7 @@ function DashboardContent() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={pointerWithin}
       onDragStart={handleDragStart}
       onDragMove={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -2206,19 +2206,19 @@ function DashboardContent() {
                     );
                   })()}
 
-                  {/* Projetos */}
-                  {!preferences.show_only_time_blocks && !preferences.show_only_lists && dashboardProjectKeys.length > 0 && (
-                    <div className="mb-6">
-                      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Projetos</h2>
-                      {dashboardProjectKeys.map(groupId => renderDashboardBlock(groupId, 'project'))}
-                    </div>
-                  )}
-
                   {/* Blocos de Tempo */}
                   {!preferences.show_only_lists && dashboardTimeKeys.length > 0 && (
                     <div className="mb-6">
                       <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Blocos de Tempo</h2>
                       {dashboardTimeKeys.map(groupId => renderDashboardBlock(groupId, 'group'))}
+                    </div>
+                  )}
+
+                  {/* Projetos */}
+                  {!preferences.show_only_time_blocks && !preferences.show_only_lists && dashboardProjectKeys.length > 0 && (
+                    <div className="mb-6">
+                      <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Projetos</h2>
+                      {dashboardProjectKeys.map(groupId => renderDashboardBlock(groupId, 'project'))}
                     </div>
                   )}
 
@@ -2263,7 +2263,7 @@ function DashboardContent() {
       )}
 
       {/* Drag Overlay */}
-      <DragOverlay>
+      <DragOverlay adjustScale={false} dropAnimation={null}>
         {activeDragTask ? (
           <SortableTaskItem
             task={activeDragTask}

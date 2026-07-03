@@ -66,7 +66,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
       className={cn(
         "relative group/task flex items-center gap-[10px] py-[9px] px-[14px] border-b border-border/40 last:border-b-0 transition-all duration-300",
         isDragging && !isOverlay && "opacity-20 bg-accent/30 border-dashed border-2 border-primary/30",
-    isOverlay && "opacity-90 rounded-xl shadow-2xl border-2 border-primary ring-4 ring-primary/20 scale-[1.05] pointer-events-none cursor-grabbing z-50",
+    isOverlay && "opacity-90 rounded-xl shadow-2xl border-2 border-primary ring-4 ring-primary/20 pointer-events-none cursor-grabbing z-50",
     (isPending || task.isSyncing) && "opacity-60 border-dashed border-primary/50"
   )}
 >

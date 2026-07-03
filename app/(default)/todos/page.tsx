@@ -286,7 +286,9 @@ export default function TodosPage() {
           onValueChange={(val: string | null) => setSelectedGroupId(val === "none" || !val ? null : parseInt(val))}
         >
           <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Sem grupo" />
+            <SelectValue>
+              {(value: string) => (value === 'none' || !value) ? 'Sem grupo' : groups.find((g) => g.id.toString() === value)?.title ?? 'Sem grupo'}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="none">Sem grupo</SelectItem>
@@ -418,7 +420,9 @@ export default function TodosPage() {
                 onValueChange={(val: string | null) => setEditingTask({ ...editingTask, view_group_id: val === "none" || !val ? null : parseInt(val) })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Sem grupo" />
+                  <SelectValue>
+                    {(value: string) => (value === 'none' || !value) ? 'Sem grupo' : groups.find((g) => g.id.toString() === value)?.title ?? 'Sem grupo'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Sem grupo</SelectItem>
@@ -432,7 +436,9 @@ export default function TodosPage() {
                 onValueChange={(val: string | null) => setEditingTask({ ...editingTask, priority: val === 'none' || !val ? null : val })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Sem prioridade" />
+                  <SelectValue>
+                    {(value: string) => value === 'alta' ? 'Alta' : value === 'media' ? 'Média' : value === 'baixa' ? 'Baixa' : 'Sem prioridade'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Sem prioridade</SelectItem>

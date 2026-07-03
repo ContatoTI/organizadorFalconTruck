@@ -218,7 +218,9 @@ export function TaskDetailPanel({ task, groups, onClose, onUpdate, onMoveToGroup
               </label>
               <Select value={status} onValueChange={handleStatusChange}>
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  <SelectValue>
+                    {(value: string) => STATUS_OPTIONS.find((opt) => opt.value === value)?.label ?? value}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
                   {STATUS_OPTIONS.map((opt) => (
@@ -237,7 +239,9 @@ export function TaskDetailPanel({ task, groups, onClose, onUpdate, onMoveToGroup
               </label>
               <Select value={priority} onValueChange={handlePriorityChange}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Sem prioridade" />
+                  <SelectValue>
+                    {(value: string) => PRIORITY_OPTIONS.find((opt) => opt.value === value)?.label ?? 'Sem prioridade'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
                   {PRIORITY_OPTIONS.map((opt) => (
