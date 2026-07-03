@@ -115,6 +115,7 @@ function DashboardContent() {
   const skipRealtimeFetchRef = useRef(false);
   const lastPointerPos = useRef({ x: 0, y: 0 });
   const creatingSectionRef = useRef(false);
+  const skipSectionsFetchRef = useRef(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('showCompleted');
@@ -247,6 +248,7 @@ function DashboardContent() {
             ...(selectedProjectId ? { filter: `project_id=eq.${selectedProjectId}` } : {}),
           },
           () => {
+            if (skipSectionsFetchRef.current) return;
             if (selectedProjectId) {
               fetchSections();
             }
@@ -789,10 +791,12 @@ function DashboardContent() {
 
     if (data) {
       const newSection = data as Section;
+      skipSectionsFetchRef.current = true;
       setSections(prev => prev.some(s => s.id === newSection.id) ? prev : [...prev, newSection]);
       setExpandedSections(prev => ({ ...prev, [newSection.id]: true }));
       setEditingSection(newSection.id);
       setEditingSectionTitle(newSection.title);
+      setTimeout(() => { skipSectionsFetchRef.current = false; }, 500);
       return newSection;
     }
 
@@ -1441,7 +1445,6 @@ function DashboardContent() {
     const groupInfo = getGroupInfo(groupId);
     const groupTasks = groupedTasks[groupId] || [];
     const isTimeBlock = blockType === 'group' && groups.find(g => g.id === parseInt(groupId.split(':')[1]))?.type === 'time';
-    if (!isTimeBlock && groupTasks.length === 0) return null;
     const pendingCount = groupTasks.filter(t => !t.is_completed).length;
     const surfaceStyle = getSoftCardStyle(groupInfo.color);
     const inner = (
@@ -1951,11 +1954,7 @@ function DashboardContent() {
                   creatingSectionRef.current = true;
                   setIsCreatingSection(true);
                   try {
-                    const newSection = await createSection('Nova pasta');
-                    if (newSection) {
-                      setEditingSection(newSection.id);
-                      setEditingSectionTitle(newSection.title);
-                    }
+                    await createSection('Nova pasta');
                   } finally {
                     creatingSectionRef.current = false;
                     setIsCreatingSection(false);
@@ -2187,11 +2186,7 @@ function DashboardContent() {
                     creatingSectionRef.current = true;
                     setIsCreatingSection(true);
                     try {
-                      const newSection = await createSection('Nova pasta');
-                      if (newSection) {
-                        setEditingSection(newSection.id);
-                        setEditingSectionTitle(newSection.title);
-                      }
+                      await createSection('Nova pasta');
                     } finally {
                       creatingSectionRef.current = false;
                       setIsCreatingSection(false);
