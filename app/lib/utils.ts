@@ -32,6 +32,7 @@ export function getSoftCardStyle(color?: string | null) {
 
   return {
     background: `color-mix(in srgb, ${color} 10%, white)`,
+    borderColor: `color-mix(in srgb, ${color} 20%, white)`,
   };
 }
 

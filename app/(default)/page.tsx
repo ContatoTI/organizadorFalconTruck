@@ -1447,7 +1447,7 @@ function DashboardContent() {
     const inner = (
       <div className="mb-5">
         <div
-          className="border border-border/60 rounded-[10px] overflow-hidden shadow-xs transition-colors duration-200"
+          className="border rounded-[10px] overflow-hidden shadow-xs transition-colors duration-200"
           style={surfaceStyle}
         >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 border-b border-border/40 gap-2" style={surfaceStyle}>
@@ -2235,7 +2235,7 @@ function DashboardContent() {
               {/* Quando tem grupo selecionado: lista compacta única */}
               {selectedGroup && (
                 <div
-                  className="border border-border/60 rounded-[10px] overflow-hidden shadow-xs transition-colors duration-200"
+                  className="border rounded-[10px] overflow-hidden shadow-xs transition-colors duration-200"
                   style={getSoftCardStyle(selectedGroup.color)}
                 >
                   {renderTasksList(filteredTasks, undefined, selectedGroup.id)}
