@@ -1061,12 +1061,17 @@ function DashboardContent() {
       .filter(g => g.type === 'time' && g.show_on_dashboard !== false && isTimeWindowActive(g, now))
       .map(g => `group:${g.id}`),
   ]));
-  const dashboardListKeys = sortedGroupKeys.filter(k => {
-    if (!k.startsWith('group:')) return false;
-    const id = parseInt(k.split(':')[1]);
-    const g = groups.find(gr => gr.id === id);
-    return g?.type === 'list' && g?.show_on_dashboard !== false;
-  });
+  const dashboardListKeys = Array.from(new Set([
+    ...sortedGroupKeys.filter(k => {
+      if (!k.startsWith('group:')) return false;
+      const id = parseInt(k.split(':')[1]);
+      const g = groups.find(gr => gr.id === id);
+      return g?.type === 'list' && g?.show_on_dashboard !== false;
+    }),
+    ...groups
+      .filter(g => g.type === 'list' && g.show_on_dashboard !== false)
+      .map(g => `group:${g.id}`),
+  ]));
   const inboxKey = sortedGroupKeys.find(k => k === 'inbox');
 
   const handleRemoveFromGroup = async (taskId: number, currentGroupId: number) => {
@@ -1396,12 +1401,19 @@ function DashboardContent() {
       })();
   };
 
-  const renderTasksList = (tasksList: Task[], sectionId?: number, currentGroupId?: number) => {
+  // listKey identifica de forma única cada bloco/lista renderizado na tela.
+  // Uma mesma tarefa pode aparecer em mais de um bloco simultaneamente (ex:
+  // vinculada a um projeto E a um bloco de tempo), então o id do dnd-kit
+  // precisa ser qualificado por bloco — do contrário duas instâncias com o
+  // mesmo id disputam o registro interno do dnd-kit e o DragOverlay é
+  // posicionado com base no node errado (card não acompanha o cursor).
+  const renderTasksList = (tasksList: Task[], listKey: string, currentGroupId?: number) => {
     return (
-      <SortableContext items={tasksList.map(t => `task-${t.id}`)} strategy={verticalListSortingStrategy}>
+      <SortableContext items={tasksList.map(t => `task-${listKey}-${t.id}`)} strategy={verticalListSortingStrategy}>
         {tasksList.map(task => (
           <SortableTaskItem
             key={task.id}
+            dragId={`task-${listKey}-${task.id}`}
             task={task}
             currentGroupId={currentGroupId}
             groups={groups}
@@ -1435,7 +1447,7 @@ function DashboardContent() {
               ({groupTasks.length})
             </span>
           </div>
-          {renderTasksList(groupTasks, sectionId ?? undefined)}
+          {renderTasksList(groupTasks, `section-${sectionId ?? 'none'}-${group.key}`)}
         </div>
       );
     });
@@ -1485,7 +1497,7 @@ function DashboardContent() {
             </div>
           </div>
           <div className="px-0 py-1">
-            {renderTasksList(groupTasks, undefined, blockType === 'group' ? parseInt(groupId.split(':')[1]) : undefined)}
+            {renderTasksList(groupTasks, `block-${groupId}`, blockType === 'group' ? parseInt(groupId.split(':')[1]) : undefined)}
           </div>
         </div>
       </div>
@@ -2206,9 +2218,9 @@ function DashboardContent() {
         <div className="space-y-0">
           {loading ? (
             <div className="text-center py-8 text-muted-foreground">Carregando...</div>
-          ) : filteredTasks.length === 0 ? (
+          ) : selectedGroup && filteredTasks.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
-              <p>{selectedGroup ? 'Nenhuma tarefa neste grupo.' : 'Nenhuma tarefa encontrada.'}</p>
+              <p>Nenhuma tarefa neste grupo.</p>
               <p className="text-sm mt-2">Adicione uma tarefa acima para começar.</p>
             </div>
           ) : (
@@ -2217,12 +2229,11 @@ function DashboardContent() {
               {!selectedGroup && (
                 <>
                   {/* Caixa de Entrada */}
-                  {!preferences.show_only_time_blocks && !preferences.show_only_lists && inboxKey && (() => {
-                    const tasks = groupedTasks[inboxKey];
-                    if (!tasks || tasks.length === 0) return null;
+                  {!preferences.show_only_time_blocks && !preferences.show_only_lists && (() => {
+                    const tasks = inboxKey ? (groupedTasks[inboxKey] || []) : [];
                     const pendingCount = tasks.filter(t => !t.is_completed).length;
                     return (
-                      <div key={inboxKey} className="mb-5">
+                      <div key="inbox" className="mb-5">
                         <div className="flex items-center justify-between mb-2 px-1">
                           <div className="flex items-center gap-2">
                             <div className="w-[3px] h-[15px] rounded-full flex-shrink-0 bg-primary" />
@@ -2231,7 +2242,12 @@ function DashboardContent() {
                           </div>
                         </div>
                         <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
-                          {renderTasksList(tasks)}
+                          {tasks.length > 0 && renderTasksList(tasks, 'inbox')}
+                          {tasks.length === 0 && (
+                            <div className="px-4 py-3 text-xs text-muted-foreground/50 text-center italic">
+                              Nenhuma tarefa na caixa de entrada
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -2269,7 +2285,7 @@ function DashboardContent() {
                   className="border rounded-[10px] overflow-hidden shadow-xs transition-colors duration-200"
                   style={getSoftCardStyle(selectedGroup.color)}
                 >
-                  {renderTasksList(filteredTasks, undefined, selectedGroup.id)}
+                  {renderTasksList(filteredTasks, `selected-group-${selectedGroup.id}`, selectedGroup.id)}
                 </div>
               )}
             </>

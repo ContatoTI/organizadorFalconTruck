@@ -19,6 +19,15 @@ interface SortableTaskItemProps {
   onPriorityChange?: (taskId: number, priority: string | null) => void;
   isOverlay?: boolean;
   isPending?: boolean;
+  /**
+   * ID único do dnd-kit para esta instância do card. Uma mesma tarefa pode
+   * aparecer em vários blocos do Dashboard ao mesmo tempo (projeto + bloco de
+   * tempo, por exemplo); sem um id qualificado por bloco, duas instâncias
+   * simultâneas do useSortable disputam o mesmo registro interno do dnd-kit e
+   * o DragOverlay acaba posicionado com base no node errado (offset visual).
+   * Default mantém compatibilidade para usos com uma única instância por tarefa.
+   */
+  dragId?: string;
 }
 
 export const SortableTaskItem = memo(function SortableTaskItem({
@@ -33,6 +42,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
   onPriorityChange,
   isOverlay = false,
   isPending = false,
+  dragId,
 }: SortableTaskItemProps) {
   const {
     attributes,
@@ -42,7 +52,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
     transition,
     isDragging,
   } = useSortable({
-    id: `task-${task.id}`,
+    id: dragId ?? `task-${task.id}`,
     data: {
       type: 'Task',
       task,
