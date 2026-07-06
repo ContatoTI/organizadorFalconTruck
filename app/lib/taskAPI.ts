@@ -163,7 +163,32 @@ class TaskAPI {
         if (!error && data) allTasks.push(...(data as Task[]));
       }
 
+      // Query 3: tarefas visíveis via pasta compartilhada ou tarefa compartilhada diretamente
+      // (usuário não é dono do projeto nem membro dele)
+      {
+        const client2 = client;
+        const [sectionSharesRes, taskSharesRes] = await Promise.all([
+          client2.from('section_shares').select('section_id').eq('user_id', userId),
+          client2.from('task_shares').select('task_id').eq('user_id', userId),
+        ]);
 
+        const sharedSectionIds = (sectionSharesRes.data || []).map(s => s.section_id);
+        const sharedTaskIds = (taskSharesRes.data || []).map(t => t.task_id);
+
+        if (sharedSectionIds.length > 0) {
+          let q = client.from('todos').select('*').in('section_id', sharedSectionIds);
+          if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
+          if (!filters?.showCompleted) q = q.eq('is_completed', false);
+          if (filters?.onlyToday) q = q.eq('due_date', new Date().toISOString().split('T')[0]);
+          const { data, error } = await q.order('created_at', { ascending: false });
+          if (!error && data) allTasks.push(...(data as Task[]));
+        }
+
+        if (sharedTaskIds.length > 0) {
+          const { data, error } = await client.from('todos').select('*').in('id', sharedTaskIds);
+          if (!error && data) allTasks.push(...(data as Task[]));
+        }
+      }
 
       // Deduplica por id
       const seen = new Set<number>();

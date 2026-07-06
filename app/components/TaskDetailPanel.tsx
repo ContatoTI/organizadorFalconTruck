@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Calendar, User, Clock } from 'lucide-react';
+import { X, Calendar, User, Clock, Share } from 'lucide-react';
 import { cn } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
 import type { Task, Group } from '@/types/index';
+import { ShareEntityDialog } from '@/app/components/ShareEntityDialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -45,18 +46,20 @@ function formatDateTime(dateStr: string): string {
 interface TaskDetailPanelProps {
   task: Task;
   groups: Group[];
+  currentUserId: string;
   onClose: () => void;
   onUpdate: (updatedTask: Task) => void;
   onMoveToGroup: (groupId: number) => void;
 }
 
-export function TaskDetailPanel({ task, groups, onClose, onUpdate, onMoveToGroup }: TaskDetailPanelProps) {
+export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate, onMoveToGroup }: TaskDetailPanelProps) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? '');
   const [status, setStatus] = useState(task.status ?? 'a_fazer');
   const [priority, setPriority] = useState(task.priority ?? '');
   const [dueDate, setDueDate] = useState(task.due_date ?? '');
   const [saving, setSaving] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const lists = groups.filter((g) => g.type === 'list');
@@ -331,11 +334,33 @@ export function TaskDetailPanel({ task, groups, onClose, onUpdate, onMoveToGroup
           <span className="text-xs text-muted-foreground">
             {saving ? 'Salvando...' : 'Todas as alterações são salvas automaticamente'}
           </span>
-          <Badge variant="outline" className="text-xs">
-            #{task.id}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {task.project_id && (
+              <button
+                type="button"
+                onClick={() => setShowShareDialog(true)}
+                className="flex items-center gap-1 px-2 py-1 rounded hover:bg-accent text-xs text-muted-foreground"
+                title="Compartilhar esta tarefa"
+              >
+                <Share className="w-3.5 h-3.5" /> Compartilhar
+              </button>
+            )}
+            <Badge variant="outline" className="text-xs">
+              #{task.id}
+            </Badge>
+          </div>
         </div>
       </div>
+
+      {showShareDialog && (
+        <ShareEntityDialog
+          open={showShareDialog}
+          onClose={() => setShowShareDialog(false)}
+          entityType="task"
+          entityId={task.id}
+          currentUserId={currentUserId}
+        />
+      )}
     </div>
   );
 }

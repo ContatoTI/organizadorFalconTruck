@@ -30,6 +30,8 @@ import { SortableTaskItem } from '@/app/components/SortableTaskItem';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
 import { InlineTaskCreator } from '@/app/components/InlineTaskCreator';
 import { ToastProvider, useToast } from '@/app/components/Toast';
+import { ToggleChips } from '@/app/components/ToggleChips';
+import { ShareEntityDialog } from '@/app/components/ShareEntityDialog';
 
 import { useDroppable } from '@dnd-kit/core';
 
@@ -97,6 +99,7 @@ function DashboardContent() {
   const [editingProjectName, setEditingProjectName] = useState(false);
   const [editingProjectNameDraft, setEditingProjectNameDraft] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
+  const [shareSectionTarget, setShareSectionTarget] = useState<Section | null>(null);
   const [searchUsers, setSearchUsers] = useState('');
   const [allUsers, setAllUsers] = useState<AppUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -116,6 +119,7 @@ function DashboardContent() {
   const lastPointerPos = useRef({ x: 0, y: 0 });
   const creatingSectionRef = useRef(false);
   const skipSectionsFetchRef = useRef(false);
+  const skipProjectsFetchRef = useRef(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('showCompleted');
@@ -139,8 +143,10 @@ function DashboardContent() {
   const [showDashboardConfig, setShowDashboardConfig] = useState(false);
   const [preferences, setPreferences] = useState<UserPreferences>({
     show_my_tasks_only: false,
-    show_only_time_blocks: false,
-    show_only_lists: false,
+    show_inbox: true,
+    show_time_blocks: true,
+    show_projects: true,
+    show_lists: true,
   });
   const togglingItemsRef = useRef<Set<number>>(new Set());
 
@@ -154,12 +160,20 @@ function DashboardContent() {
     if (togglingItemsRef.current.has(project.id)) return;
     togglingItemsRef.current.add(project.id);
     const next = !project.show_on_dashboard;
+    const previous = project.show_on_dashboard;
+    skipProjectsFetchRef.current = true;
+    setTimeout(() => { skipProjectsFetchRef.current = false; }, 1500);
     setProjects(prev => prev.map(p => p.id === project.id ? { ...p, show_on_dashboard: next } : p));
-    await client.from('projects').update({ show_on_dashboard: next }).eq('id', project.id);
-    toast(
-      next ? `${project.name} adicionado ao Dashboard` : `${project.name} ocultado do Dashboard`,
-      'success'
-    );
+    const { data: updated } = await client.from('projects').update({ show_on_dashboard: next }).eq('id', project.id).select();
+    if (!updated || updated.length === 0) {
+      setProjects(prev => prev.map(p => p.id === project.id ? { ...p, show_on_dashboard: previous } : p));
+      toast('Você não tem permissão para alterar a visibilidade deste projeto.', 'error');
+    } else {
+      toast(
+        next ? `${project.name} adicionado ao Dashboard` : `${project.name} ocultado do Dashboard`,
+        'success'
+      );
+    }
     togglingItemsRef.current.delete(project.id);
   };
 
@@ -237,7 +251,10 @@ function DashboardContent() {
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'projects' },
-          () => fetchProjects()
+          () => {
+            if (skipProjectsFetchRef.current) return;
+            fetchProjects();
+          }
         )
         .on(
           'postgres_changes',
@@ -257,6 +274,7 @@ function DashboardContent() {
         .subscribe();
 
       const handleProjectsUpdated = () => {
+        if (skipProjectsFetchRef.current) return;
         fetchProjects();
       };
       const handleInviteProcessed = () => {
@@ -831,11 +849,21 @@ function DashboardContent() {
   };
 
   const updateProjectName = async (newName: string) => {
-    if (!selectedProject || !newName.trim()) return;
+    if (!selectedProject || !newName.trim()) { setEditingProjectName(false); return; }
     const trimmed = newName.trim();
-    await projectAPI.updateProject(selectedProject.id, { name: trimmed });
-    setProjects(prev => prev.map(p => p.id === selectedProject.id ? { ...p, name: trimmed } : p));
+    if (trimmed === selectedProject.name) { setEditingProjectName(false); return; }
+    const projectId = selectedProject.id;
+    const previousName = selectedProject.name;
+    skipProjectsFetchRef.current = true;
+    setTimeout(() => { skipProjectsFetchRef.current = false; }, 1500);
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, name: trimmed } : p));
     setEditingProjectName(false);
+    const result = await projectAPI.updateProject(projectId, { name: trimmed });
+    if (!result.success) {
+      setProjects(prev => prev.map(p => p.id === projectId ? { ...p, name: previousName } : p));
+      toast(`Erro ao renomear projeto: ${result.error ?? 'tente novamente'}`, 'error');
+      return;
+    }
   };
 
   const deleteProject = async () => {
@@ -1462,7 +1490,7 @@ function DashboardContent() {
     const inner = (
       <div className="mb-5">
         <div
-          className="border rounded-[10px] overflow-hidden shadow-xs transition-colors duration-200"
+          className="border rounded-[10px] overflow-hidden transition-colors duration-200"
           style={surfaceStyle}
         >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 border-b border-border/40 gap-2" style={surfaceStyle}>
@@ -1680,6 +1708,22 @@ function DashboardContent() {
         </DialogContent>
       </Dialog>
 
+      {/* Modal de compartilhamento de pasta */}
+      {shareSectionTarget && user && (
+        <ShareEntityDialog
+          open={!!shareSectionTarget}
+          onClose={() => setShareSectionTarget(null)}
+          entityType="section"
+          entityId={shareSectionTarget.id}
+          currentUserId={user.id}
+          defaultAssigneeId={shareSectionTarget.default_assignee_id ?? null}
+          onDefaultAssigneeChange={(newAssigneeId) => {
+            setSections(prev => prev.map(s => s.id === shareSectionTarget.id ? { ...s, default_assignee_id: newAssigneeId } : s));
+            setShareSectionTarget(prev => prev ? { ...prev, default_assignee_id: newAssigneeId } : prev);
+          }}
+        />
+      )}
+
       {/* Modal de Personalização do Dashboard */}
       <Dialog open={showDashboardConfig} onOpenChange={(open) => !open && setShowDashboardConfig(false)}>
         <DialogContent className="sm:max-w-md max-h-[80vh] flex flex-col">
@@ -1687,60 +1731,6 @@ function DashboardContent() {
             <DialogTitle>Personalizar Dashboard</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto space-y-5 pr-2">
-            {/* Preferências Globais */}
-            <div className="rounded-xl border border-border/60 bg-card/30 overflow-hidden">
-              <div className="px-4 py-3 border-b border-border/40">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Preferências</h3>
-              </div>
-              <div className="p-4 space-y-4">
-                <label className="flex items-center justify-between cursor-pointer select-none">
-                  <div>
-                    <span className="text-sm font-medium">Mostrar só minhas tarefas</span>
-                    <p className="text-xs text-muted-foreground">Exibe apenas tarefas criadas por você</p>
-                  </div>
-                  <div
-                    onClick={() => setPreference('show_my_tasks_only', !preferences.show_my_tasks_only)}
-                    className={cn(
-                      "w-5 h-5 rounded border flex items-center justify-center transition-colors flex-shrink-0",
-                      preferences.show_my_tasks_only ? "bg-primary border-primary" : "border-slate-300 bg-white"
-                    )}
-                  >
-                    {preferences.show_my_tasks_only && <Check className="w-3 h-3 text-white" strokeWidth={2.5} />}
-                  </div>
-                </label>
-                <label className="flex items-center justify-between cursor-pointer select-none">
-                  <div>
-                    <span className="text-sm font-medium">Mostrar só blocos de tempo</span>
-                    <p className="text-xs text-muted-foreground">Oculta Caixa de Entrada, Projetos e Listas</p>
-                  </div>
-                  <div
-                    onClick={() => setPreference('show_only_time_blocks', !preferences.show_only_time_blocks)}
-                    className={cn(
-                      "w-5 h-5 rounded border flex items-center justify-center transition-colors flex-shrink-0",
-                      preferences.show_only_time_blocks ? "bg-primary border-primary" : "border-slate-300 bg-white"
-                    )}
-                  >
-                    {preferences.show_only_time_blocks && <Check className="w-3 h-3 text-white" strokeWidth={2.5} />}
-                  </div>
-                </label>
-                <label className="flex items-center justify-between cursor-pointer select-none">
-                  <div>
-                    <span className="text-sm font-medium">Mostrar só listas</span>
-                    <p className="text-xs text-muted-foreground">Oculta Caixa de Entrada, Projetos e Blocos de Tempo</p>
-                  </div>
-                  <div
-                    onClick={() => setPreference('show_only_lists', !preferences.show_only_lists)}
-                    className={cn(
-                      "w-5 h-5 rounded border flex items-center justify-center transition-colors flex-shrink-0",
-                      preferences.show_only_lists ? "bg-primary border-primary" : "border-slate-300 bg-white"
-                    )}
-                  >
-                    {preferences.show_only_lists && <Check className="w-3 h-3 text-white" strokeWidth={2.5} />}
-                  </div>
-                </label>
-              </div>
-            </div>
-
             {/* Projetos */}
             <div className="rounded-xl border border-border/60 bg-card/30 overflow-hidden">
               <div className="px-4 py-3 border-b border-border/40">
@@ -1845,7 +1835,8 @@ function DashboardContent() {
 
       {/* Sticky topbar */}
       <div className="sticky top-0 z-10 bg-card border-b border-border">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             {selectedProject && editingProjectName ? (
               <Input
@@ -1886,7 +1877,8 @@ function DashboardContent() {
               />
             </div>
           ) : null}
-          <div className="flex items-center gap-4 pr-10">
+        </div>
+          <div className="flex items-center gap-2 pr-10 flex-wrap border-t border-border/60 pt-3">
             {(selectedGroup || selectedProject) && (
               <Button variant="ghost" size="sm" onClick={() => router.push('/')} className="rounded-full h-7 text-xs gap-1">
                 <XCircle className="w-3.5 h-3.5" /> Limpar filtro
@@ -1912,33 +1904,23 @@ function DashboardContent() {
                 className="rounded-full h-7 text-xs gap-1"
               />
             )}
-            <Button variant="ghost" size="sm" onClick={() => setShowDashboardConfig(true)} className="rounded-full h-7 text-xs gap-1" title="Personalizar Dashboard">
-              <Settings className="w-3 h-3" /> Personalizar
+            <ToggleChips
+              className="flex-1 min-w-0"
+              options={[
+                ...(!selectedGroup && !selectedProject ? [
+                  { key: 'inbox', label: 'Caixa de Entrada', checked: preferences.show_inbox, onChange: (v: boolean) => setPreference('show_inbox', v), title: 'Mostrar tarefas sem bloco ou projeto' },
+                  { key: 'time-blocks', label: 'Blocos de Tempo', checked: preferences.show_time_blocks, onChange: (v: boolean) => setPreference('show_time_blocks', v), title: 'Mostrar blocos de tempo ativos' },
+                  { key: 'projects', label: 'Projetos', checked: preferences.show_projects, onChange: (v: boolean) => setPreference('show_projects', v), title: 'Mostrar projetos' },
+                  { key: 'lists', label: 'Listas', checked: preferences.show_lists, onChange: (v: boolean) => setPreference('show_lists', v), title: 'Mostrar listas' },
+                  { key: 'my-tasks', label: 'Minhas tarefas', checked: preferences.show_my_tasks_only, onChange: (v: boolean) => setPreference('show_my_tasks_only', v), title: 'Mostrar só tarefas criadas por você' },
+                ] : []),
+                { key: 'completed', label: 'Concluídas', checked: showCompleted, onChange: (v: boolean) => { setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }, title: 'Incluir tarefas concluídas' },
+                { key: 'today', label: 'Só hoje', checked: onlyToday, onChange: (v: boolean) => setOnlyToday(v), title: 'Mostrar só tarefas de hoje' },
+              ]}
+            />
+            <Button variant="ghost" size="icon" onClick={() => setShowDashboardConfig(true)} className="rounded-full h-7 w-7" title="Personalizar Dashboard">
+              <Settings className="w-3.5 h-3.5" />
             </Button>
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
-              <div
-                onClick={() => { const v = !showCompleted; setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }}
-                className={cn(
-                  "w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0",
-                  showCompleted ? "bg-primary border-primary" : "border-slate-300 bg-white"
-                )}
-              >
-                {showCompleted && <Check className="w-2.5 h-2.5 text-white" strokeWidth={2.5} />}
-              </div>
-              <span className="text-[12px] text-slate-500">Concluídas</span>
-            </label>
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
-              <div
-                onClick={() => setOnlyToday(!onlyToday)}
-                className={cn(
-                  "w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0",
-                  onlyToday ? "bg-primary border-primary" : "border-slate-300 bg-white"
-                )}
-              >
-                {onlyToday && <Check className="w-2.5 h-2.5 text-white" strokeWidth={2.5} />}
-              </div>
-              <span className="text-[12px] text-slate-500">Só hoje</span>
-            </label>
           </div>
         </div>
       </div>
@@ -1985,7 +1967,7 @@ function DashboardContent() {
                 <Card
                   key={section.id}
                   className={cn(
-                    "border-border/60 overflow-hidden shadow-card transition-all duration-200"
+                    "border-border/60 overflow-hidden transition-all duration-200"
                   )}
                   style={getSoftCardStyle(selectedProject?.color)}
                 >
@@ -2064,6 +2046,15 @@ function DashboardContent() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        onClick={() => setShareSectionTarget(section)}
+                        className="h-8 w-8 text-muted-foreground/50 hover:text-primary"
+                        title="Compartilhar pasta"
+                      >
+                        <Share className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => deleteSection(section.id)}
                         className="h-8 w-8 text-muted-foreground/50 hover:text-destructive"
                       >
@@ -2092,7 +2083,7 @@ function DashboardContent() {
               {getTasksBySection(null).length > 0 && (
               <Card
                   className={cn(
-                    "border-border/60 overflow-hidden shadow-card transition-all duration-200"
+                    "border-border/60 overflow-hidden transition-all duration-200"
                   )}
                   style={getSoftCardStyle(selectedProject?.color)}
                 >
@@ -2229,7 +2220,7 @@ function DashboardContent() {
               {!selectedGroup && (
                 <>
                   {/* Caixa de Entrada */}
-                  {!preferences.show_only_time_blocks && !preferences.show_only_lists && (() => {
+                  {preferences.show_inbox && (() => {
                     const tasks = inboxKey ? (groupedTasks[inboxKey] || []) : [];
                     const pendingCount = tasks.filter(t => !t.is_completed).length;
                     return (
@@ -2254,7 +2245,7 @@ function DashboardContent() {
                   })()}
 
                   {/* Blocos de Tempo */}
-                  {!preferences.show_only_lists && dashboardTimeKeys.length > 0 && (
+                  {preferences.show_time_blocks && dashboardTimeKeys.length > 0 && (
                     <div className="mb-6">
                       <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Blocos de Tempo</h2>
                       {dashboardTimeKeys.map(groupId => renderDashboardBlock(groupId, 'group'))}
@@ -2262,7 +2253,7 @@ function DashboardContent() {
                   )}
 
                   {/* Projetos */}
-                  {!preferences.show_only_time_blocks && !preferences.show_only_lists && dashboardProjectKeys.length > 0 && (
+                  {preferences.show_projects && dashboardProjectKeys.length > 0 && (
                     <div className="mb-6">
                       <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Projetos</h2>
                       {dashboardProjectKeys.map(groupId => renderDashboardBlock(groupId, 'project'))}
@@ -2270,7 +2261,7 @@ function DashboardContent() {
                   )}
 
                   {/* Listas */}
-                  {!preferences.show_only_time_blocks && dashboardListKeys.length > 0 && (
+                  {preferences.show_lists && dashboardListKeys.length > 0 && (
                     <div className="mb-6">
                       <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Listas</h2>
                       {dashboardListKeys.map(groupId => renderDashboardBlock(groupId, 'group'))}
@@ -2282,7 +2273,7 @@ function DashboardContent() {
               {/* Quando tem grupo selecionado: lista compacta única */}
               {selectedGroup && (
                 <div
-                  className="border rounded-[10px] overflow-hidden shadow-xs transition-colors duration-200"
+                  className="border rounded-[10px] overflow-hidden transition-colors duration-200"
                   style={getSoftCardStyle(selectedGroup.color)}
                 >
                   {renderTasksList(filteredTasks, `selected-group-${selectedGroup.id}`, selectedGroup.id)}
@@ -2296,10 +2287,11 @@ function DashboardContent() {
       </div>{/* end page content */}
 
       {/* Task Detail Panel */}
-      {selectedTask && (
+      {selectedTask && user && (
         <TaskDetailPanel
           task={selectedTask}
           groups={groups}
+          currentUserId={user.id}
           onClose={() => setSelectedTask(null)}
           onUpdate={(updatedTask) => {
             setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));

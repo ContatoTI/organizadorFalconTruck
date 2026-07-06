@@ -45,6 +45,23 @@ export interface Task {
   creator_name?: string;
   linked_view_group_ids?: number[];
   isSyncing?: boolean;
+  assignee_id?: string | null;
+  assignee_name?: string;
+}
+
+// ============= COMPARTILHAMENTO GRANULAR (pasta/tarefa) =============
+export interface SectionShare {
+  id: number;
+  section_id: number;
+  user_id: string;
+  created_at?: string;
+}
+
+export interface TaskShare {
+  id: number;
+  task_id: number;
+  user_id: string;
+  created_at?: string;
 }
 
 // ============= VINCULO TAREFA-GRUPO (task_view_groups) =============
@@ -104,6 +121,7 @@ export interface Section {
   title: string;
   order: number;
   created_at?: string;
+  default_assignee_id?: string | null;
 }
 
 // ============= FINANCAS =============
@@ -137,6 +155,8 @@ export type FinanceType = Finance['type'];
 // ============= PREFERENCIAS DO USUARIO =============
 export interface UserPreferences {
   show_my_tasks_only: boolean;
-  show_only_time_blocks: boolean;
-  show_only_lists: boolean;
+  show_inbox: boolean;
+  show_time_blocks: boolean;
+  show_projects: boolean;
+  show_lists: boolean;
 }
