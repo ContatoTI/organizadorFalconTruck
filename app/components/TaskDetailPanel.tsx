@@ -63,6 +63,7 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
   const [saving, setSaving] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [projectMembers, setProjectMembers] = useState<{user_id: string; full_name?: string; email?: string}[]>([]);
+  const [isProjectOwner, setIsProjectOwner] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const lists = groups.filter((g) => g.type === 'list');
@@ -148,6 +149,14 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
     setPriority(task.priority ?? '');
     setDueDate(task.due_date ?? '');
   }, [task]);
+
+  useEffect(() => {
+    if (task.project_id) {
+      projectAPI.isProjectOwner(task.project_id, currentUserId).then(setIsProjectOwner);
+    } else {
+      setIsProjectOwner(false);
+    }
+  }, [task.project_id, currentUserId]);
 
   useEffect(() => {
     if (task.project_id) {
@@ -308,19 +317,25 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
                 <label className="text-sm text-muted-foreground block mb-1">
                   Responsável
                 </label>
-                <Select value={task.assignee_id ?? ''} onValueChange={handleAssigneeChange}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Sem responsável" />
-                  </SelectTrigger>
-                  <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
-                    <SelectItem value="">Sem responsável</SelectItem>
-                    {projectMembers.map((member) => (
-                      <SelectItem key={member.user_id} value={member.user_id}>
-                        {member.full_name || member.email || 'Usuário'}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {isProjectOwner ? (
+                  <Select value={task.assignee_id ?? ''} onValueChange={handleAssigneeChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Sem responsável" />
+                    </SelectTrigger>
+                    <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
+                      <SelectItem value="">Sem responsável</SelectItem>
+                      {projectMembers.map((member) => (
+                        <SelectItem key={member.user_id} value={member.user_id}>
+                          {member.full_name || member.email || 'Usuário'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="w-full px-3 py-2 rounded-lg border border-input bg-muted/50 text-sm text-muted-foreground">
+                    {task.assignee_name || 'Sem responsável'}
+                  </div>
+                )}
               </div>
             )}
           </div>
