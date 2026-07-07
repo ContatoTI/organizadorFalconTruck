@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Calendar, User, Clock, Share } from 'lucide-react';
 import { cn } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
+import { projectAPI } from '@/app/lib/projectAPI';
+import { createClient } from '@/app/lib/supabase/Client';
 import type { Task, Group } from '@/types/index';
 import { ShareEntityDialog } from '@/app/components/ShareEntityDialog';
 import { Input } from '@/components/ui/input';
@@ -60,6 +62,7 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
   const [dueDate, setDueDate] = useState(task.due_date ?? '');
   const [saving, setSaving] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const [projectMembers, setProjectMembers] = useState<{user_id: string; full_name?: string; email?: string}[]>([]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const lists = groups.filter((g) => g.type === 'list');
@@ -113,6 +116,10 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
     save({ due_date: val || null });
   };
 
+  const handleAssigneeChange = (value: string | null) => {
+    save({ assignee_id: value || null });
+  };
+
   const handleMoveToGroup = (value: string | null) => {
     if (!value) return;
     const groupId = parseInt(value, 10);
@@ -141,6 +148,29 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
     setPriority(task.priority ?? '');
     setDueDate(task.due_date ?? '');
   }, [task]);
+
+  useEffect(() => {
+    if (task.project_id) {
+      projectAPI.getProjectMembers(task.project_id).then(async (members) => {
+        if (members.length === 0) return;
+        const userIds = members.map(m => m.user_id);
+        const client = createClient();
+        const { data: profiles } = await client
+          .from('profiles')
+          .select('id, full_name, email')
+          .in('id', userIds);
+        const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
+        setProjectMembers(members.map(m => {
+          const profile = profileMap.get(m.user_id);
+          return {
+            user_id: m.user_id,
+            full_name: profile?.full_name ?? undefined,
+            email: profile?.email ?? undefined,
+          };
+        }));
+      });
+    }
+  }, [task.project_id]);
 
   useEffect(() => {
     return () => {
@@ -271,6 +301,28 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
                 className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
+
+            {/* Assignee */}
+            {task.project_id && projectMembers.length > 0 && (
+              <div>
+                <label className="text-sm text-muted-foreground block mb-1">
+                  Responsável
+                </label>
+                <Select value={task.assignee_id ?? ''} onValueChange={handleAssigneeChange}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Sem responsável" />
+                  </SelectTrigger>
+                  <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
+                    <SelectItem value="">Sem responsável</SelectItem>
+                    {projectMembers.map((member) => (
+                      <SelectItem key={member.user_id} value={member.user_id}>
+                        {member.full_name || member.email || 'Usuário'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           {/* Move to list / time block */}

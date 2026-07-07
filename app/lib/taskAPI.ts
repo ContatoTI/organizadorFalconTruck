@@ -33,6 +33,25 @@ class TaskAPI {
   /**
    * Enriquecer tarefas com IDs dos grupos vinculados via task_view_groups
    */
+  private async enrichWithAssigneeNames(tasks: Task[]): Promise<Task[]> {
+    const assigneeIds = [...new Set(tasks.map(t => t.assignee_id).filter(Boolean))] as string[];
+    if (assigneeIds.length === 0) return tasks;
+
+    const client = createClient();
+    const { data: profiles } = await client
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', assigneeIds);
+
+    const nameMap = new Map<string, string>();
+    profiles?.forEach(p => nameMap.set(p.id, p.full_name || p.email || 'Usuário'));
+
+    return tasks.map(t => ({
+      ...t,
+      assignee_name: t.assignee_id ? nameMap.get(t.assignee_id) || undefined : undefined,
+    }));
+  }
+
   private async enrichWithLinkedGroups(tasks: Task[]): Promise<Task[]> {
     if (tasks.length === 0) return tasks;
 
@@ -73,7 +92,8 @@ class TaskAPI {
       if (error || !data) return null;
 
       const [enrichedTask] = await this.enrichWithCreatorNames([data as Task]);
-      const [fullyEnrichedTask] = await this.enrichWithLinkedGroups([enrichedTask]);
+      const [withAssignee] = await this.enrichWithAssigneeNames([enrichedTask]);
+      const [fullyEnrichedTask] = await this.enrichWithLinkedGroups([withAssignee]);
       
       return fullyEnrichedTask;
     } catch {
@@ -101,7 +121,8 @@ class TaskAPI {
         if (filters?.onlyToday) q = q.eq('due_date', new Date().toISOString().split('T')[0]);
         const { data, error } = await q.order('position', { ascending: true }).order('created_at', { ascending: true });
         if (error) throw error;
-        return this.enrichWithCreatorNames((data as Task[]) || []);
+        const withCreators = await this.enrichWithCreatorNames((data as Task[]) || []);
+        return this.enrichWithAssigneeNames(withCreators);
       }
 
       // Buscar tarefas em 2 queries separadas (mais robusto que or() com RLS complexo)
@@ -110,9 +131,8 @@ class TaskAPI {
         client.from('projects').select('id').eq('owner_id', userId),
       ]);
 
-      const projectIds = new Set<number>();
-      memberProjects.data?.forEach(m => projectIds.add(m.project_id));
-      ownProjects.data?.forEach(p => projectIds.add(p.id));
+      const memberProjectIds = (memberProjects.data || []).map(m => m.project_id);
+      const ownProjectIds = (ownProjects.data || []).map(p => p.id);
 
       const allTasks: Task[] = [];
 
@@ -139,11 +159,36 @@ class TaskAPI {
         if (!error && data) allTasks.push(...(data as Task[]));
       }
 
-      // Query 2: tarefas de projetos que o usuário é membro (criadas por outros)
-      if (projectIds.size > 0) {
+      // Query 2a: tarefas de projetos onde o usuário é dono (todas as tarefas)
+      if (ownProjectIds.length > 0) {
         let q = client.from('todos').select('*')
-          .in('project_id', Array.from(projectIds))
-          .neq('user_id', userId); // evita duplicar as pessoais
+          .in('project_id', ownProjectIds)
+          .neq('user_id', userId);
+        if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
+        if (filters?.groupId) {
+          const { data: linked } = await client
+            .from('task_view_groups')
+            .select('task_id')
+            .eq('view_group_id', filters.groupId);
+          const linkedIds = (linked || []).map(l => l.task_id);
+          if (linkedIds.length > 0) {
+            q = q.or(`view_group_id.eq.${filters.groupId},id.in.(${linkedIds.join(',')})`);
+          } else {
+            q = q.eq('view_group_id', filters.groupId);
+          }
+        }
+        if (!filters?.showCompleted) q = q.eq('is_completed', false);
+        if (filters?.onlyToday) q = q.eq('due_date', new Date().toISOString().split('T')[0]);
+        const { data, error } = await q.order('created_at', { ascending: false });
+        if (!error && data) allTasks.push(...(data as Task[]));
+      }
+
+      // Query 2b: tarefas de projetos onde o usuário é membro (apenas as atribuídas a ele)
+      if (memberProjectIds.length > 0) {
+        let q = client.from('todos').select('*')
+          .in('project_id', memberProjectIds)
+          .eq('assignee_id', userId)
+          .neq('user_id', userId);
         if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
         if (filters?.groupId) {
           const { data: linked } = await client
@@ -201,7 +246,8 @@ class TaskAPI {
       // Enriquecer com linked_view_group_ids para exibição em grupos
       const tasksWithLinks = await this.enrichWithLinkedGroups(unique);
 
-      return this.enrichWithCreatorNames(tasksWithLinks);
+      const withCreators = await this.enrichWithCreatorNames(tasksWithLinks);
+      return this.enrichWithAssigneeNames(withCreators);
     } catch (error) {
       console.error('Erro ao buscar tarefas:', error);
       return [];

@@ -22,6 +22,7 @@ export interface Tables {
       description: string | null
       priority: string | null
       status: string | null
+      assignee_id: string | null
       created_at: string
     }
     Insert: {
@@ -38,6 +39,7 @@ export interface Tables {
       description?: string | null
       priority?: string | null
       status?: string | null
+      assignee_id?: string | null
       created_at?: string
     }
     Update: {
@@ -54,6 +56,7 @@ export interface Tables {
       description?: string | null
       priority?: string | null
       status?: string | null
+      assignee_id?: string | null
       created_at?: string
     }
   }
