@@ -25,6 +25,16 @@ export interface DeclineNotification {
   created_at: string;
 }
 
+export interface TaskReviewNotification {
+  id: number;
+  task_id: number;
+  task_title: string;
+  sender_name: string;
+  type: string;
+  note: string | null;
+  created_at: string;
+}
+
 class NotificationAPI {
   /**
    * Buscar TODAS as notificações em queries paralelas
@@ -98,6 +108,42 @@ class NotificationAPI {
       }));
 
     return { pendingInvites, declineNotifications };
+  }
+
+  async getTaskReviewNotifications(userId: string): Promise<TaskReviewNotification[]> {
+    const client = createClient();
+    const { data } = await client
+      .from('task_review_notifications')
+      .select('id, task_id, task_title, sender_name, type, note, created_at')
+      .eq('user_id', userId)
+      .eq('is_read', false)
+      .order('created_at', { ascending: false });
+
+    return (data || []) as TaskReviewNotification[];
+  }
+
+  async createTaskReviewNotification(
+    userId: string,
+    taskId: number,
+    taskTitle: string,
+    senderName: string,
+    type: string = 'review',
+    note?: string
+  ): Promise<void> {
+    const client = createClient();
+    await client.from('task_review_notifications').insert({
+      user_id: userId,
+      task_id: taskId,
+      task_title: taskTitle,
+      sender_name: senderName,
+      type,
+      note: note || null,
+    });
+  }
+
+  async dismissTaskReviewNotification(id: number): Promise<void> {
+    const client = createClient();
+    await client.from('task_review_notifications').delete().eq('id', id);
   }
 
   async getPendingInvites(userId: string): Promise<PendingInvite[]> {

@@ -3618,9 +3618,9 @@ CREATE TABLE public.todos (
     "position" integer DEFAULT 0 NOT NULL,
     description text,
     priority text,
-    status text DEFAULT 'a_fazer'::text,
+    status text DEFAULT 'A_FAZER'::text,
     CONSTRAINT todos_priority_check CHECK ((priority = ANY (ARRAY['baixa'::text, 'media'::text, 'alta'::text, 'urgente'::text]))),
-    CONSTRAINT todos_status_check CHECK ((status = ANY (ARRAY['a_fazer'::text, 'em_andamento'::text, 'concluida'::text])))
+    CONSTRAINT todos_status_check CHECK ((status = ANY (ARRAY['A_FAZER'::text, 'EM_ANDAMENTO'::text, 'REVISAO'::text, 'CONCLUIDO'::text])))
 );
 
 

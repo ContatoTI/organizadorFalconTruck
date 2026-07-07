@@ -65,6 +65,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pendingInvites, setPendingInvites] = useState<any[]>([]);
   const [declineNotifications, setDeclineNotifications] = useState<any[]>([]);
+  const [taskReviewNotifications, setTaskReviewNotifications] = useState<any[]>([]);
   const userRef = useRef(user);
   const projectsRef = useRef<Project[]>(projects);
   const pendingInvitesRef = useRef(pendingInvites);
@@ -152,15 +153,20 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     if (!curUser) return;
 
     try {
-      const { pendingInvites: invites, declineNotifications: declined } =
-        await notificationAPI.getUserNotifications(curUser.id);
+      const [{ pendingInvites: invites, declineNotifications: declined }, taskReviews] =
+        await Promise.all([
+          notificationAPI.getUserNotifications(curUser.id),
+          notificationAPI.getTaskReviewNotifications(curUser.id),
+        ]);
 
       setPendingInvites(invites);
       setDeclineNotifications(declined);
+      setTaskReviewNotifications(taskReviews);
     } catch (error) {
       console.error('Error fetching notifications:', error);
       setPendingInvites([]);
       setDeclineNotifications([]);
+      setTaskReviewNotifications([]);
     }
   };
 
@@ -171,6 +177,13 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'project_invites' },
+        () => {
+          fetchNotifications();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'task_review_notifications' },
         () => {
           fetchNotifications();
         }
@@ -271,6 +284,11 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     fetchNotifications();
   };
 
+  const dismissTaskReviewNotification = async (id: number) => {
+    await notificationAPI.dismissTaskReviewNotification(id);
+    setTaskReviewNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
   const reinviteUser = async (projectId: number, userId: string) => {
     const curUser = userRef.current;
     if (!curUser) return;
@@ -295,7 +313,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     fetchNotifications();
   };
 
-  const totalNotifications = pendingInvites.length + declineNotifications.length;
+  const totalNotifications = pendingInvites.length + declineNotifications.length + taskReviewNotifications.length;
 
   // Helper para lidar com strings que podem ser JSON ou não
   const getParsedValue = useCallback((val: any) => {
@@ -566,10 +584,12 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
             isOpen={showNotifications}
             pendingInvites={pendingInvites}
             declineNotifications={declineNotifications}
+            taskReviewNotifications={taskReviewNotifications}
             onAcceptInvite={acceptInviteFromBell}
             onDeclineInvite={declineInviteFromBell}
             onReinviteUser={reinviteUser}
             onDismissDecline={dismissDeclineNotification}
+            onDismissTaskReview={dismissTaskReviewNotification}
             onClose={() => setShowNotifications(false)}
           />
         </div>

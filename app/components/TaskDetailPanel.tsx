@@ -5,6 +5,7 @@ import { X, Calendar, User, Clock, Share } from 'lucide-react';
 import { cn } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { projectAPI } from '@/app/lib/projectAPI';
+import { notificationAPI } from '@/app/lib/notificationAPI';
 import { createClient } from '@/app/lib/supabase/Client';
 import type { Task, Group } from '@/types/index';
 import { ShareEntityDialog } from '@/app/components/ShareEntityDialog';
@@ -22,10 +23,21 @@ import {
 import { Badge } from '@/components/ui/badge';
 
 const STATUS_OPTIONS = [
-  { value: 'a_fazer', label: 'A fazer' },
-  { value: 'em_andamento', label: 'Em andamento' },
-  { value: 'concluida', label: 'Concluída' },
+  { value: 'A_FAZER', label: 'A fazer' },
+  { value: 'EM_ANDAMENTO', label: 'Em andamento' },
+  { value: 'REVISAO', label: 'Revisão' },
+  { value: 'CONCLUIDO', label: 'Concluído' },
 ] as const;
+
+function getAllowedStatuses(current: string | null): string[] {
+  switch (current) {
+    case 'A_FAZER': return ['A_FAZER', 'EM_ANDAMENTO'];
+    case 'EM_ANDAMENTO': return ['EM_ANDAMENTO', 'REVISAO'];
+    case 'REVISAO': return ['REVISAO', 'EM_ANDAMENTO', 'CONCLUIDO'];
+    case 'CONCLUIDO': return ['CONCLUIDO', 'A_FAZER'];
+    default: return ['A_FAZER', 'EM_ANDAMENTO'];
+  }
+}
 
 const PRIORITY_OPTIONS = [
   { value: 'baixa', label: 'Baixa', color: 'bg-green-600' },
@@ -49,15 +61,16 @@ interface TaskDetailPanelProps {
   task: Task;
   groups: Group[];
   currentUserId: string;
+  projectOwnerId?: string | null;
   onClose: () => void;
   onUpdate: (updatedTask: Task) => void;
   onMoveToGroup: (groupId: number) => void;
 }
 
-export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate, onMoveToGroup }: TaskDetailPanelProps) {
+export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, onClose, onUpdate, onMoveToGroup }: TaskDetailPanelProps) {
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? '');
-  const [status, setStatus] = useState(task.status ?? 'a_fazer');
+  const [status, setStatus] = useState(task.status ?? 'A_FAZER');
   const [priority, setPriority] = useState(task.priority ?? '');
   const [dueDate, setDueDate] = useState(task.due_date ?? '');
   const [saving, setSaving] = useState(false);
@@ -69,6 +82,13 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
 
   const lists = groups.filter((g) => g.type === 'list');
   const timeBlocks = groups.filter((g) => g.type === 'time');
+
+  const allowedStatuses = getAllowedStatuses(status);
+  const filteredStatusOptions = STATUS_OPTIONS.filter(opt => allowedStatuses.includes(opt.value));
+
+  const isTaskOwner = task.user_id === currentUserId;
+  const canManageReview = isTaskOwner || isProjectOwner;
+  const isReviewLocked = status === 'REVISAO' && !canManageReview;
 
   const save = useCallback(async (updates: Partial<Task>) => {
     setSaving(true);
@@ -100,10 +120,28 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
   };
 
   const handleStatusChange = (value: string | null) => {
-    const val = value ?? 'a_fazer';
+    const val = value ?? 'A_FAZER';
+    const prevStatus = task.status;
     setStatus(val);
-    const isCompleted = val === 'concluida';
+    const isCompleted = val === 'CONCLUIDO';
     save({ status: val, is_completed: isCompleted });
+    if (val === 'REVISAO') {
+      const ownerId = task.project_id ? projectOwnerId : task.user_id;
+      if (ownerId && ownerId !== currentUserId) {
+        notificationAPI.createTaskReviewNotification(ownerId, task.id, task.title,
+          task.creator_name || 'Usuário');
+      }
+    } else if (prevStatus === 'REVISAO' && val === 'CONCLUIDO') {
+      if (task.user_id && task.user_id !== currentUserId) {
+        notificationAPI.createTaskReviewNotification(task.user_id, task.id, task.title,
+          task.creator_name || 'Usuário', 'approved');
+      }
+    } else if (prevStatus === 'REVISAO' && val === 'EM_ANDAMENTO') {
+      if (task.user_id && task.user_id !== currentUserId) {
+        notificationAPI.createTaskReviewNotification(task.user_id, task.id, task.title,
+          task.creator_name || 'Usuário', 'rejected', 'Há erros a corrigir.');
+      }
+    }
   };
 
   const handlePriorityChange = (value: string | null) => {
@@ -146,7 +184,7 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
   useEffect(() => {
     setTitle(task.title);
     setDescription(task.description ?? '');
-    setStatus(task.status ?? 'a_fazer');
+    setStatus(task.status ?? 'A_FAZER');
     setPriority(task.priority ?? '');
     setDueDate(task.due_date ?? '');
   }, [task]);
@@ -256,20 +294,25 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
               <label className="text-sm text-muted-foreground block mb-1">
                 Status
               </label>
-              <Select value={status} onValueChange={handleStatusChange}>
+              <Select value={status} onValueChange={handleStatusChange} disabled={isReviewLocked}>
                 <SelectTrigger className="w-full">
                   <SelectValue>
                     {(value: string) => STATUS_OPTIONS.find((opt) => opt.value === value)?.label ?? value}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
-                  {STATUS_OPTIONS.map((opt) => (
+                  {filteredStatusOptions.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
                       {opt.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {isReviewLocked && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Apenas o proprietário pode aprovar ou reprovar a revisão.
+                </p>
+              )}
             </div>
 
             {/* Priority */}

@@ -4,7 +4,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { cn, getColorFromString, getInitials } from '@/app/lib/utils';
 import type { Task, Group } from '@/types/index';
 import { isToday } from 'date-fns';
-import { X, XCircle, Loader2, AlertCircle } from 'lucide-react';
+import { X, XCircle, Loader2, AlertCircle, Check } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export interface AssigneeCandidate {
@@ -24,6 +24,8 @@ interface SortableTaskItemProps {
   onDelete: (taskId: number) => void;
   onPriorityChange?: (taskId: number, priority: string | null) => void;
   onStatusChange?: (taskId: number) => void;
+  onApprove?: (taskId: number) => void;
+  onReject?: (taskId: number) => void;
   assigneeCandidates?: AssigneeCandidate[];
   onAssigneeChange?: (taskId: number, assigneeId: string | null) => void;
   isOverlay?: boolean;
@@ -50,6 +52,8 @@ export const SortableTaskItem = memo(function SortableTaskItem({
   onDelete,
   onPriorityChange,
   onStatusChange,
+  onApprove,
+  onReject,
   assigneeCandidates,
   onAssigneeChange,
   isOverlay = false,
@@ -217,28 +221,49 @@ export const SortableTaskItem = memo(function SortableTaskItem({
       )}
 
       {/* Status badge */}
-      {onStatusChange ? (
+      {task.status === 'REVISAO' && onApprove && onReject ? (
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            onClick={(e) => { e.stopPropagation(); onApprove(task.id); }}
+            className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700 hover:bg-green-200 transition-colors flex items-center gap-0.5"
+            title="Aprovar"
+          >
+            <Check className="w-2.5 h-2.5" /> Aprovar
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onReject(task.id); }}
+            className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-yellow-100 text-yellow-700 hover:bg-yellow-200 transition-colors flex items-center gap-0.5"
+            title="Reprovar"
+          >
+            <XCircle className="w-2.5 h-2.5" /> Reprovar
+          </button>
+        </div>
+      ) : onStatusChange ? (
         <button
           onClick={(e) => { e.stopPropagation(); onStatusChange(task.id); }}
           className={cn(
             "text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity",
-            (!task.status || task.status === 'a_fazer') && "bg-slate-100 text-slate-500",
-            task.status === 'em_andamento' && "bg-blue-50 text-blue-600",
-            task.status === 'concluida' && "bg-green-50 text-green-600",
+            (!task.status || task.status === 'A_FAZER') && "bg-slate-100 text-slate-500",
+            task.status === 'EM_ANDAMENTO' && "bg-blue-50 text-blue-600",
+            task.status === 'REVISAO' && "bg-yellow-50 text-yellow-600",
+            task.status === 'CONCLUIDO' && "bg-green-50 text-green-600",
           )}
         >
-          {(!task.status || task.status === 'a_fazer') ? 'A fazer' :
-           task.status === 'em_andamento' ? 'Em andamento' : 'Concluído'}
+          {(!task.status || task.status === 'A_FAZER') ? 'A fazer' :
+           task.status === 'EM_ANDAMENTO' ? 'Em andamento' :
+           task.status === 'REVISAO' ? 'Revisão' : 'Concluído'}
         </button>
       ) : (
         <span className={cn(
           "text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0",
-          (!task.status || task.status === 'a_fazer') && "bg-slate-100 text-slate-500",
-          task.status === 'em_andamento' && "bg-blue-50 text-blue-600",
-          task.status === 'concluida' && "bg-green-50 text-green-600",
+          (!task.status || task.status === 'A_FAZER') && "bg-slate-100 text-slate-500",
+          task.status === 'EM_ANDAMENTO' && "bg-blue-50 text-blue-600",
+          task.status === 'REVISAO' && "bg-yellow-50 text-yellow-600",
+          task.status === 'CONCLUIDO' && "bg-green-50 text-green-600",
         )}>
-          {(!task.status || task.status === 'a_fazer') ? 'A fazer' :
-           task.status === 'em_andamento' ? 'Em andamento' : 'Concluído'}
+          {(!task.status || task.status === 'A_FAZER') ? 'A fazer' :
+           task.status === 'EM_ANDAMENTO' ? 'Em andamento' :
+           task.status === 'REVISAO' ? 'Revisão' : 'Concluído'}
         </span>
       )}
 

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { X, Edit, Trash2, XCircle } from 'lucide-react';
 import { cn } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
-import { onTaskMoved, onTaskMoveError, shouldSkipRealtimeFetch, TaskMovedEvent, TaskMoveErrorEvent } from '@/app/lib/taskEvents';
+import { onTaskMoved, onTaskMoveError, shouldSkipRealtimeFetch, skipRealtimeFetch, TaskMovedEvent, TaskMoveErrorEvent } from '@/app/lib/taskEvents';
 import type { Task, Group } from '@/types/index';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -146,13 +146,15 @@ export default function TodosPage() {
       due_date: null,
       description: null,
       priority: null,
-      status: 'a_fazer',
+      status: 'A_FAZER',
       creator_name: (user as any).user_metadata?.full_name || user.email,
       isSyncing: true,
     } as Task));
 
     setTasks(prev => [...newOptimisticTasks, ...prev]);
     setNewTaskTitle('');
+
+    skipRealtimeFetch(1000);
 
     const results = await Promise.all(titles.map(title => 
       taskAPI.createTask(
@@ -192,13 +194,13 @@ export default function TodosPage() {
     // OPTIMISTIC UPDATE
     const newState = !task.is_completed;
     setTasks(prev => prev.map(t =>
-      t.id === task.id ? { ...t, is_completed: newState, status: newState ? 'concluida' : 'a_fazer', isSyncing: true } : t
+      t.id === task.id ? { ...t, is_completed: newState, status: newState ? 'CONCLUIDO' : 'A_FAZER', isSyncing: true } : t
     ));
 
     const result = await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
     if (!result.success) {
       setTasks(prev => prev.map(t =>
-        t.id === task.id ? { ...t, is_completed: !newState, status: !newState ? 'concluida' : 'a_fazer', isSyncing: false } : t
+        t.id === task.id ? { ...t, is_completed: !newState, status: !newState ? 'CONCLUIDO' : 'A_FAZER', isSyncing: false } : t
       ));
       toast('Erro ao atualizar tarefa', 'error');
     } else {

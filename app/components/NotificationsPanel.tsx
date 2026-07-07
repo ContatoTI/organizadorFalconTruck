@@ -1,6 +1,7 @@
 'use client';
 
-import { Bell, Folder, X, Check } from 'lucide-react';
+import { Bell, Folder, X, Check, ClipboardList } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 interface PendingInvite {
   id: number;
@@ -20,14 +21,25 @@ interface DeclineNotification {
   invited_user_id: string;
 }
 
+interface TaskReviewNotification {
+  id: number;
+  task_id: number;
+  task_title: string;
+  sender_name: string;
+  type: string;
+  note: string | null;
+}
+
 interface NotificationsPanelProps {
   isOpen: boolean;
   pendingInvites: PendingInvite[];
   declineNotifications: DeclineNotification[];
+  taskReviewNotifications: TaskReviewNotification[];
   onAcceptInvite: (inviteId: number, projectId: number) => void;
   onDeclineInvite: (inviteId: number) => void;
   onReinviteUser: (projectId: number, userId: string) => void;
   onDismissDecline: (inviteId: number) => void;
+  onDismissTaskReview: (id: number) => void;
   onClose: () => void;
 }
 
@@ -35,13 +47,19 @@ export function NotificationsPanel({
   isOpen,
   pendingInvites,
   declineNotifications,
+  taskReviewNotifications,
   onAcceptInvite,
   onDeclineInvite,
   onReinviteUser,
   onDismissDecline,
+  onDismissTaskReview,
   onClose,
 }: NotificationsPanelProps) {
+  const router = useRouter();
+
   if (!isOpen) return null;
+
+  const total = pendingInvites.length + declineNotifications.length + taskReviewNotifications.length;
 
   return (
     <div className="absolute right-0 mt-2 w-80 bg-card rounded-xl border border-border shadow-modal max-h-96 overflow-y-auto">
@@ -49,12 +67,57 @@ export function NotificationsPanel({
         <h3 className="font-semibold">Notificações</h3>
       </div>
 
-      {pendingInvites.length === 0 && declineNotifications.length === 0 ? (
+      {total === 0 ? (
         <div className="p-6 text-center text-sm text-muted-foreground">
           Nenhuma notificação
         </div>
       ) : (
         <div className="divide-y">
+          {taskReviewNotifications.map((notif) => {
+            const isApproved = notif.type === 'approved';
+            const isRejected = notif.type === 'rejected';
+            const isReview = !isApproved && !isRejected;
+            const iconBg = isApproved ? 'bg-green-100' : isRejected ? 'bg-red-100' : 'bg-yellow-100';
+            const iconColor = isApproved ? 'text-green-600' : isRejected ? 'text-red-600' : 'text-yellow-600';
+            const title = isApproved ? 'Tarefa aprovada' : isRejected ? 'Tarefa reprovada' : 'Tarefa enviada para revisão';
+            return (
+            <div key={`review-${notif.id}`} className="p-3">
+              <div className="flex items-start gap-3 mb-2">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+                  <ClipboardList className={`w-4 h-4 ${iconColor}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{title}</p>
+                  <p className="text-xs text-muted-foreground truncate">{notif.task_title}</p>
+                  {isRejected && notif.note && (
+                    <p className="text-xs text-red-500 mt-0.5 italic">{notif.note}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">Por {notif.sender_name}</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    router.push('/');
+                    setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent('open-task-detail', { detail: { taskId: notif.task_id } }));
+                    }, 100);
+                    onClose();
+                  }}
+                  className="flex-1 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-medium"
+                >
+                  Ver tarefa
+                </button>
+                <button
+                  onClick={() => onDismissTaskReview(notif.id)}
+                  className="px-3 py-1.5 rounded-md border hover:bg-accent text-xs"
+                >
+                  Dispensar
+                </button>
+              </div>
+            </div>
+          )})}
+
           {pendingInvites.map((invite) => (
             <div key={`invite-${invite.id}`} className="p-3">
               <div className="flex items-start gap-3 mb-2">

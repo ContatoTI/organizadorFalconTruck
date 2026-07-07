@@ -73,9 +73,10 @@ function DroppableBlock({ blockId, blockType, children }: { blockId: string; blo
 
 function DashboardContent() {
   const STATUS_GROUPS = [
-    { key: 'a_fazer', label: 'A fazer', match: (s: string | null | undefined) => !s || s === 'a_fazer' },
-    { key: 'em_andamento', label: 'Em andamento', match: (s: string | null | undefined) => s === 'em_andamento' },
-    { key: 'concluida', label: 'Concluído', match: (s: string | null | undefined) => s === 'concluida' },
+    { key: 'A_FAZER', label: 'A fazer', match: (s: string | null | undefined) => !s || s === 'A_FAZER' },
+    { key: 'EM_ANDAMENTO', label: 'Em andamento', match: (s: string | null | undefined) => s === 'EM_ANDAMENTO' },
+    { key: 'REVISAO', label: 'Revisão', match: (s: string | null | undefined) => s === 'REVISAO' },
+    { key: 'CONCLUIDO', label: 'Concluído', match: (s: string | null | undefined) => s === 'CONCLUIDO' },
   ] as const;
   const [user, setUser] = useState<AppUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -288,13 +289,25 @@ function DashboardContent() {
       const handleInviteProcessed = () => {
         fetchPendingInvites();
       };
+      const handleOpenTaskDetail = (e: Event) => {
+        const detail = (e as CustomEvent).detail;
+        if (detail?.taskId) {
+          setTasks(prev => {
+            const t = prev.find(t2 => t2.id === detail.taskId);
+            if (t) setTimeout(() => setSelectedTask(t), 0);
+            return prev;
+          });
+        }
+      };
       window.addEventListener('projects_updated', handleProjectsUpdated);
       window.addEventListener('invite_processed', handleInviteProcessed);
+      window.addEventListener('open-task-detail', handleOpenTaskDetail);
 
       return () => {
         client.removeChannel(channel);
         window.removeEventListener('projects_updated', handleProjectsUpdated);
         window.removeEventListener('invite_processed', handleInviteProcessed);
+        window.removeEventListener('open-task-detail', handleOpenTaskDetail);
       };
     }
   }, [user, selectedProjectId]);
@@ -321,7 +334,7 @@ function DashboardContent() {
               };
             }
             if (detail.action === 'move_to_group') {
-              return { ...t, view_group_id: detail.groupId, project_id: null, section_id: null, is_completed: false, status: 'a_fazer' };
+              return { ...t, view_group_id: detail.groupId, project_id: null, section_id: null, is_completed: false, status: 'A_FAZER' };
             }
             if (detail.action === 'move_to_project') {
               return { ...t, project_id: detail.projectId, view_group_id: null, section_id: null };
@@ -644,12 +657,15 @@ function DashboardContent() {
       due_date: null,
       description: description?.trim() || null,
       priority: null,
-      status: 'a_fazer',
+      status: 'A_FAZER',
       creator_name: (user as any).user_metadata?.full_name || user.email,
       isSyncing: true,
     } as Task));
 
     setTasks(prev => [...newOptimisticTasks, ...prev]);
+
+    skipRealtimeFetchRef.current = true;
+    setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
 
     const results = await Promise.all(titles.map(titleItem =>
       taskAPI.createTask(
@@ -716,12 +732,15 @@ function DashboardContent() {
       due_date: null,
       description: desc,
       priority: null,
-      status: 'a_fazer',
+      status: 'A_FAZER',
       creator_name: (user as any).user_metadata?.full_name || user.email,
       isSyncing: true,
     } as Task));
 
     setTasks(prev => [...newOptimisticTasks, ...prev]);
+
+    skipRealtimeFetchRef.current = true;
+    setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
 
     const results = await Promise.all(titles.map(title =>
       taskAPI.createTask(
@@ -768,13 +787,13 @@ function DashboardContent() {
     // OPTIMISTIC UPDATE
     const newState = !task.is_completed;
     setTasks(prev => prev.map(t =>
-      t.id === task.id ? { ...t, is_completed: newState, status: newState ? 'concluida' : 'a_fazer', isSyncing: true } : t
+      t.id === task.id ? { ...t, is_completed: newState, status: newState ? 'CONCLUIDO' : 'A_FAZER', isSyncing: true } : t
     ));
 
     const result = await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
     if (!result.success) {
       setTasks(prev => prev.map(t =>
-        t.id === task.id ? { ...t, is_completed: !newState, status: !newState ? 'concluida' : 'a_fazer', isSyncing: false } : t
+        t.id === task.id ? { ...t, is_completed: !newState, status: !newState ? 'CONCLUIDO' : 'A_FAZER', isSyncing: false } : t
       ));
       toast('Erro ao atualizar tarefa', 'error');
     } else {
@@ -817,17 +836,71 @@ function DashboardContent() {
     }
   };
 
+  const handleApproveTask = async (taskId: number) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || task.status !== 'REVISAO') return;
+    const original = { ...task };
+    setTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, status: 'CONCLUIDO', is_completed: true, isSyncing: true } : t
+    ));
+    const result = await taskAPI.updateTask(taskId, { status: 'CONCLUIDO', is_completed: true });
+    if (!result.success) {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...original, isSyncing: false } : t));
+      toast('Erro ao aprovar tarefa', 'error');
+    } else {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isSyncing: false } : t));
+      const senderName = (user as any)?.user_metadata?.full_name || user?.email || 'Usuário';
+      if (task.user_id && task.user_id !== user?.id) {
+        notificationAPI.createTaskReviewNotification(task.user_id, task.id, task.title, senderName, 'approved');
+      }
+    }
+  };
+
+  const handleRejectTask = async (taskId: number) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || task.status !== 'REVISAO') return;
+    const reason = window.prompt('Motivo da reprovação (opcional):')?.trim() || undefined;
+    const original = { ...task };
+    setTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, status: 'EM_ANDAMENTO', is_completed: false, isSyncing: true } : t
+    ));
+    const result = await taskAPI.updateTask(taskId, { status: 'EM_ANDAMENTO', is_completed: false });
+    if (!result.success) {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...original, isSyncing: false } : t));
+      toast('Erro ao reprovar tarefa', 'error');
+    } else {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isSyncing: false } : t));
+      const senderName = (user as any)?.user_metadata?.full_name || user?.email || 'Usuário';
+      if (task.user_id && task.user_id !== user?.id) {
+        notificationAPI.createTaskReviewNotification(task.user_id, task.id, task.title, senderName, 'rejected',
+          reason || 'Há erros a corrigir.');
+      }
+    }
+  };
+
   const handleStatusCycle = async (taskId: number) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
+
+    if (task.status === 'REVISAO') {
+      const project = task.project_id ? projects.find(p => p.id === task.project_id) : null;
+      const isTaskOwner = task.user_id === user?.id;
+      const isProjectOwner = project ? project.owner_id === user?.id : false;
+      if (!isTaskOwner && !isProjectOwner) {
+        toast('Apenas o proprietário pode aprovar ou reprovar a revisão.', 'error');
+        return;
+      }
+    }
+
     const cycle: Record<string, string> = {
-      'a_fazer': 'em_andamento',
-      'em_andamento': 'concluida',
-      'concluida': 'a_fazer',
+      'A_FAZER': 'EM_ANDAMENTO',
+      'EM_ANDAMENTO': 'REVISAO',
+      'REVISAO': 'CONCLUIDO',
+      'CONCLUIDO': 'A_FAZER',
     };
-    const current = task.status || 'a_fazer';
-    const next = cycle[current] || 'a_fazer';
-    const isCompleted = next === 'concluida';
+    const current = task.status || 'A_FAZER';
+    const next = cycle[current] || 'A_FAZER';
+    const isCompleted = next === 'CONCLUIDO';
     const original = { ...task };
     setTasks(prev => prev.map(t =>
       t.id === taskId ? { ...t, status: next, is_completed: isCompleted, isSyncing: true } : t
@@ -838,6 +911,19 @@ function DashboardContent() {
       toast('Erro ao atualizar status', 'error');
     } else {
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isSyncing: false } : t));
+      if (next === 'REVISAO') {
+        const project = task.project_id ? projects.find(p => p.id === task.project_id) : null;
+        const ownerId = project ? project.owner_id : task.user_id;
+        if (ownerId && ownerId !== user?.id) {
+          notificationAPI.createTaskReviewNotification(ownerId, task.id, task.title,
+            (user as any)?.user_metadata?.full_name || user?.email || 'Usuário');
+        }
+      } else if (current === 'REVISAO' && next === 'CONCLUIDO') {
+        const senderName = (user as any)?.user_metadata?.full_name || user?.email || 'Usuário';
+        if (task.user_id && task.user_id !== user?.id) {
+          notificationAPI.createTaskReviewNotification(task.user_id, task.id, task.title, senderName, 'approved');
+        }
+      }
     }
   };
 
@@ -1399,7 +1485,7 @@ function DashboardContent() {
       // Como as colunas visuais (A fazer / Em andamento / Concluído) são
       // SortableContexts separados, soltar numa coluna diferente precisa
       // persistir o novo status, senão a tarefa "volta" no próximo fetch.
-      let targetStatus: string | null = activeTask.status ?? 'a_fazer';
+      let targetStatus: string | null = activeTask.status ?? 'A_FAZER';
 
       if (overType === 'Section') {
          targetSectionId = over.data.current!.id === 'unsectioned' ? null : over.data.current!.id as number;
@@ -1409,9 +1495,9 @@ function DashboardContent() {
          const overTask = over.data.current!.task as Task;
          targetSectionId = overTask.section_id;
          // NOVO: herda o status da tarefa sobre a qual foi solto
-         targetStatus = overTask.status ?? 'a_fazer';
+         targetStatus = overTask.status ?? 'A_FAZER';
 
-         const tasksInSection = getTasksBySectionAndStatus(targetSectionId, targetStatus ?? 'a_fazer');
+         const tasksInSection = getTasksBySectionAndStatus(targetSectionId, targetStatus ?? 'A_FAZER');
          targetIndex = tasksInSection.findIndex(t => t.id === overTask.id);
          
          const activeIndex = tasksInSection.findIndex(t => t.id === activeTask.id);
@@ -1423,7 +1509,7 @@ function DashboardContent() {
       if (targetSectionId === undefined) return;
 
       const originalTaskForReorder = { ...activeTask };
-      const statusChanged = targetStatus !== (activeTask.status ?? 'a_fazer');
+      const statusChanged = targetStatus !== (activeTask.status ?? 'A_FAZER');
 
       // Optimistic update
       setTasks(prev => {
@@ -1433,7 +1519,7 @@ function DashboardContent() {
            const [movedTask] = next.splice(taskIndex, 1);
            movedTask.section_id = targetSectionId;
            movedTask.status = targetStatus ?? movedTask.status; // NOVO: aplica status otimisticamente
-           movedTask.is_completed = targetStatus === 'concluida'; // NOVO: mantém is_completed coerente
+           movedTask.is_completed = targetStatus === 'CONCLUIDO'; // NOVO: mantém is_completed coerente
            movedTask.isSyncing = true;
            
            // NOVO: calcula a posição absoluta considerando section_id + status,
@@ -1442,7 +1528,7 @@ function DashboardContent() {
            let sectionCount = 0;
            for (let i = 0; i < next.length; i++) {
              const sameSection = next[i].section_id === targetSectionId;
-             const sameStatus = (next[i].status ?? 'a_fazer') === (targetStatus ?? 'a_fazer');
+             const sameStatus = (next[i].status ?? 'A_FAZER') === (targetStatus ?? 'A_FAZER');
              if (sameSection && sameStatus) {
                if (sectionCount === targetIndex) {
                  absoluteIndex = i;
@@ -1480,7 +1566,7 @@ function DashboardContent() {
         if (statusChanged) {
           const statusResult = await taskAPI.updateTask(activeTask.id, {
             status: targetStatus,
-            is_completed: targetStatus === 'concluida',
+            is_completed: targetStatus === 'CONCLUIDO',
           });
           if (!statusResult.success) {
             setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTaskForReorder : t));
@@ -1502,7 +1588,11 @@ function DashboardContent() {
   const renderTasksList = (tasksList: Task[], listKey: string, currentGroupId?: number) => {
     return (
       <SortableContext items={tasksList.map(t => `task-${listKey}-${t.id}`)} strategy={verticalListSortingStrategy}>
-        {tasksList.map(task => (
+        {tasksList.map(task => {
+          const project = task.project_id ? projects.find(p => p.id === task.project_id) : null;
+          const isOwner = task.user_id === user?.id || (project ? project.owner_id === user?.id : false);
+          const showReviewActions = task.status === 'REVISAO' && isOwner;
+          return (
           <SortableTaskItem
             key={task.id}
             dragId={`task-${listKey}-${task.id}`}
@@ -1515,12 +1605,14 @@ function DashboardContent() {
             onRemoveFromGroup={currentGroupId ? handleRemoveFromGroup : undefined}
             onDelete={deleteTask}
             onPriorityChange={handlePriorityChange}
-            onStatusChange={handleStatusCycle}
+            onStatusChange={showReviewActions ? undefined : handleStatusCycle}
+            onApprove={showReviewActions ? handleApproveTask : undefined}
+            onReject={showReviewActions ? handleRejectTask : undefined}
             assigneeCandidates={assigneeCandidates}
             onAssigneeChange={handleAssigneeChange}
             isPending={!!pendingTaskIds[task.id]}
           />
-        ))}
+        )})}
       </SortableContext>
     );
   };
@@ -2007,7 +2099,11 @@ function DashboardContent() {
               </div>
             ) : (
               <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
-                {getProjectTasks().map(task => (
+                {getProjectTasks().map(task => {
+                  const project = task.project_id ? projects.find(p => p.id === task.project_id) : null;
+                  const isOwner = task.user_id === user?.id || (project ? project.owner_id === user?.id : false);
+                  const showReviewActions = task.status === 'REVISAO' && isOwner;
+                  return (
                   <SortableTaskItem
                     key={task.id}
                     dragId={`task-assigned-${task.id}`}
@@ -2018,11 +2114,13 @@ function DashboardContent() {
                     onSelect={setSelectedTask}
                     onDelete={deleteTask}
                     onPriorityChange={handlePriorityChange}
-                    onStatusChange={handleStatusCycle}
+                    onStatusChange={showReviewActions ? undefined : handleStatusCycle}
+                    onApprove={showReviewActions ? handleApproveTask : undefined}
+                    onReject={showReviewActions ? handleRejectTask : undefined}
                     // ponytail: assignee não pode reatribuir, só owner; esconde dropdown
                     isPending={!!pendingTaskIds[task.id]}
                   />
-                ))}
+                )})}
               </div>
             )
           ) : (
@@ -2390,6 +2488,7 @@ function DashboardContent() {
           task={selectedTask}
           groups={groups}
           currentUserId={user.id}
+          projectOwnerId={selectedProject?.owner_id ?? null}
           onClose={() => setSelectedTask(null)}
           onUpdate={(updatedTask) => {
             setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));

@@ -375,7 +375,7 @@ class TaskAPI {
 
       const { error } = await client
         .from('todos')
-        .update({ is_completed: newState, status: newState ? 'concluida' : 'a_fazer' })
+        .update({ is_completed: newState, status: newState ? 'CONCLUIDO' : 'A_FAZER' })
         .eq('id', taskId);
 
       if (error) return { success: false, error: error.message };
@@ -476,7 +476,7 @@ class TaskAPI {
           project_id: null,
           section_id: null,
           is_completed: false,
-          status: 'a_fazer'
+          status: 'A_FAZER'
         })
         .eq('id', taskId);
 

@@ -5,7 +5,7 @@ import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
 import { Plus, X, ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import { taskAPI } from '@/app/lib/taskAPI';
-import { onTaskMoved, onTaskMoveError, shouldSkipRealtimeFetch, TaskMovedEvent, TaskMoveErrorEvent } from '@/app/lib/taskEvents';
+import { onTaskMoved, onTaskMoveError, shouldSkipRealtimeFetch, skipRealtimeFetch, TaskMovedEvent, TaskMoveErrorEvent } from '@/app/lib/taskEvents';
 import { cn } from '@/app/lib/utils';
 import type { Task, Group, User } from '@/types/index';
 import { Button } from '@/components/ui/button';
@@ -184,13 +184,15 @@ export default function CalendarPage() {
       due_date: dateStr,
       description: null,
       priority: null,
-      status: 'a_fazer',
+      status: 'A_FAZER',
       creator_name: (user as any).user_metadata?.full_name || user.email,
       isSyncing: true,
     } as Task));
 
     setTasks(prev => [...prev, ...newOptimisticTasks]);
     setShowModal(false);
+
+    skipRealtimeFetch(1000);
 
     const results = await Promise.all(titles.map(title =>
       taskAPI.createTask(
@@ -246,13 +248,13 @@ export default function CalendarPage() {
     // OPTIMISTIC UPDATE
     const newState = !task.is_completed;
     setTasks(prev => prev.map(t =>
-      t.id === task.id ? { ...t, is_completed: newState, status: newState ? 'concluida' : 'a_fazer', isSyncing: true } as any : t
+      t.id === task.id ? { ...t, is_completed: newState, status: newState ? 'CONCLUIDO' : 'A_FAZER', isSyncing: true } as any : t
     ));
 
     const result = await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
     if (!result.success) {
       setTasks(prev => prev.map(t =>
-        t.id === task.id ? { ...t, is_completed: !newState, status: !newState ? 'concluida' : 'a_fazer', isSyncing: false } as any : t
+        t.id === task.id ? { ...t, is_completed: !newState, status: !newState ? 'CONCLUIDO' : 'A_FAZER', isSyncing: false } as any : t
       ));
       alert('Erro ao atualizar tarefa');
     } else {
