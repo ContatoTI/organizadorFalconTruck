@@ -7,6 +7,12 @@ import { isToday } from 'date-fns';
 import { X, XCircle, Loader2, AlertCircle } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
+export interface AssigneeCandidate {
+  user_id: string;
+  full_name?: string | null;
+  email?: string | null;
+}
+
 interface SortableTaskItemProps {
   task: Task;
   currentGroupId?: number;
@@ -17,6 +23,9 @@ interface SortableTaskItemProps {
   onRemoveFromGroup?: (taskId: number, groupId: number) => void;
   onDelete: (taskId: number) => void;
   onPriorityChange?: (taskId: number, priority: string | null) => void;
+  onStatusChange?: (taskId: number) => void;
+  assigneeCandidates?: AssigneeCandidate[];
+  onAssigneeChange?: (taskId: number, assigneeId: string | null) => void;
   isOverlay?: boolean;
   isPending?: boolean;
   /**
@@ -40,6 +49,9 @@ export const SortableTaskItem = memo(function SortableTaskItem({
   onRemoveFromGroup,
   onDelete,
   onPriorityChange,
+  onStatusChange,
+  assigneeCandidates,
+  onAssigneeChange,
   isOverlay = false,
   isPending = false,
   dragId,
@@ -145,16 +157,57 @@ export const SortableTaskItem = memo(function SortableTaskItem({
         )}
       </div>
 
-      {/* Creator avatar */}
-      {task.creator_name && (
-        <div
-          className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-[9px] font-semibold text-white flex-shrink-0"
-          style={{ backgroundColor: getColorFromString(task.creator_name) }}
-          title={task.creator_name}
-        >
-          {getInitials(task.creator_name)}
-        </div>
-      )}
+      {/* Assignee / Creator avatar */}
+      {(() => {
+        // ponytail: mostra o assignee se houver, senão o criador. Se onAssigneeChange
+        // e assigneeCandidates existirem, transforma em dropdown para reatribuir inline.
+        const avatarName = task.assignee_name || task.creator_name;
+        if (!avatarName) return null;
+        const avatarColor = getColorFromString(avatarName);
+        const avatarInitials = getInitials(avatarName);
+
+        if (onAssigneeChange && assigneeCandidates && assigneeCandidates.length > 0) {
+          return (
+            <Select
+              value={task.assignee_id ?? 'none'}
+              onValueChange={(val) => onAssigneeChange(task.id, val === 'none' ? null : val)}
+            >
+              <SelectTrigger
+                className="h-[22px] w-[22px] rounded-full border-0 p-0 flex items-center justify-center [&>svg:last-child]:hidden data-[size=default]:h-[22px] data-[size=default]:w-[22px] cursor-pointer flex-shrink-0"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                title={avatarName}
+              >
+                <div
+                  className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-[9px] font-semibold text-white"
+                  style={{ backgroundColor: avatarColor }}
+                >
+                  {avatarInitials}
+                </div>
+              </SelectTrigger>
+              <SelectContent side="bottom" align="end" className="bg-popover border border-border shadow-lg z-[100]">
+                <SelectItem value="none">Sem responsável</SelectItem>
+                {assigneeCandidates.map((c) => (
+                  <SelectItem key={c.user_id} value={c.user_id}>
+                    {c.full_name || c.email || 'Usuário'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          );
+        }
+
+        return (
+          <div
+            className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-[9px] font-semibold text-white flex-shrink-0"
+            style={{ backgroundColor: avatarColor }}
+            title={avatarName}
+          >
+            {avatarInitials}
+          </div>
+        );
+      })()}
 
       {/* Time / date indicator */}
       {(timeDisplay || dateDisplay) && (
@@ -164,15 +217,30 @@ export const SortableTaskItem = memo(function SortableTaskItem({
       )}
 
       {/* Status badge */}
-      <span className={cn(
-        "text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0",
-        (!task.status || task.status === 'a_fazer') && "bg-slate-100 text-slate-500",
-        task.status === 'em_andamento' && "bg-blue-50 text-blue-600",
-        task.status === 'concluida' && "bg-green-50 text-green-600",
-      )}>
-        {(!task.status || task.status === 'a_fazer') ? 'A fazer' :
-         task.status === 'em_andamento' ? 'Em andamento' : 'Concluído'}
-      </span>
+      {onStatusChange ? (
+        <button
+          onClick={(e) => { e.stopPropagation(); onStatusChange(task.id); }}
+          className={cn(
+            "text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity",
+            (!task.status || task.status === 'a_fazer') && "bg-slate-100 text-slate-500",
+            task.status === 'em_andamento' && "bg-blue-50 text-blue-600",
+            task.status === 'concluida' && "bg-green-50 text-green-600",
+          )}
+        >
+          {(!task.status || task.status === 'a_fazer') ? 'A fazer' :
+           task.status === 'em_andamento' ? 'Em andamento' : 'Concluído'}
+        </button>
+      ) : (
+        <span className={cn(
+          "text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0",
+          (!task.status || task.status === 'a_fazer') && "bg-slate-100 text-slate-500",
+          task.status === 'em_andamento' && "bg-blue-50 text-blue-600",
+          task.status === 'concluida' && "bg-green-50 text-green-600",
+        )}>
+          {(!task.status || task.status === 'a_fazer') ? 'A fazer' :
+           task.status === 'em_andamento' ? 'Em andamento' : 'Concluído'}
+        </span>
+      )}
 
       {/* Priority badge */}
       {onPriorityChange && (

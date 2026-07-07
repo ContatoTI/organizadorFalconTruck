@@ -134,17 +134,18 @@ class ProjectAPI {
   }
 
   /**
-   * IDs de projetos onde o usuário só tem acesso via pasta ou tarefa compartilhada
-   * (não é dono nem membro do projeto inteiro)
+   * IDs de projetos onde o usuário só tem acesso via pasta/tarefa compartilhada
+   * ou via tarefa atribuída a ele — não é dono nem membro do projeto inteiro.
    */
   async _fetchSharedOnlyProjectIds(
     client: ReturnType<typeof createClient>,
     userId: string
   ): Promise<number[]> {
     try {
-      const [sectionSharesRes, taskSharesRes] = await Promise.all([
+      const [sectionSharesRes, taskSharesRes, assignedTasksRes] = await Promise.all([
         client.from('section_shares').select('section_id').eq('user_id', userId),
         client.from('task_shares').select('task_id').eq('user_id', userId),
+        client.from('todos').select('project_id').eq('assignee_id', userId).not('project_id', 'is', null),
       ]);
 
       const sectionIds = (sectionSharesRes.data || []).map(s => s.section_id);
@@ -162,6 +163,7 @@ class ProjectAPI {
       const projectIds = new Set<number>();
       (sectionsRes.data || []).forEach(s => projectIds.add(s.project_id));
       (tasksRes.data || []).forEach(t => { if (t.project_id != null) projectIds.add(t.project_id); });
+      (assignedTasksRes.data || []).forEach(t => { if (t.project_id != null) projectIds.add(t.project_id); });
 
       return Array.from(projectIds);
     } catch (error) {

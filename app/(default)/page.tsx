@@ -84,6 +84,10 @@ function DashboardContent() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [loading, setLoading] = useState(true);
+  // ponytail: para usuários que só têm tarefas atribuídas (não dono, não membro),
+  // renderizamos uma lista plana em vez da árvore de seções. Default false = vista
+  // restritiva por padrão; membros/donos viram true assim que a consulta resolve.
+  const [isProjectMemberState, setIsProjectMemberState] = useState(false);
   const [showCompleted, setShowCompleted] = useState(true);
   const [onlyToday, setOnlyToday] = useState(false);
   const [now, setNow] = useState(new Date());
@@ -102,6 +106,8 @@ function DashboardContent() {
   const [shareSectionTarget, setShareSectionTarget] = useState<Section | null>(null);
   const [searchUsers, setSearchUsers] = useState('');
   const [allUsers, setAllUsers] = useState<AppUser[]>([]);
+  // ponytail: candidatos a assignee carregados uma vez para o dropdown inline no card.
+  const [assigneeCandidates, setAssigneeCandidates] = useState<{user_id: string; full_name?: string | null; email?: string | null}[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [projectMembers, setProjectMembers] = useState<{userId: string; memberId: number}[]>([]);
   const [projectPendingInvites, setProjectPendingInvites] = useState<string[]>([]);
@@ -207,6 +213,8 @@ function DashboardContent() {
   const selectedProjectId = searchParams.get('project');
   const selectedGroup = selectedGroupId ? groups.find(g => g.id === parseInt(selectedGroupId)) : null;
   const selectedProject = selectedProjectId ? projects.find(p => p.id === parseInt(selectedProjectId)) : null;
+  // ponytail: assignee-only = vê o projeto só porque tem tarefa atribuída; sem permissões extras.
+  const isOnlyAssignee = !!(selectedProject && user && selectedProject.owner_id !== user.id && !isProjectMemberState);
 
   useEffect(() => {
     const getUser = async () => {
@@ -376,6 +384,17 @@ function DashboardContent() {
     }
   }, [user, selectedProjectId, selectedGroupId]);
 
+  useEffect(() => {
+    if (!user) return;
+    client.from('profiles').select('id, full_name, email').limit(500).then(({ data }) => {
+      setAssigneeCandidates((data || []).map((p: any) => ({
+        user_id: p.id,
+        full_name: p.full_name as string | null,
+        email: p.email as string | null,
+      })));
+    });
+  }, [user]);
+
   // ponytail: auto-refresh a cada 30s para reavaliar janelas de horário
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 30000);
@@ -403,6 +422,11 @@ function DashboardContent() {
     } else {
       setSections(prev => prev.length === 0 ? prev : []);
     }
+  }, [user, selectedProjectId]);
+
+  useEffect(() => {
+    if (!user || !selectedProjectId) { setIsProjectMemberState(false); return; }
+    projectAPI.isProjectMember(parseInt(selectedProjectId), user.id).then(setIsProjectMemberState);
   }, [user, selectedProjectId]);
 
   // Faz merge dos projetos retornados pelo servidor com o estado local.
@@ -788,6 +812,46 @@ function DashboardContent() {
     if (!result.success) {
       setTasks(prev => prev.map(t => t.id === taskId ? { ...original!, isSyncing: false } : t));
       toast('Erro ao atualizar prioridade', 'error');
+    } else {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isSyncing: false } : t));
+    }
+  };
+
+  const handleStatusCycle = async (taskId: number) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const cycle: Record<string, string> = {
+      'a_fazer': 'em_andamento',
+      'em_andamento': 'concluida',
+      'concluida': 'a_fazer',
+    };
+    const current = task.status || 'a_fazer';
+    const next = cycle[current] || 'a_fazer';
+    const isCompleted = next === 'concluida';
+    const original = { ...task };
+    setTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, status: next, is_completed: isCompleted, isSyncing: true } : t
+    ));
+    const result = await taskAPI.updateTask(taskId, { status: next, is_completed: isCompleted });
+    if (!result.success) {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...original, isSyncing: false } : t));
+      toast('Erro ao atualizar status', 'error');
+    } else {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isSyncing: false } : t));
+    }
+  };
+
+  const handleAssigneeChange = async (taskId: number, assigneeId: string | null) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const original = { ...task };
+    setTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, assignee_id: assigneeId, isSyncing: true } : t
+    ));
+    const result = await taskAPI.updateTask(taskId, { assignee_id: assigneeId });
+    if (!result.success) {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...original, isSyncing: false } : t));
+      toast('Erro ao atribuir tarefa', 'error');
     } else {
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isSyncing: false } : t));
     }
@@ -1451,6 +1515,9 @@ function DashboardContent() {
             onRemoveFromGroup={currentGroupId ? handleRemoveFromGroup : undefined}
             onDelete={deleteTask}
             onPriorityChange={handlePriorityChange}
+            onStatusChange={handleStatusCycle}
+            assigneeCandidates={assigneeCandidates}
+            onAssigneeChange={handleAssigneeChange}
             isPending={!!pendingTaskIds[task.id]}
           />
         ))}
@@ -1867,7 +1934,7 @@ function DashboardContent() {
             )}
             <p className="text-[11px] text-muted-foreground mt-0.5">{todayDisplay}</p>
           </div>
-          {(selectedProject || selectedGroup) && user ? (
+          {(selectedProject || selectedGroup) && user && !isOnlyAssignee ? (
             <div className="flex items-center gap-2">
               <InlineTaskCreator
                 destination={selectedProject ? { type: 'project', id: selectedProject.id } : { type: 'group', id: selectedGroup!.id }}
@@ -1931,6 +1998,35 @@ function DashboardContent() {
       {/* MODO PROJETO: Seções expansíveis */}
       {selectedProject ? (
         <div className="space-y-4">
+          {isOnlyAssignee ? (
+            loading ? (
+              <div className="text-center py-8 text-muted-foreground">Carregando...</div>
+            ) : getProjectTasks().length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
+                <p>Nenhuma tarefa atribuída a você neste projeto.</p>
+              </div>
+            ) : (
+              <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
+                {getProjectTasks().map(task => (
+                  <SortableTaskItem
+                    key={task.id}
+                    dragId={`task-assigned-${task.id}`}
+                    task={task}
+                    groups={groups}
+                    userEmail={user?.email}
+                    onToggle={toggleTask}
+                    onSelect={setSelectedTask}
+                    onDelete={deleteTask}
+                    onPriorityChange={handlePriorityChange}
+                    onStatusChange={handleStatusCycle}
+                    // ponytail: assignee não pode reatribuir, só owner; esconde dropdown
+                    isPending={!!pendingTaskIds[task.id]}
+                  />
+                ))}
+              </div>
+            )
+          ) : (
+          <>
           {selectedProject.description && (
             <p className="text-sm text-muted-foreground px-1">{selectedProject.description}</p>
           )}
@@ -2202,6 +2298,8 @@ function DashboardContent() {
                 </Button>
               </div>
             </>
+          )}
+          </>
           )}
         </div>
       ) : (

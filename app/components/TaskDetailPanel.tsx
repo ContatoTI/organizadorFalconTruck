@@ -62,8 +62,9 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
   const [dueDate, setDueDate] = useState(task.due_date ?? '');
   const [saving, setSaving] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
-  const [projectMembers, setProjectMembers] = useState<{user_id: string; full_name?: string; email?: string}[]>([]);
+  const [assigneeCandidates, setAssigneeCandidates] = useState<{user_id: string; full_name?: string; email?: string}[]>([]);
   const [isProjectOwner, setIsProjectOwner] = useState(false);
+  const [canShare, setCanShare] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const lists = groups.filter((g) => g.type === 'list');
@@ -153,33 +154,30 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
   useEffect(() => {
     if (task.project_id) {
       projectAPI.isProjectOwner(task.project_id, currentUserId).then(setIsProjectOwner);
+      // canShare = dono ou membro do projeto. Não-membro (só assignee) não compartilha.
+      projectAPI.isProjectMember(task.project_id, currentUserId).then(setCanShare);
     } else {
       setIsProjectOwner(false);
+      setCanShare(false);
     }
   }, [task.project_id, currentUserId]);
 
+  // ponytail: dono pode atribuir a qualquer usuário do sistema, não só a membros.
+  // Carrega todos os perfis quando o usuário atual é o dono do projeto da tarefa.
   useEffect(() => {
-    if (task.project_id) {
-      projectAPI.getProjectMembers(task.project_id).then(async (members) => {
-        if (members.length === 0) return;
-        const userIds = members.map(m => m.user_id);
-        const client = createClient();
-        const { data: profiles } = await client
-          .from('profiles')
-          .select('id, full_name, email')
-          .in('id', userIds);
-        const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
-        setProjectMembers(members.map(m => {
-          const profile = profileMap.get(m.user_id);
-          return {
-            user_id: m.user_id,
-            full_name: profile?.full_name ?? undefined,
-            email: profile?.email ?? undefined,
-          };
-        }));
+    if (!task.project_id || !isProjectOwner) { setAssigneeCandidates([]); return; }
+    const client = createClient();
+    client.from('profiles')
+      .select('id, full_name, email')
+      .limit(500)
+      .then(({ data }) => {
+        setAssigneeCandidates((data || []).map(p => ({
+          user_id: p.id,
+          full_name: p.full_name ?? undefined,
+          email: p.email ?? undefined,
+        })));
       });
-    }
-  }, [task.project_id]);
+  }, [task.project_id, isProjectOwner]);
 
   useEffect(() => {
     return () => {
@@ -312,7 +310,7 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
             </div>
 
             {/* Assignee */}
-            {task.project_id && projectMembers.length > 0 && (
+            {task.project_id && (
               <div>
                 <label className="text-sm text-muted-foreground block mb-1">
                   Responsável
@@ -324,9 +322,9 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
                     </SelectTrigger>
                     <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
                       <SelectItem value="">Sem responsável</SelectItem>
-                      {projectMembers.map((member) => (
-                        <SelectItem key={member.user_id} value={member.user_id}>
-                          {member.full_name || member.email || 'Usuário'}
+                      {assigneeCandidates.map((candidate) => (
+                        <SelectItem key={candidate.user_id} value={candidate.user_id}>
+                          {candidate.full_name || candidate.email || 'Usuário'}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -402,7 +400,7 @@ export function TaskDetailPanel({ task, groups, currentUserId, onClose, onUpdate
             {saving ? 'Salvando...' : 'Todas as alterações são salvas automaticamente'}
           </span>
           <div className="flex items-center gap-2">
-            {task.project_id && (
+            {task.project_id && canShare && (
               <button
                 type="button"
                 onClick={() => setShowShareDialog(true)}
