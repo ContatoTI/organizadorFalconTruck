@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
-import { Plus, X, Check, ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
+import { Plus, X, ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { onTaskMoved, onTaskMoveError, shouldSkipRealtimeFetch, TaskMovedEvent, TaskMoveErrorEvent } from '@/app/lib/taskEvents';
 import { cn } from '@/app/lib/utils';
@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { InlineTaskCreator } from '@/app/components/InlineTaskCreator';
+import { ToggleChips } from '@/app/components/ToggleChips';
 
 export default function CalendarPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -277,18 +278,12 @@ export default function CalendarPage() {
       <div className="flex items-center gap-3 mb-8">
         <CalendarIcon className="w-8 h-8 text-primary" />
         <h1 className="text-3xl font-bold">Calendário</h1>
-        <label className="flex items-center gap-1.5 cursor-pointer select-none ml-auto">
-          <div
-            onClick={() => { const v = !showCompleted; setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }}
-            className={cn(
-              "w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0",
-              showCompleted ? "bg-primary border-primary" : "border-slate-300 bg-white"
-            )}
-          >
-            {showCompleted && <Check className="w-2.5 h-2.5 text-white" strokeWidth={2.5} />}
-          </div>
-          <span className="text-[12px] text-slate-500">Concluídas</span>
-        </label>
+        <ToggleChips
+          className="ml-auto"
+          options={[
+            { key: 'completed', label: 'Concluídas', checked: showCompleted, onChange: (v: boolean) => { setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }, title: 'Incluir tarefas concluídas' },
+          ]}
+        />
       </div>
 
       <Card className="p-6 shadow-card border-border">

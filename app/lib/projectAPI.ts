@@ -35,15 +35,19 @@ class ProjectAPI {
         ?.map(m => m.project_id)
         .filter(id => id != null) || [];
 
-      // Buscar projetos onde é MEMBRO (excluindo os que já é dono)
-      let memberProjects: Project[] = [];
-      if (memberProjectIds.length > 0) {
-        const ownedIds = new Set((ownedProjects || []).map(p => p.id));
-        const onlyMemberIds = memberProjectIds.filter(id => !ownedIds.has(id));
+      // Buscar IDs de projetos alcançados apenas por pasta ou tarefa compartilhada
+      // (usuário não é dono nem membro do projeto inteiro)
+      const sharedProjectIds = await this._fetchSharedOnlyProjectIds(client, userId);
 
-        if (onlyMemberIds.length > 0) {
-          memberProjects = await this._fetchMemberProjects(client, onlyMemberIds);
-        }
+      const ownedIds = new Set((ownedProjects || []).map(p => p.id));
+      const combinedIds = new Set([...memberProjectIds, ...sharedProjectIds]);
+
+      // Buscar projetos onde é MEMBRO ou tem pasta/tarefa compartilhada (excluindo os que já é dono)
+      let memberProjects: Project[] = [];
+      const onlyMemberIds = Array.from(combinedIds).filter(id => !ownedIds.has(id));
+
+      if (onlyMemberIds.length > 0) {
+        memberProjects = await this._fetchMemberProjects(client, onlyMemberIds);
       }
 
       // Combina e remove duplicatas
@@ -130,6 +134,43 @@ class ProjectAPI {
   }
 
   /**
+   * IDs de projetos onde o usuário só tem acesso via pasta ou tarefa compartilhada
+   * (não é dono nem membro do projeto inteiro)
+   */
+  async _fetchSharedOnlyProjectIds(
+    client: ReturnType<typeof createClient>,
+    userId: string
+  ): Promise<number[]> {
+    try {
+      const [sectionSharesRes, taskSharesRes] = await Promise.all([
+        client.from('section_shares').select('section_id').eq('user_id', userId),
+        client.from('task_shares').select('task_id').eq('user_id', userId),
+      ]);
+
+      const sectionIds = (sectionSharesRes.data || []).map(s => s.section_id);
+      const taskIds = (taskSharesRes.data || []).map(t => t.task_id);
+
+      const [sectionsRes, tasksRes] = await Promise.all([
+        sectionIds.length > 0
+          ? client.from('sections').select('project_id').in('id', sectionIds)
+          : Promise.resolve({ data: [] as { project_id: number }[] }),
+        taskIds.length > 0
+          ? client.from('todos').select('project_id').in('id', taskIds)
+          : Promise.resolve({ data: [] as { project_id: number | null }[] }),
+      ]);
+
+      const projectIds = new Set<number>();
+      (sectionsRes.data || []).forEach(s => projectIds.add(s.project_id));
+      (tasksRes.data || []).forEach(t => { if (t.project_id != null) projectIds.add(t.project_id); });
+
+      return Array.from(projectIds);
+    } catch (error) {
+      console.error('[ProjectAPI] Erro em _fetchSharedOnlyProjectIds:', error);
+      return [];
+    }
+  }
+
+  /**
    * Criar novo projeto
    */
   async createProject(
@@ -170,12 +211,16 @@ class ProjectAPI {
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const client = createClient();
-      const { error } = await client
+      const { data: updated, error } = await client
         .from('projects')
         .update(data)
-        .eq('id', projectId);
+        .eq('id', projectId)
+        .select();
 
       if (error) return { success: false, error: error.message };
+      if (!updated || updated.length === 0) {
+        return { success: false, error: 'Você não tem permissão para editar este projeto.' };
+      }
       return { success: true };
     } catch (error) {
       return { success: false, error: (error as Error).message };

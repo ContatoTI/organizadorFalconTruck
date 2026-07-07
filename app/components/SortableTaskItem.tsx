@@ -133,7 +133,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
           onClick={() => onSelect(task)}
           className={cn(
             "block w-full text-[13px] text-left truncate bg-transparent border-none p-0 cursor-pointer hover:text-primary transition-colors",
-            task.is_completed ? "line-through text-slate-400" : "text-slate-800"
+            task.is_completed ? "line-through text-muted-foreground" : "text-slate-800"
           )}
         >
           {task.title}

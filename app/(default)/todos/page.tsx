@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
-import { X, Edit, Trash2, Check, XCircle } from 'lucide-react';
+import { X, Edit, Trash2, XCircle } from 'lucide-react';
 import { cn } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { onTaskMoved, onTaskMoveError, shouldSkipRealtimeFetch, TaskMovedEvent, TaskMoveErrorEvent } from '@/app/lib/taskEvents';
@@ -18,6 +18,7 @@ import { Card } from '@/components/ui/card';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
 import { InlineTaskCreator } from '@/app/components/InlineTaskCreator';
 import { ToastProvider, useToast } from '@/app/components/Toast';
+import { ToggleChips } from '@/app/components/ToggleChips';
 
 export default function TodosPage() {
   const [user, setUser] = useState<any>(null);
@@ -297,18 +298,12 @@ export default function TodosPage() {
             ))}
           </SelectContent>
         </Select>
-        <label className="flex items-center gap-1.5 cursor-pointer select-none ml-auto">
-          <div
-            onClick={() => { const v = !showCompleted; setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }}
-            className={cn(
-              "w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0",
-              showCompleted ? "bg-primary border-primary" : "border-slate-300 bg-white"
-            )}
-          >
-            {showCompleted && <Check className="w-2.5 h-2.5 text-white" strokeWidth={2.5} />}
-          </div>
-          <span className="text-[12px] text-slate-500">Concluídas</span>
-        </label>
+        <ToggleChips
+          className="ml-auto"
+          options={[
+            { key: 'completed', label: 'Concluídas', checked: showCompleted, onChange: (v: boolean) => { setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }, title: 'Incluir tarefas concluídas' },
+          ]}
+        />
       </div>
 
       <div className="space-y-2">
@@ -457,10 +452,11 @@ export default function TodosPage() {
       </Dialog>
 
       {/* Task Detail Panel */}
-      {selectedTask && (
+      {selectedTask && user && (
         <TaskDetailPanel
           task={selectedTask}
           groups={groups}
+          currentUserId={user.id}
           onClose={() => setSelectedTask(null)}
           onUpdate={(updatedTask) => {
             setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
