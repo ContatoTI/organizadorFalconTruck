@@ -69,6 +69,20 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  // ponytail: realtime em view_groups — sincroniza blocos/listas entre abas/dispositivos.
+  // Refaz fetch apenas para o usuário dono da linha alterada (RLS já filtra no servidor).
+  useEffect(() => {
+    const channel = client
+      .channel('groups-context-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'view_groups' },
+        () => fetchGroups()
+      )
+      .subscribe();
+    return () => { client.removeChannel(channel); };
+  }, []);
+
   const refreshGroups = () => {
     fetchGroups();
   };

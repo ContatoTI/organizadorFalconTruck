@@ -46,6 +46,20 @@ export default function FinancesPage() {
     }
   }, [user]);
 
+  // ponytail: realtime em finance_transactions — reflete mudanças de outras abas/dispositivos sem refresh.
+  useEffect(() => {
+    if (!user) return;
+    const channel = client
+      .channel('finances-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'finance_transactions', filter: `user_id=eq.${user.id}` },
+        () => fetchTransactions()
+      )
+      .subscribe();
+    return () => { client.removeChannel(channel); };
+  }, [user]);
+
   const fetchTransactions = async () => {
     if (!user) return;
     setLoading(true);

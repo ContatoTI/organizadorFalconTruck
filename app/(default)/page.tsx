@@ -1020,20 +1020,25 @@ function DashboardContent() {
     if (!selectedProject || !user || selectedProject.owner_id !== user.id) return;
     if (!confirm(`Excluir "${selectedProject.name}"? As tarefas associadas voltarão para a Caixa de Entrada.`)) return;
     
-    // OPTIMISTIC UPDATE
+    // OPTIMISTIC UPDATE — tela e sidebar imediatamente, antes dos awaits.
     const projectId = selectedProject.id;
+    skipProjectsFetchRef.current = true;
+    setTimeout(() => { skipProjectsFetchRef.current = false; }, 1500);
     setProjects(projects.filter(p => p.id !== projectId));
     setTasks(prev => prev.map(t => t.project_id === projectId ? { ...t, project_id: null, section_id: null } : t));
+    window.dispatchEvent(new CustomEvent('projects_updated', { detail: { deletedId: projectId } }));
 
     // Garante que as tarefas voltem para a Caixa de Entrada (sem projeto e sem seção).
     await taskAPI.clearTasksFromProject(projectId);
     const { error } = await client.from('projects').delete().eq('id', projectId);
     
     if (error) {
+      // ponytail: restaura a sidebar — remove do deletedProjectIdsRef e re-busca.
+      skipProjectsFetchRef.current = false;
+      window.dispatchEvent(new CustomEvent('projects_updated', { detail: { restoredId: projectId } }));
       await fetchProjects();
       await fetchTasks(false);
     } else {
-      window.dispatchEvent(new CustomEvent('projects_updated'));
       window.dispatchEvent(new CustomEvent('tasks-updated'));
       router.push('/');
     }

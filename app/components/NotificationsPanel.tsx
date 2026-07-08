@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, Folder, X, Check, ClipboardList } from 'lucide-react';
+import { Bell, Folder, X, Check, ClipboardList, UserPlus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface PendingInvite {
@@ -40,6 +40,8 @@ interface NotificationsPanelProps {
   onReinviteUser: (projectId: number, userId: string) => void;
   onDismissDecline: (inviteId: number) => void;
   onDismissTaskReview: (id: number) => void;
+  onApproveTaskReview: (notifId: number, taskId: number) => void;
+  onRejectTaskReview: (notifId: number, taskId: number) => void;
   onClose: () => void;
 }
 
@@ -53,6 +55,8 @@ export function NotificationsPanel({
   onReinviteUser,
   onDismissDecline,
   onDismissTaskReview,
+  onApproveTaskReview,
+  onRejectTaskReview,
   onClose,
 }: NotificationsPanelProps) {
   const router = useRouter();
@@ -76,15 +80,20 @@ export function NotificationsPanel({
           {taskReviewNotifications.map((notif) => {
             const isApproved = notif.type === 'approved';
             const isRejected = notif.type === 'rejected';
-            const isReview = !isApproved && !isRejected;
-            const iconBg = isApproved ? 'bg-green-100' : isRejected ? 'bg-red-100' : 'bg-yellow-100';
-            const iconColor = isApproved ? 'text-green-600' : isRejected ? 'text-red-600' : 'text-yellow-600';
-            const title = isApproved ? 'Tarefa aprovada' : isRejected ? 'Tarefa reprovada' : 'Tarefa enviada para revisão';
+            const isAssigned = notif.type === 'assigned';
+            const isReview = notif.type === 'review';
+            const iconBg = isApproved ? 'bg-green-100' : isRejected ? 'bg-red-100' : isAssigned ? 'bg-blue-100' : 'bg-yellow-100';
+            const iconColor = isApproved ? 'text-green-600' : isRejected ? 'text-red-600' : isAssigned ? 'text-blue-600' : 'text-yellow-600';
+            const title = isApproved ? 'Tarefa aprovada' : isRejected ? 'Tarefa reprovada' : isAssigned ? 'Nova tarefa atribuída a você' : 'Tarefa enviada para revisão';
             return (
             <div key={`review-${notif.id}`} className="p-3">
               <div className="flex items-start gap-3 mb-2">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${iconBg}`}>
-                  <ClipboardList className={`w-4 h-4 ${iconColor}`} />
+                  {isAssigned ? (
+                    <UserPlus className={`w-4 h-4 ${iconColor}`} />
+                  ) : (
+                    <ClipboardList className={`w-4 h-4 ${iconColor}`} />
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{title}</p>
@@ -95,6 +104,22 @@ export function NotificationsPanel({
                   <p className="text-xs text-muted-foreground">Por {notif.sender_name}</p>
                 </div>
               </div>
+              {isReview && (
+                <div className="flex gap-2 mb-2">
+                  <button
+                    onClick={() => onApproveTaskReview(notif.id, notif.task_id)}
+                    className="flex-1 py-1.5 rounded-md bg-green-500 text-white hover:bg-green-600 text-xs font-medium"
+                  >
+                    Aprovar
+                  </button>
+                  <button
+                    onClick={() => onRejectTaskReview(notif.id, notif.task_id)}
+                    className="flex-1 py-1.5 rounded-md bg-red-500 text-white hover:bg-red-600 text-xs font-medium"
+                  >
+                    Reprovar
+                  </button>
+                </div>
+              )}
               <div className="flex gap-2">
                 <button
                   onClick={() => {

@@ -157,7 +157,12 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
   };
 
   const handleAssigneeChange = (value: string | null) => {
-    save({ assignee_id: value || null });
+    const newAssigneeId = value || null;
+    save({ assignee_id: newAssigneeId });
+    if (newAssigneeId && newAssigneeId !== task.assignee_id && newAssigneeId !== currentUserId) {
+      notificationAPI.createTaskReviewNotification(newAssigneeId, task.id, task.title,
+        task.creator_name || 'Usuário', 'assigned');
+    }
   };
 
   const handleMoveToGroup = (value: string | null) => {
@@ -286,6 +291,27 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
               className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary min-h-[100px] resize-y"
             />
           </div>
+
+          {/* Aprovar/Reprovar revisão */}
+          {status === 'REVISAO' && canManageReview && (
+            <div className="p-3 rounded-lg border border-yellow-300 bg-yellow-50 dark:bg-yellow-950/20 dark:border-yellow-900">
+              <p className="text-sm font-medium mb-2">Esta tarefa está aguardando revisão</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleStatusChange('CONCLUIDO')}
+                  className="flex-1 py-1.5 rounded-md bg-green-500 text-white hover:bg-green-600 text-xs font-medium"
+                >
+                  Aprovar
+                </button>
+                <button
+                  onClick={() => handleStatusChange('EM_ANDAMENTO')}
+                  className="flex-1 py-1.5 rounded-md bg-red-500 text-white hover:bg-red-600 text-xs font-medium"
+                >
+                  Reprovar
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Grid fields */}
           <div className="grid grid-cols-2 gap-4">

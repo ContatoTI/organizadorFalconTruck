@@ -44,6 +44,20 @@ export default function GoalsPage() {
     }
   }, [user]);
 
+  // ponytail: realtime em goals — reflete mudanças de outras abas/dispositivos sem refresh.
+  useEffect(() => {
+    if (!user) return;
+    const channel = client
+      .channel('goals-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'goals', filter: `user_id=eq.${user.id}` },
+        () => fetchGoals()
+      )
+      .subscribe();
+    return () => { client.removeChannel(channel); };
+  }, [user]);
+
   const fetchGoals = async () => {
     if (!user) return;
     setLoading(true);

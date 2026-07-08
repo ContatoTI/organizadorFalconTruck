@@ -76,6 +76,10 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
   declineNotificationsRef.current = declineNotifications;
 
   const togglingVisibilityRef = useRef<Set<number>>(new Set());
+  // ponytail: IDs de projetos excluídos nesta sessão. O merge do fetchProjects
+  // preserva projetos locais (cache de RLS pode devolver projeto já deletado),
+  // então filtramos aqui para a exclusão ser imediata na sidebar sem refresh.
+  const deletedProjectIdsRef = useRef<Set<number>>(new Set());
   const fetchProjectsRef = useRef<() => Promise<void>>(async () => {});
   const mergeProjectsRef = useRef<(serverProjects: Project[]) => void>(() => {});
   const fetchNotificationsRef = useRef<() => Promise<void>>(async () => {});
@@ -103,6 +107,22 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleProjectsUpdated = (e: Event) => {
       const detail = (e as CustomEvent).detail;
+      // Exclusão de projeto: remove otimista da sidebar (o merge do fetch
+      // preserva projetos locais, então precisamos remover explicitamente).
+      if (detail?.deletedId) {
+        deletedProjectIdsRef.current.add(detail.deletedId);
+        setProjects((prev) => prev.filter((p) => p.id !== detail.deletedId));
+        // ponytail: refresh da sidebar após pequeno delay para o cache de RLS invalidar.
+        // mergeProjects filtra deletedProjectIdsRef, então o projeto não volta.
+        setTimeout(() => fetchProjectsRef.current(), 300);
+        return;
+      }
+      // Restauração (falha na exclusão): re-adiciona o projeto na sidebar.
+      if (detail?.restoredId) {
+        deletedProjectIdsRef.current.delete(detail.restoredId);
+        fetchProjectsRef.current();
+        return;
+      }
       // Se o evento carregar dados do projeto recém-aceito, insere imediatamente no estado local
       if (detail?.projectId) {
         setProjects((prev) => {
@@ -289,6 +309,24 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     setTaskReviewNotifications(prev => prev.filter(n => n.id !== id));
   };
 
+  const resolveTaskReviewFromBell = async (notifId: number, taskId: number, approve: boolean, note?: string) => {
+    const curUser = userRef.current;
+    if (!curUser) return;
+
+    const reviewerName = curUser.user_metadata?.full_name || curUser.email?.split('@')[0] || 'Usuário';
+    const result = await notificationAPI.resolveTaskReview(notifId, taskId, approve, curUser.id, reviewerName, note);
+
+    if (result.success) {
+      setTaskReviewNotifications(prev => prev.filter(n => n.id !== notifId));
+      window.dispatchEvent(new CustomEvent('tasks-updated'));
+    } else {
+      console.error('[Layout] Erro ao resolver revisão da tarefa:', result.error);
+    }
+  };
+
+  const approveTaskReview = (notifId: number, taskId: number) => resolveTaskReviewFromBell(notifId, taskId, true);
+  const rejectTaskReview = (notifId: number, taskId: number) => resolveTaskReviewFromBell(notifId, taskId, false);
+
   const reinviteUser = async (projectId: number, userId: string) => {
     const curUser = userRef.current;
     if (!curUser) return;
@@ -335,7 +373,10 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     setProjects((prev) => {
       const byId = new Map<number, Project>();
       prev.forEach((p) => byId.set(p.id, p));
-      serverProjects.forEach((p) => byId.set(p.id, p));
+      serverProjects.forEach((p) => {
+        if (!deletedProjectIdsRef.current.has(p.id)) byId.set(p.id, p);
+      });
+      deletedProjectIdsRef.current.forEach((id) => byId.delete(id));
       return Array.from(byId.values());
     });
   }, []);
@@ -373,15 +414,18 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
   const deleteGroup = async (group: any) => {
     if (!user || !confirm(`Excluir "${group.title}"? As tarefas associadas voltarão para a Caixa de Entrada.`)) return;
 
+    // OPTIMISTIC: remove do estado local antes da rede para feedback imediato.
+    deleteGroupFromState(group.id);
     try {
       // Garante que as tarefas voltem para a Caixa de Entrada (sem bloco/lista).
       // O banco já tem ON DELETE SET NULL, mas limpamos explicitamente como defesa em profundidade.
       await taskAPI.clearTasksFromGroup(group.id);
       await client.from('view_groups').delete().eq('id', group.id);
-      deleteGroupFromState(group.id);
       window.dispatchEvent(new CustomEvent('tasks-updated'));
     } catch (error) {
       console.error('Erro ao excluir grupo:', error);
+      // Reverte em caso de erro: refaz fetch para restaurar o estado correto.
+      refreshGroups();
     }
   };
 
@@ -590,6 +634,8 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
             onReinviteUser={reinviteUser}
             onDismissDecline={dismissDeclineNotification}
             onDismissTaskReview={dismissTaskReviewNotification}
+            onApproveTaskReview={approveTaskReview}
+            onRejectTaskReview={rejectTaskReview}
             onClose={() => setShowNotifications(false)}
           />
         </div>

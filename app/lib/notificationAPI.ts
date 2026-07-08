@@ -131,7 +131,7 @@ class NotificationAPI {
     note?: string
   ): Promise<void> {
     const client = createClient();
-    await client.from('task_review_notifications').insert({
+    const { error } = await client.from('task_review_notifications').insert({
       user_id: userId,
       task_id: taskId,
       task_title: taskTitle,
@@ -139,11 +139,68 @@ class NotificationAPI {
       type,
       note: note || null,
     });
+    if (error) {
+      console.error('[NotificationAPI] Erro ao criar notificação de tarefa:', error);
+    }
   }
 
   async dismissTaskReviewNotification(id: number): Promise<void> {
     const client = createClient();
     await client.from('task_review_notifications').delete().eq('id', id);
+  }
+
+  /**
+   * Aprova ou reprova uma tarefa em revisão diretamente pela notificação,
+   * sem precisar abrir a tarefa. Atualiza o status e avisa quem enviou.
+   */
+  async resolveTaskReview(
+    notifId: number,
+    taskId: number,
+    approve: boolean,
+    reviewerId: string,
+    reviewerName: string,
+    note?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const client = createClient();
+    try {
+      const { data: taskRow, error: taskError } = await client
+        .from('todos')
+        .select('id, user_id, title')
+        .eq('id', taskId)
+        .single();
+
+      if (taskError || !taskRow) {
+        return { success: false, error: 'Tarefa não encontrada' };
+      }
+
+      const newStatus = approve ? 'CONCLUIDO' : 'EM_ANDAMENTO';
+      const { error: updateError } = await client
+        .from('todos')
+        .update({ status: newStatus, is_completed: approve })
+        .eq('id', taskId);
+
+      if (updateError) {
+        return { success: false, error: updateError.message };
+      }
+
+      if (taskRow.user_id && taskRow.user_id !== reviewerId) {
+        await client.from('task_review_notifications').insert({
+          user_id: taskRow.user_id,
+          task_id: taskId,
+          task_title: taskRow.title,
+          sender_name: reviewerName,
+          type: approve ? 'approved' : 'rejected',
+          note: approve ? null : (note || 'Há erros a corrigir.'),
+        });
+      }
+
+      await client.from('task_review_notifications').delete().eq('id', notifId);
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('[NotificationAPI] Erro ao resolver revisão de tarefa:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   async getPendingInvites(userId: string): Promise<PendingInvite[]> {

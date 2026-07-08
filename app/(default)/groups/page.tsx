@@ -24,7 +24,7 @@ function getRoundedTime(offsetMinutes = 0): string {
 }
 
 function GroupsContent() {
-  const { groups, loading, refreshGroups, addGroup, updateGroup } = useGroups();
+  const { groups, loading, refreshGroups, addGroup, updateGroup, deleteGroup: deleteGroupFromState } = useGroups();
   const [user, setUser] = useState<any>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingGroup, setEditingGroup] = useState<any>(null);
@@ -154,19 +154,28 @@ function GroupsContent() {
 
   const deleteGroup = async (groupId: number) => {
     if (!confirm('Excluir este grupo? As tarefas associadas voltarão para a Caixa de Entrada.')) return;
-    // Garante que as tarefas voltem para a Caixa de Entrada (sem bloco/lista).
-    // O banco já tem ON DELETE SET NULL, mas limpamos explicitamente como defesa em profundidade.
-    await taskAPI.clearTasksFromGroup(groupId);
-    await client.from('view_groups').delete().eq('id', groupId);
-    refreshGroups();
-    window.dispatchEvent(new CustomEvent('tasks-updated'));
+    // OPTIMISTIC: remove do estado local antes da rede.
+    deleteGroupFromState(groupId);
+    try {
+      // O banco já tem ON DELETE SET NULL, mas limpamos explicitamente como defesa em profundidade.
+      await taskAPI.clearTasksFromGroup(groupId);
+      await client.from('view_groups').delete().eq('id', groupId);
+      window.dispatchEvent(new CustomEvent('tasks-updated'));
+    } catch (error) {
+      console.error('Erro ao excluir grupo:', error);
+      refreshGroups();
+    }
   };
 
   const toggleGroupVisibility = async (group: any) => {
     const next = !group.show_on_dashboard;
+    // OPTIMISTIC: atualiza estado local antes da rede.
+    updateGroup(group.id, { show_on_dashboard: next });
     const { error } = await client.from('view_groups').update({ show_on_dashboard: next }).eq('id', group.id);
-    if (error) console.error('Erro ao alterar visibilidade:', error);
-    refreshGroups();
+    if (error) {
+      console.error('Erro ao alterar visibilidade:', error);
+      updateGroup(group.id, { show_on_dashboard: group.show_on_dashboard });
+    }
   };
 
   const editGroup = (group: any) => {

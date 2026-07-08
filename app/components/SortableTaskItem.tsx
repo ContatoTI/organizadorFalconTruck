@@ -165,7 +165,14 @@ export const SortableTaskItem = memo(function SortableTaskItem({
       {(() => {
         // ponytail: mostra o assignee se houver, senão o criador. Se onAssigneeChange
         // e assigneeCandidates existirem, transforma em dropdown para reatribuir inline.
-        const avatarName = task.assignee_name || task.creator_name;
+        // Resolve o nome via assigneeCandidates primeiro: assignee_name no task pode
+        // ficar desatualizado no update otimista até o refetch do realtime chegar.
+        const assigneeCandidate = task.assignee_id
+          ? assigneeCandidates?.find((c) => c.user_id === task.assignee_id)
+          : undefined;
+        const avatarName = (assigneeCandidate
+          ? (assigneeCandidate.full_name || assigneeCandidate.email || undefined)
+          : (task.assignee_id ? task.assignee_name : undefined)) || task.creator_name;
         if (!avatarName) return null;
         const avatarColor = getColorFromString(avatarName);
         const avatarInitials = getInitials(avatarName);
