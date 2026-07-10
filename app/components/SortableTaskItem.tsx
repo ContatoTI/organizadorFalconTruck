@@ -1,10 +1,10 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { cn, getColorFromString, getInitials } from '@/app/lib/utils';
 import type { Task, Group } from '@/types/index';
 import { isToday } from 'date-fns';
-import { X, XCircle, Loader2, AlertCircle, Check } from 'lucide-react';
+import { X, XCircle, Loader2, AlertCircle, Check, Calendar, User, Clock } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export interface AssigneeCandidate {
@@ -30,6 +30,7 @@ interface SortableTaskItemProps {
   onAssigneeChange?: (taskId: number, assigneeId: string | null) => void;
   isOverlay?: boolean;
   isPending?: boolean;
+  size?: 'sm' | 'md';
   /**
    * ID único do dnd-kit para esta instância do card. Uma mesma tarefa pode
    * aparecer em vários blocos do Dashboard ao mesmo tempo (projeto + bloco de
@@ -59,6 +60,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
   isOverlay = false,
   isPending = false,
   dragId,
+  size = 'sm',
 }: SortableTaskItemProps) {
   const {
     attributes,
@@ -84,13 +86,14 @@ export const SortableTaskItem = memo(function SortableTaskItem({
   const timeDisplay = currentGroup?.start_time ? currentGroup.start_time.substring(0, 5) : null;
   const dateDisplay = task.due_date && isToday(task.due_date) ? 'hoje' : null;
   const priorityLabel = task.priority === 'alta' ? 'Alta' : task.priority === 'media' ? 'Média' : 'Baixa';
+  const [expanded, setExpanded] = useState(false);
 
   return (
+    <div ref={setNodeRef} style={style} className="border-b border-border/40 last:border-b-0 transition-all duration-300">
     <div
-      ref={setNodeRef}
-      style={style}
       className={cn(
-        "relative group/task flex items-center gap-[10px] py-[9px] px-[14px] border-b border-border/40 last:border-b-0 transition-all duration-300",
+        "relative group/task flex items-center gap-[10px]",
+        size === 'md' ? "py-3 px-4" : "py-[9px] px-[14px]",
         isDragging && !isOverlay && "opacity-20 bg-accent/30 border-dashed border-2 border-primary/30",
     isOverlay && "opacity-90 rounded-xl shadow-2xl border-2 border-primary ring-4 ring-primary/20 pointer-events-none cursor-grabbing z-50",
     (isPending || task.isSyncing) && "opacity-60 border-dashed border-primary/50"
@@ -146,10 +149,11 @@ export const SortableTaskItem = memo(function SortableTaskItem({
       {/* Task title and description preview */}
       <div className="flex-1 min-w-0">
         <button
-          onClick={() => onSelect(task)}
+          onClick={() => setExpanded(!expanded)}
           className={cn(
-            "block w-full text-[13px] text-left truncate bg-transparent border-none p-0 cursor-pointer hover:text-primary transition-colors",
-            task.is_completed ? "line-through text-muted-foreground" : "text-slate-800"
+            "block w-full text-left truncate bg-transparent border-none p-0 cursor-pointer hover:text-primary transition-colors",
+            size === 'md' ? "text-sm" : "text-[13px]",
+            task.is_completed ? "line-through text-muted-foreground" : "text-foreground"
           )}
         >
           {task.title}
@@ -245,34 +249,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
             <XCircle className="w-2.5 h-2.5" /> Reprovar
           </button>
         </div>
-      ) : onStatusChange ? (
-        <button
-          onClick={(e) => { e.stopPropagation(); onStatusChange(task.id); }}
-          className={cn(
-            "text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity",
-            (!task.status || task.status === 'A_FAZER') && "bg-slate-100 text-slate-500",
-            task.status === 'EM_ANDAMENTO' && "bg-blue-50 text-blue-600",
-            task.status === 'REVISAO' && "bg-yellow-50 text-yellow-600",
-            task.status === 'CONCLUIDO' && "bg-green-50 text-green-600",
-          )}
-        >
-          {(!task.status || task.status === 'A_FAZER') ? 'A fazer' :
-           task.status === 'EM_ANDAMENTO' ? 'Em andamento' :
-           task.status === 'REVISAO' ? 'Revisão' : 'Concluído'}
-        </button>
-      ) : (
-        <span className={cn(
-          "text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap flex-shrink-0",
-          (!task.status || task.status === 'A_FAZER') && "bg-slate-100 text-slate-500",
-          task.status === 'EM_ANDAMENTO' && "bg-blue-50 text-blue-600",
-          task.status === 'REVISAO' && "bg-yellow-50 text-yellow-600",
-          task.status === 'CONCLUIDO' && "bg-green-50 text-green-600",
-        )}>
-          {(!task.status || task.status === 'A_FAZER') ? 'A fazer' :
-           task.status === 'EM_ANDAMENTO' ? 'Em andamento' :
-           task.status === 'REVISAO' ? 'Revisão' : 'Concluído'}
-        </span>
-      )}
+      ) : null}
 
       {/* Priority badge */}
       {onPriorityChange && (
@@ -284,7 +261,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
         >
           <SelectTrigger
             className={cn(
-              "h-5 w-fit justify-center gap-1 rounded-full border-0 px-2 py-0 text-[10px] font-semibold whitespace-nowrap flex-shrink-0 cursor-pointer data-[size=default]:h-5 [&>svg:last-child]:hidden",
+              "h-4 w-fit justify-center gap-0.5 rounded-full border-0 px-1.5 py-0 text-[9px] font-semibold whitespace-nowrap flex-shrink-0 cursor-pointer data-[size=default]:h-4 [&>svg:last-child]:hidden",
               task.priority === 'alta' && "bg-red-600 text-white",
               task.priority === 'media' && "bg-yellow-500 text-black",
               (task.priority === 'baixa' || !task.priority) && "bg-green-600 text-white",
@@ -293,7 +270,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
             onPointerDown={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
           >
-            <AlertCircle className="size-2.5" />
+            <AlertCircle className="size-2" />
             <span>{priorityLabel}</span>
           </SelectTrigger>
           <SelectContent>
@@ -340,5 +317,53 @@ export const SortableTaskItem = memo(function SortableTaskItem({
         <X className="w-3.5 h-3.5" />
       </button>
     </div>
+
+    {expanded && (
+      <div className={cn("border-t border-border/40 bg-muted/20", size === 'md' ? "px-4 py-3" : "px-[14px] py-[9px]")}>
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <p className={cn("font-semibold text-foreground break-words", size === 'md' ? "text-sm" : "text-[13px]")}>
+            {task.title}
+          </p>
+          <button
+            onClick={() => setExpanded(false)}
+            className="flex-shrink-0 p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            title="Fechar"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground font-medium mb-1">Descrição</p>
+          <p className="text-sm text-foreground whitespace-pre-wrap break-words">
+            {task.description || 'Sem descrição'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground mt-3">
+          {task.due_date && (
+            <span className="flex items-center gap-1">
+              <Calendar className="w-3 h-3" />
+              {new Date(task.due_date).toLocaleDateString('pt-BR')}
+            </span>
+          )}
+          <span className="flex items-center gap-1">
+            <User className="w-3 h-3" />
+            {task.creator_name || 'Usuário'}
+          </span>
+          <span className="flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            Criado em {new Date(task.created_at).toLocaleDateString('pt-BR')}
+          </span>
+          {task.status && (
+            <span className="flex items-center gap-1">
+              Status: {task.status === 'A_FAZER' ? 'A fazer' : task.status === 'EM_ANDAMENTO' ? 'Em andamento' : task.status === 'REVISAO' ? 'Revisão' : 'Concluído'}
+            </span>
+          )}
+          {task.priority && (
+            <span>Prioridade: {task.priority}</span>
+          )}
+        </div>
+      </div>
+    )}
+  </div>
   );
 });

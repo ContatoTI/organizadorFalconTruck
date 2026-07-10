@@ -71,6 +71,77 @@ function DroppableBlock({ blockId, blockType, children }: { blockId: string; blo
   );
 }
 
+function KanbanColumn({ status, label, color, tasks, onSelect, onToggle, onDelete, onPriorityChange, onStatusChange, onApprove, onReject, assigneeCandidates, onAssigneeChange, onAddTask }: {
+  status: string; label: string; color: string; tasks: Task[];
+  onSelect: (t: Task) => void; onToggle: (t: Task) => void; onDelete: (id: number) => void;
+  onPriorityChange?: (id: number, p: string | null) => void; onStatusChange?: (id: number) => void;
+  onApprove?: (id: number) => void; onReject?: (id: number) => void;
+  assigneeCandidates?: { user_id: string; full_name?: string | null; email?: string | null }[];
+  onAssigneeChange?: (id: number, a: string | null) => void;
+  onAddTask?: (title: string) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `kanban-${status}`, data: { type: 'kanban', status } });
+  const [collapsed, setCollapsed] = useState(false);
+  return (
+    <div ref={setNodeRef} className={cn(
+      "flex-1 min-w-[340px] bg-muted/20 rounded-xl border border-border/50 flex flex-col transition-all",
+      isOver && "ring-2 ring-primary/30 bg-primary/5"
+    )}>
+      <button
+        type="button"
+        onClick={() => setCollapsed(c => !c)}
+        className="flex items-center gap-2 px-4 py-3 border-b border-border/40 w-full text-left hover:bg-accent/50 transition-colors"
+      >
+        <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform duration-300", collapsed && "-rotate-90")} />
+        <div className={cn("w-2.5 h-2.5 rounded-full", color)} />
+        <h3 className="text-sm font-semibold text-foreground">{label}</h3>
+        <span className="text-xs text-muted-foreground ml-auto">{tasks.length}</span>
+      </button>
+      <div className={cn(
+        "overflow-hidden transition-all duration-300 ease-in-out",
+        collapsed ? "max-h-0" : "max-h-[2000px]"
+      )}>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2 min-h-[200px]">
+          <SortableContext items={tasks.map(t => `task-kanban-${status}-${t.id}`)} strategy={verticalListSortingStrategy}>
+            {tasks.map(task => (
+              <SortableTaskItem
+                key={task.id}
+                dragId={`task-kanban-${status}-${task.id}`}
+                task={task}
+                groups={[]}
+                size="md"
+                onToggle={onToggle}
+                onSelect={onSelect}
+                onDelete={onDelete}
+                onPriorityChange={onPriorityChange}
+                onStatusChange={onStatusChange}
+                onApprove={onApprove}
+                onReject={onReject}
+                assigneeCandidates={assigneeCandidates}
+                onAssigneeChange={onAssigneeChange}
+              />
+            ))}
+          </SortableContext>
+          {tasks.length === 0 && (
+            <div className="flex items-center justify-center h-20 text-xs text-muted-foreground italic">
+              Nenhuma tarefa
+            </div>
+          )}
+          {onAddTask && (
+            <div className="pt-2 border-t border-border/40 mt-2">
+              <InlineTaskCreator
+                onCreateSimpleTask={onAddTask}
+                buttonText="Adicionar"
+                placeholder="Nova tarefa..."
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DashboardContent() {
   const STATUS_GROUPS = [
     { key: 'A_FAZER', label: 'A fazer', match: (s: string | null | undefined) => !s || s === 'A_FAZER' },
@@ -90,6 +161,7 @@ function DashboardContent() {
   // restritiva por padrão; membros/donos viram true assim que a consulta resolve.
   const [isProjectMemberState, setIsProjectMemberState] = useState(false);
   const [showCompleted, setShowCompleted] = useState(true);
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [onlyToday, setOnlyToday] = useState(false);
   const [now, setNow] = useState(new Date());
   const [expandedSections, setExpandedSections] = useState<Record<number, boolean>>({});
@@ -896,7 +968,7 @@ function DashboardContent() {
       'A_FAZER': 'EM_ANDAMENTO',
       'EM_ANDAMENTO': 'REVISAO',
       'REVISAO': 'CONCLUIDO',
-      'CONCLUIDO': 'A_FAZER',
+      'CONCLUIDO': 'EM_ANDAMENTO',
     };
     const current = task.status || 'A_FAZER';
     const next = cycle[current] || 'A_FAZER';
@@ -1444,6 +1516,39 @@ function DashboardContent() {
         }
       }
 
+      // Kanban mode: drop on column changes status
+      if (viewMode === 'kanban' && active.data.current?.type === 'Task') {
+        if (!over) return;
+        const activeTask = active.data.current.task as Task;
+        let targetStatus: string | null = null;
+        if (over.data.current?.type === 'kanban') {
+          targetStatus = over.data.current.status as string;
+        } else if (over.data.current?.type === 'Task') {
+          targetStatus = (over.data.current.task as Task).status || 'EM_ANDAMENTO';
+        }
+        if (!targetStatus) {
+          const idStr = String(over.id);
+          if (idStr.startsWith('kanban-')) targetStatus = idStr.replace('kanban-', '');
+          else if (idStr.startsWith('task-kanban-')) targetStatus = idStr.split('-')[2];
+        }
+        if (!targetStatus || targetStatus === (activeTask.status || 'EM_ANDAMENTO')) return;
+        const isCompleted = targetStatus === 'CONCLUIDO';
+        const original = { ...activeTask };
+        setTasks(prev => prev.map(t => t.id === activeTask.id ? { ...t, status: targetStatus!, is_completed: isCompleted, isSyncing: true } : t));
+        skipRealtimeFetchRef.current = true;
+        setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
+        (async () => {
+          const result = await taskAPI.updateTask(activeTask.id, { status: targetStatus, is_completed: isCompleted });
+          if (!result.success) {
+            setTasks(prev => prev.map(t => t.id === activeTask.id ? { ...original, isSyncing: false } : t));
+            toast('Erro ao mover tarefa', 'error');
+          } else {
+            setTasks(prev => prev.map(t => t.id === activeTask.id ? { ...t, isSyncing: false } : t));
+          }
+        })();
+        return;
+      }
+
       if (!over || active.id === over.id) return;
       if (active.data.current?.type !== 'Task') return;
 
@@ -1490,7 +1595,7 @@ function DashboardContent() {
       // Como as colunas visuais (A fazer / Em andamento / Concluído) são
       // SortableContexts separados, soltar numa coluna diferente precisa
       // persistir o novo status, senão a tarefa "volta" no próximo fetch.
-      let targetStatus: string | null = activeTask.status ?? 'A_FAZER';
+      let targetStatus: string | null = activeTask.status ?? 'EM_ANDAMENTO';
 
       if (overType === 'Section') {
          targetSectionId = over.data.current!.id === 'unsectioned' ? null : over.data.current!.id as number;
@@ -1500,9 +1605,9 @@ function DashboardContent() {
          const overTask = over.data.current!.task as Task;
          targetSectionId = overTask.section_id;
          // NOVO: herda o status da tarefa sobre a qual foi solto
-         targetStatus = overTask.status ?? 'A_FAZER';
+         targetStatus = overTask.status ?? 'EM_ANDAMENTO';
 
-         const tasksInSection = getTasksBySectionAndStatus(targetSectionId, targetStatus ?? 'A_FAZER');
+         const tasksInSection = getTasksBySectionAndStatus(targetSectionId, targetStatus ?? 'EM_ANDAMENTO');
          targetIndex = tasksInSection.findIndex(t => t.id === overTask.id);
          
          const activeIndex = tasksInSection.findIndex(t => t.id === activeTask.id);
@@ -1514,7 +1619,7 @@ function DashboardContent() {
       if (targetSectionId === undefined) return;
 
       const originalTaskForReorder = { ...activeTask };
-      const statusChanged = targetStatus !== (activeTask.status ?? 'A_FAZER');
+      const statusChanged = targetStatus !== (activeTask.status ?? 'EM_ANDAMENTO');
 
       // Optimistic update
       setTasks(prev => {
@@ -1533,7 +1638,7 @@ function DashboardContent() {
            let sectionCount = 0;
            for (let i = 0; i < next.length; i++) {
              const sameSection = next[i].section_id === targetSectionId;
-             const sameStatus = (next[i].status ?? 'A_FAZER') === (targetStatus ?? 'A_FAZER');
+             const sameStatus = (next[i].status ?? 'EM_ANDAMENTO') === (targetStatus ?? 'EM_ANDAMENTO');
              if (sameSection && sameStatus) {
                if (sectionCount === targetIndex) {
                  absoluteIndex = i;
@@ -2039,6 +2144,53 @@ function DashboardContent() {
                 buttonText="Nova tarefa"
                 placeholder="Digite o nome da tarefa"
               />
+              {selectedProject && (
+                <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5 border border-border/50">
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className={cn(
+                      "px-2.5 py-1 text-xs font-medium rounded-md transition-colors",
+                      viewMode === 'list' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Lista
+                  </button>
+                  <button
+                    onClick={() => setViewMode('kanban')}
+                    className={cn(
+                      "px-2.5 py-1 text-xs font-medium rounded-md transition-colors",
+                      viewMode === 'kanban' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Kanban
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : selectedProject && user && isOnlyAssignee ? (
+            <div className="flex items-center gap-2">
+              {selectedProject && (
+                <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5 border border-border/50">
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className={cn(
+                      "px-2.5 py-1 text-xs font-medium rounded-md transition-colors",
+                      viewMode === 'list' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Lista
+                  </button>
+                  <button
+                    onClick={() => setViewMode('kanban')}
+                    className={cn(
+                      "px-2.5 py-1 text-xs font-medium rounded-md transition-colors",
+                      viewMode === 'kanban' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Kanban
+                  </button>
+                </div>
+              )}
             </div>
           ) : null}
         </div>
@@ -2092,8 +2244,70 @@ function DashboardContent() {
       {/* Page content */}
       <div className="max-w-4xl mx-auto w-full px-6 py-5 flex-1">
 
-      {/* MODO PROJETO: Seções expansíveis */}
+      {/* MODO PROJETO: Kanban ou Seções expansíveis */}
       {selectedProject ? (
+        viewMode === 'kanban' ? (
+          <div className="flex gap-4 overflow-x-auto pb-4 min-h-[300px]">
+            {(() => {
+              const projectTasks = getProjectTasks();
+              const grouped = projectTasks.reduce((acc, t) => {
+                const s = t.status || 'EM_ANDAMENTO';
+                if (!acc[s]) acc[s] = [];
+                acc[s].push(t);
+                return acc;
+              }, {} as Record<string, Task[]>);
+              return STATUS_GROUPS.map(col => (
+                <KanbanColumn
+                  key={col.key}
+                  status={col.key}
+                  label={col.label}
+                  color={col.key === 'A_FAZER' ? 'bg-slate-500' : col.key === 'REVISAO' ? 'bg-yellow-500' : col.key === 'CONCLUIDO' ? 'bg-green-500' : 'bg-blue-500'}
+                  tasks={grouped[col.key] || []}
+                  onSelect={setSelectedTask}
+                  onToggle={toggleTask}
+                  onDelete={deleteTask}
+                  onPriorityChange={handlePriorityChange}
+                  onStatusChange={handleStatusCycle}
+                  onApprove={handleApproveTask}
+                  onReject={handleRejectTask}
+                  assigneeCandidates={assigneeCandidates}
+                  onAssigneeChange={handleAssigneeChange}
+                  onAddTask={(title) => {
+                    if (!user || !selectedProjectId) return;
+                    const trimmed = title.trim();
+                    if (!trimmed) return;
+                    const tempTask = {
+                      id: Date.now(),
+                      title: trimmed,
+                      user_id: user.id,
+                      project_id: parseInt(selectedProjectId),
+                      section_id: null,
+                      view_group_id: null,
+                      is_completed: false,
+                      position: 99999,
+                      created_at: new Date().toISOString(),
+                      due_date: null,
+                      description: null,
+                      priority: null,
+                      status: col.key,
+                      creator_name: (user as any).user_metadata?.full_name || user.email,
+                      isSyncing: true,
+                    } as Task;
+                    setTasks(prev => [tempTask, ...prev]);
+                    taskAPI.createTask(user.id, trimmed, parseInt(selectedProjectId), undefined, undefined, undefined, null, undefined, col.key)
+                      .then(result => {
+                        if (result.success && result.data) {
+                          setTasks(prev => prev.map(t => t.id === tempTask.id ? { ...result.data as Task, isSyncing: false } : t));
+                        } else {
+                          setTasks(prev => prev.filter(t => t.id !== tempTask.id));
+                        }
+                      });
+                  }}
+                />
+              ));
+            })()}
+          </div>
+        ) : (
         <div className="space-y-4">
           {isOnlyAssignee ? (
             loading ? (
@@ -2405,7 +2619,8 @@ function DashboardContent() {
           </>
           )}
         </div>
-      ) : (
+      )
+    ) : (
         /* MODO NORMAL: Lista única de tarefas */
         <div className="space-y-0">
           {loading ? (
