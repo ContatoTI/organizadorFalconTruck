@@ -98,7 +98,7 @@ function KanbanColumn({ status, label, color, tasks, onSelect, onToggle, onDelet
         <span className="text-xs text-muted-foreground ml-auto">{tasks.length}</span>
       </button>
       <div className={cn(
-        "overflow-hidden transition-all duration-300 ease-in-out",
+        "overflow-hidden transition-all duration-300 ease-in-out flex flex-col flex-1",
         collapsed ? "max-h-0" : "max-h-[2000px]"
       )}>
         <div className="flex-1 overflow-y-auto p-3 space-y-2 min-h-[200px]">
@@ -127,16 +127,16 @@ function KanbanColumn({ status, label, color, tasks, onSelect, onToggle, onDelet
               Nenhuma tarefa
             </div>
           )}
-          {onAddTask && (
-            <div className="pt-2 border-t border-border/40 mt-2">
-              <InlineTaskCreator
-                onCreateSimpleTask={onAddTask}
-                buttonText="Adicionar"
-                placeholder="Nova tarefa..."
-              />
-            </div>
-          )}
         </div>
+        {onAddTask && (
+          <div className="px-3 pb-3">
+            <InlineTaskCreator
+              onCreateSimpleTask={onAddTask}
+              buttonText="Adicionar"
+              placeholder="Nova tarefa..."
+            />
+          </div>
+        )}
       </div>
     </div>
   );

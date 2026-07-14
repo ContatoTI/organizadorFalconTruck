@@ -58,7 +58,7 @@ class ProjectAPI {
 
       return uniqueProjects;
     } catch (error) {
-      console.error('[ProjectAPI] Erro em getUserProjects:', error);
+      console.error('[ProjectAPI] Erro em getUserProjects:', error instanceof Error ? error.message : error, error instanceof Error ? error.stack : undefined);
       return [];
     }
   }
@@ -167,7 +167,7 @@ class ProjectAPI {
 
       return Array.from(projectIds);
     } catch (error) {
-      console.error('[ProjectAPI] Erro em _fetchSharedOnlyProjectIds:', error);
+      console.error('[ProjectAPI] Erro em _fetchSharedOnlyProjectIds:', error instanceof Error ? error.message : error, error instanceof Error ? error.stack : undefined);
       return [];
     }
   }
