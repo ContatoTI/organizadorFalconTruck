@@ -17,8 +17,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Card } from '@/components/ui/card';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
 import { InlineTaskCreator } from '@/app/components/InlineTaskCreator';
-import { ToastProvider, useToast } from '@/app/components/Toast';
+import { useToast } from '@/app/components/Toast';
 import { ToggleChips } from '@/app/components/ToggleChips';
+import { useUndoableDelete } from '@/app/lib/hooks';
 
 export default function TodosPage() {
   const [user, setUser] = useState<any>(null);
@@ -33,6 +34,13 @@ export default function TodosPage() {
   const router = useRouter();
   const client = createClient();
   const { toast } = useToast();
+  const undoableDeleteTask = useUndoableDelete<Task>({
+    deleteFn: (task) => taskAPI.deleteTask(task.id),
+    onRemove: (task) => setTasks(prev => prev.filter(t => t.id !== task.id)),
+    onRestore: (task) => setTasks(prev => [task, ...prev]),
+    toast,
+    getId: (task) => task.id,
+  });
 
   useEffect(() => {
     const getUser = async () => {
@@ -224,23 +232,10 @@ export default function TodosPage() {
     }
   };
 
-  const deleteTask = async (taskId: number) => {
-    // OPTIMISTIC UPDATE
+  const deleteTask = (taskId: number) => {
     const taskToDelete = tasks.find(t => t.id === taskId);
     if (!taskToDelete) return;
-    const originalTask = { ...taskToDelete };
-
-    setTasks(prev => prev.map(t => 
-      t.id === taskId ? { ...t, isSyncing: true } : t
-    ));
-
-    const result = await taskAPI.deleteTask(taskId);
-    if (result.success) {
-      setTasks(prev => prev.filter(t => t.id !== taskId));
-    } else {
-      setTasks(prev => prev.map(t => t.id === taskId ? originalTask : t));
-      toast('Erro ao excluir tarefa', 'error');
-    }
+    undoableDeleteTask.remove(taskToDelete, 'Tarefa excluída');
   };
 
   const updateTask = async () => {
@@ -273,7 +268,6 @@ export default function TodosPage() {
   }
 
   return (
-    <ToastProvider>
     <div className="p-6 w-full max-w-4xl mx-auto">
       <h1 className="text-3xl font-bold mb-8">Todas as Tarefas</h1>
 
@@ -477,6 +471,5 @@ export default function TodosPage() {
         />
       )}
     </div>
-    </ToastProvider>
   );
 }

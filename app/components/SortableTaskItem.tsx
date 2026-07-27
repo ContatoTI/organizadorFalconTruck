@@ -2,8 +2,7 @@ import React, { memo } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { cn, getColorFromString, getInitials } from '@/app/lib/utils';
-import type { Task, Group } from '@/types/index';
-import { isToday } from 'date-fns';
+import type { Task, Group, Project, Section } from '@/types/index';
 import { X, XCircle, Loader2, AlertCircle, Check } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -17,6 +16,8 @@ interface SortableTaskItemProps {
   task: Task;
   currentGroupId?: number;
   groups: Group[];
+  projects?: Project[];
+  sections?: Section[];
   userEmail?: string;
   onToggle: (task: Task) => void;
   onSelect: (task: Task) => void;
@@ -31,14 +32,6 @@ interface SortableTaskItemProps {
   isOverlay?: boolean;
   isPending?: boolean;
   size?: 'sm' | 'md';
-  /**
-   * ID único do dnd-kit para esta instância do card. Uma mesma tarefa pode
-   * aparecer em vários blocos do Dashboard ao mesmo tempo (projeto + bloco de
-   * tempo, por exemplo); sem um id qualificado por bloco, duas instâncias
-   * simultâneas do useSortable disputam o mesmo registro interno do dnd-kit e
-   * o DragOverlay acaba posicionado com base no node errado (offset visual).
-   * Default mantém compatibilidade para usos com uma única instância por tarefa.
-   */
   dragId?: string;
 }
 
@@ -46,6 +39,8 @@ export const SortableTaskItem = memo(function SortableTaskItem({
   task,
   currentGroupId,
   groups,
+  projects,
+  sections,
   userEmail,
   onToggle,
   onSelect,
@@ -84,18 +79,38 @@ export const SortableTaskItem = memo(function SortableTaskItem({
 
   const currentGroup = currentGroupId ? groups.find(g => g.id === currentGroupId) : null;
   const timeDisplay = currentGroup?.start_time ? currentGroup.start_time.substring(0, 5) : null;
-  const dateDisplay = task.due_date && isToday(task.due_date) ? 'hoje' : null;
   const priorityLabel = task.priority === 'alta' ? 'Alta' : task.priority === 'media' ? 'Média' : 'Baixa';
 
+  const taskDueDate = task.due_date ? new Date(task.due_date + 'T00:00:00') : null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isOverdue = !!(taskDueDate && taskDueDate < today && !task.is_completed);
+  const isDueToday = !!(taskDueDate && taskDueDate.getTime() === today.getTime() && !task.is_completed);
+
+  let dueLabel: string | null = null;
+  if (isOverdue) dueLabel = 'Atrasada';
+  else if (isDueToday) dueLabel = 'Hoje';
+
+  const projectForDot = task.project_id ? projects?.find(p => p.id === task.project_id) : undefined;
+  const sectionForDot = task.section_id ? sections?.find(s => s.id === task.section_id) : undefined;
+  const groupForDot = task.view_group_id ? groups.find(g => g.id === task.view_group_id) : undefined;
+  const contextDotColor = sectionForDot?.color || projectForDot?.color || groupForDot?.color || null;
+
   return (
-    <div ref={setNodeRef} style={style} className="border-b border-border/40 last:border-b-0 transition-all duration-300">
+    <div ref={setNodeRef} style={style} className={cn(
+      "border-b border-border/30 last:border-b-0 transition-all duration-150",
+      isOverdue && "border-l-[3px] border-l-red-500/70",
+      isDueToday && !isOverdue && "border-l-[3px] border-l-amber-500/70",
+    )}>
     <div
       className={cn(
-        "relative group/task flex items-center gap-[10px]",
-        size === 'md' ? "py-3 px-4" : "py-[9px] px-[14px]",
-        isDragging && !isOverlay && "opacity-20 bg-accent/30 border-dashed border-2 border-primary/30",
+        "relative group/task flex items-center gap-2 hover:bg-accent/[0.04]",
+        size === 'md' ? "py-2.5 px-4" : "py-2 px-[14px]",
+        isDragging && !isOverlay && "opacity-20 bg-accent/20",
     isOverlay && "opacity-90 rounded-xl shadow-2xl border-2 border-primary ring-4 ring-primary/20 pointer-events-none cursor-grabbing z-50",
-    (isPending || task.isSyncing) && "opacity-60 border-dashed border-primary/50"
+    (isPending || task.isSyncing) && "opacity-60",
+    isOverdue && "bg-red-500/[0.03]",
+    isDueToday && !isOverdue && "bg-amber-500/[0.03]",
   )}
 >
       {/* Pending loading bar at top */}
@@ -111,12 +126,12 @@ export const SortableTaskItem = memo(function SortableTaskItem({
         {...listeners}
         style={{ touchAction: 'none' }}
         className={cn(
-          "flex-shrink-0 cursor-grab active:cursor-grabbing outline-none",
-          isOverlay ? "opacity-100" : "opacity-40 md:opacity-10 hover:opacity-100 group-hover/task:opacity-100 transition-opacity"
+          "flex-shrink-0 cursor-grab active:cursor-grabbing outline-none transition-opacity",
+          isOverlay ? "opacity-100" : "opacity-0 group-hover/task:opacity-40 hover:!opacity-100"
         )}
         title="Arrastar para reordenar"
       >
-        <svg width="10" height="12" viewBox="0 0 10 12" fill="#94a3b8">
+        <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor" className="text-muted-foreground/40">
           <circle cx="3" cy="2.5" r="1"/><circle cx="7" cy="2.5" r="1"/>
           <circle cx="3" cy="6" r="1"/><circle cx="7" cy="6" r="1"/>
           <circle cx="3" cy="9.5" r="1"/><circle cx="7" cy="9.5" r="1"/>
@@ -145,18 +160,35 @@ export const SortableTaskItem = memo(function SortableTaskItem({
         )}
       </button>
 
-      {/* Task title and description preview */}
+      {/* Task title, context dot and description preview */}
       <div className="flex-1 min-w-0">
-        <button
-          onClick={() => onSelect(task)}
-          className={cn(
-            "block w-full text-left truncate bg-transparent border-none p-0 cursor-pointer hover:text-primary transition-colors",
-            size === 'md' ? "text-sm" : "text-[13px]",
-            task.is_completed ? "line-through text-muted-foreground" : "text-foreground"
+        <div className="flex items-center gap-1.5">
+          {contextDotColor && !isOverlay && (
+            <div
+              className="w-[7px] h-[7px] rounded-full flex-shrink-0"
+              style={{ backgroundColor: contextDotColor }}
+              title={sectionForDot?.title ?? projectForDot?.name ?? groupForDot?.title ?? ''}
+            />
           )}
-        >
-          {task.title}
-        </button>
+          <button
+            onClick={() => onSelect(task)}
+            className={cn(
+              "block text-left truncate bg-transparent border-none p-0 cursor-pointer hover:text-primary transition-colors",
+              size === 'md' ? "text-sm" : "text-[13px]",
+              task.is_completed ? "line-through text-muted-foreground" : "text-foreground"
+            )}
+          >
+            {task.title}
+          </button>
+          {dueLabel && (
+            <span className={cn(
+              "text-[9px] font-semibold px-1.5 py-[1px] rounded-full flex-shrink-0",
+              isOverdue ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700",
+            )}>
+              {dueLabel}
+            </span>
+          )}
+        </div>
         {task.description && (
           <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-2">
             {task.description}
@@ -166,10 +198,6 @@ export const SortableTaskItem = memo(function SortableTaskItem({
 
       {/* Assignee / Creator avatar */}
       {(() => {
-        // ponytail: mostra o assignee se houver, senão o criador. Se onAssigneeChange
-        // e assigneeCandidates existirem, transforma em dropdown para reatribuir inline.
-        // Resolve o nome via assigneeCandidates primeiro: assignee_name no task pode
-        // ficar desatualizado no update otimista até o refetch do realtime chegar.
         const assigneeCandidate = task.assignee_id
           ? assigneeCandidates?.find((c) => c.user_id === task.assignee_id)
           : undefined;
@@ -224,28 +252,28 @@ export const SortableTaskItem = memo(function SortableTaskItem({
       })()}
 
       {/* Time / date indicator */}
-      {(timeDisplay || dateDisplay) && (
-        <span className="text-[10px] font-semibold text-orange-500 flex-shrink-0">
-          {timeDisplay ?? dateDisplay}
+      {timeDisplay && (
+        <span className="text-[10px] font-semibold text-muted-foreground flex-shrink-0">
+          {timeDisplay}
         </span>
       )}
 
       {/* Status badge */}
       {task.status === 'REVISAO' && onApprove && onReject ? (
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover/task:opacity-100 transition-opacity">
           <button
             onClick={(e) => { e.stopPropagation(); onApprove(task.id); }}
-            className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700 hover:bg-green-200 transition-colors flex items-center gap-0.5"
+            className="text-[10px] px-2 py-0.5 rounded font-medium bg-green-100 text-green-700 hover:bg-green-200 transition-colors"
             title="Aprovar"
           >
-            <Check className="w-2.5 h-2.5" /> Aprovar
+            <Check className="w-2.5 h-2.5" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onReject(task.id); }}
-            className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-yellow-100 text-yellow-700 hover:bg-yellow-200 transition-colors flex items-center gap-0.5"
+            className="text-[10px] px-2 py-0.5 rounded font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
             title="Reprovar"
           >
-            <XCircle className="w-2.5 h-2.5" /> Reprovar
+            <XCircle className="w-2.5 h-2.5" />
           </button>
         </div>
       ) : null}
@@ -301,7 +329,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
             onRemoveFromGroup(task.id, currentGroupId);
           }}
           title="Remover deste bloco/lista"
-          className="flex-shrink-0 opacity-10 hover:opacity-100 group-hover/task:opacity-100 transition-opacity text-slate-400 hover:text-orange-400"
+          className="flex-shrink-0 opacity-0 group-hover/task:opacity-30 hover:!opacity-100 transition-all text-muted-foreground hover:text-orange-500"
         >
           <XCircle className="w-3.5 h-3.5" />
         </button>
@@ -311,7 +339,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
       <button
         onClick={() => onDelete(task.id)}
         title="Remover tarefa"
-        className="flex-shrink-0 opacity-10 hover:opacity-100 group-hover/task:opacity-100 transition-opacity text-slate-400 hover:text-red-400"
+        className="flex-shrink-0 opacity-0 group-hover/task:opacity-30 hover:!opacity-100 transition-all text-muted-foreground hover:text-red-500"
       >
         <X className="w-3.5 h-3.5" />
       </button>

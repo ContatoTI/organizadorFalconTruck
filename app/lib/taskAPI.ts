@@ -492,16 +492,17 @@ class TaskAPI {
    */
   async moveTaskToProject(
     taskId: number,
-    targetProjectId: number | null
+    targetProjectId: number | null,
+    targetSectionId: number | null = null
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const client = createClient();
       const { error } = await client
         .from('todos')
-        .update({ 
+        .update({
           project_id: targetProjectId,
           view_group_id: null,
-          section_id: null
+          section_id: targetSectionId
         })
         .eq('id', taskId);
 

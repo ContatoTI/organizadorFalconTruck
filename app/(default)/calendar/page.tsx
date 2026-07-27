@@ -16,6 +16,8 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { InlineTaskCreator } from '@/app/components/InlineTaskCreator';
 import { ToggleChips } from '@/app/components/ToggleChips';
+import { useToast } from '@/app/components/Toast';
+import { useUndoableDelete } from '@/app/lib/hooks';
 
 export default function CalendarPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -30,6 +32,14 @@ export default function CalendarPage() {
   const [showCompleted, setShowCompleted] = useState(true);
   const router = useRouter();
   const client = createClient();
+  const { toast } = useToast();
+  const undoableDeleteTask = useUndoableDelete<Task>({
+    deleteFn: (task) => taskAPI.deleteTask(task.id),
+    onRemove: (task) => setTasks(prev => prev.filter(t => t.id !== task.id)),
+    onRestore: (task) => setTasks(prev => [task, ...prev]),
+    toast,
+    getId: (task) => task.id,
+  });
 
   useEffect(() => {
     const getUser = async () => {
@@ -225,23 +235,10 @@ export default function CalendarPage() {
     }
   };
 
-  const deleteTask = async (taskId: number) => {
-    // OPTIMISTIC UPDATE
+  const deleteTask = (taskId: number) => {
     const taskToDelete = tasks.find(t => t.id === taskId);
     if (!taskToDelete) return;
-    const originalTask = { ...taskToDelete };
-
-    setTasks(prev => prev.map(t => 
-      t.id === taskId ? { ...t, isSyncing: true } as any : t
-    ));
-
-    const result = await taskAPI.deleteTask(taskId);
-    if (result.success) {
-      setTasks(prev => prev.filter(t => t.id !== taskId));
-    } else {
-      setTasks(prev => prev.map(t => t.id === taskId ? originalTask : t));
-      alert('Erro ao excluir tarefa');
-    }
+    undoableDeleteTask.remove(taskToDelete, 'Tarefa excluída');
   };
 
   const toggleTask = async (task: Task) => {

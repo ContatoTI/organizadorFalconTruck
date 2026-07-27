@@ -132,13 +132,27 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
           task.creator_name || 'Usuário');
       }
     } else if (prevStatus === 'REVISAO' && val === 'CONCLUIDO') {
-      if (task.user_id && task.user_id !== currentUserId) {
-        notificationAPI.createTaskReviewNotification(task.user_id, task.id, task.title,
+      const recipientId = task.assignee_id || task.user_id;
+      const notified = new Set<string>();
+      if (recipientId && recipientId !== currentUserId) {
+        notificationAPI.createTaskReviewNotification(recipientId, task.id, task.title,
+          task.creator_name || 'Usuário', 'approved');
+        notified.add(recipientId);
+      }
+      if (projectOwnerId && projectOwnerId !== currentUserId && !notified.has(projectOwnerId)) {
+        notificationAPI.createTaskReviewNotification(projectOwnerId, task.id, task.title,
           task.creator_name || 'Usuário', 'approved');
       }
     } else if (prevStatus === 'REVISAO' && val === 'EM_ANDAMENTO') {
-      if (task.user_id && task.user_id !== currentUserId) {
-        notificationAPI.createTaskReviewNotification(task.user_id, task.id, task.title,
+      const recipientId = task.assignee_id || task.user_id;
+      const notified = new Set<string>();
+      if (recipientId && recipientId !== currentUserId) {
+        notificationAPI.createTaskReviewNotification(recipientId, task.id, task.title,
+          task.creator_name || 'Usuário', 'rejected', 'Há erros a corrigir.');
+        notified.add(recipientId);
+      }
+      if (projectOwnerId && projectOwnerId !== currentUserId && !notified.has(projectOwnerId)) {
+        notificationAPI.createTaskReviewNotification(projectOwnerId, task.id, task.title,
           task.creator_name || 'Usuário', 'rejected', 'Há erros a corrigir.');
       }
     }

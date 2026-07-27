@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense, Fragment } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search, Eye, EyeOff, Settings } from 'lucide-react';
-import { cn, getSoftCardStyle } from '@/app/lib/utils';
+import { Check, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search, Eye, EyeOff, Settings, GripVertical } from 'lucide-react';
+import { cn, getSoftCardStyle, PROJECT_COLORS } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { projectAPI } from '@/app/lib/projectAPI';
+import { sectionAPI } from '@/app/lib/sectionAPI';
 import { notificationAPI } from '@/app/lib/notificationAPI';
 import { useGroups } from '@/app/lib/GroupsContext';
 import { fetchPreferences, savePreferences } from '@/app/lib/preferencesAPI';
@@ -29,13 +30,19 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { SortableTaskItem } from '@/app/components/SortableTaskItem';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
 import { InlineTaskCreator } from '@/app/components/InlineTaskCreator';
-import { ToastProvider, useToast } from '@/app/components/Toast';
+import { useToast } from '@/app/components/Toast';
+import { useUndoableDelete } from '@/app/lib/hooks';
+import { SectionSharedIndicator } from '@/app/components/SharedWithIndicator';
 import { ToggleChips } from '@/app/components/ToggleChips';
 import { ShareEntityDialog } from '@/app/components/ShareEntityDialog';
 
-import { useDroppable } from '@dnd-kit/core';
+import { useDroppable, useDndContext, useDraggable } from '@dnd-kit/core';
 
-function DroppableSection({ sectionId, children }: { sectionId: number | 'unsectioned', children: React.ReactNode }) {
+// ponytail: envolve a pasta INTEIRA (cabeçalho + conteúdo), não só a área de
+// tarefas — assim soltar em qualquer ponto da pasta funciona, inclusive com
+// ela colapsada/fechada (o cabeçalho continua montado e registrado como
+// droppable mesmo quando o conteúdo abaixo dele não é renderizado).
+function DroppableSection({ sectionId, children, className }: { sectionId: number | 'unsectioned', children: React.ReactNode, className?: string }) {
   const { setNodeRef, isOver } = useDroppable({
     id: `section-${sectionId}`,
     data: {
@@ -48,11 +55,56 @@ function DroppableSection({ sectionId, children }: { sectionId: number | 'unsect
     <div
       ref={setNodeRef}
       className={cn(
-        "border-t border-border/50 min-h-[48px] transition-all duration-200",
-        isOver && "bg-primary/5"
+        "rounded-[10px] transition-all duration-200",
+        isOver && "ring-2 ring-primary/50 ring-offset-1 ring-offset-background bg-primary/5",
+        className
       )}
     >
       {children}
+    </div>
+  );
+}
+
+function SectionReorderDrop({ sectionId, isLast }: { sectionId: number; isLast?: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: isLast ? `section-reorder-end` : `section-reorder-${sectionId}`,
+    data: { type: 'SectionReorder', sectionId: isLast ? -1 : sectionId }
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "h-8 rounded-lg transition-all duration-200 my-1 relative z-10 border-2 border-dashed border-transparent",
+        !isOver && "hover:border-border/50 hover:bg-accent/30",
+        isOver && "h-9 border-primary/50 bg-primary/10 my-0.5"
+      )}
+    />
+  );
+}
+
+function DraggableSectionHeader({ section, children }: { section: Section; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `section-drag-${section.id}`,
+    data: { type: 'SectionDrag', section }
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(isDragging && "opacity-50")}
+      {...attributes}
+    >
+      <div className="flex items-center">
+        <button
+          {...listeners}
+          className="h-7 w-5 flex items-center justify-center rounded text-muted-foreground/30 hover:text-muted-foreground hover:bg-accent/50 opacity-0 group-hover/section:opacity-100 transition-all cursor-grab active:cursor-grabbing flex-shrink-0 touch-none"
+          title="Arrastar para reordenar"
+        >
+          <GripVertical className="w-3.5 h-3.5" />
+        </button>
+        {children}
+      </div>
     </div>
   );
 }
@@ -64,14 +116,29 @@ function DroppableBlock({ blockId, blockType, children }: { blockId: string; blo
     data: { type: blockType, id: numericId }
   });
 
+  // Além do próprio container, o drag também pode estar "sobre" um card de
+  // tarefa que já vive dentro deste bloco (ver DASHBOARD BLOCK DROP em
+  // handleDragEnd) — nesse caso o useDroppable acima não marca isOver,
+  // então checamos o contexto global do dnd-kit para destacar o bloco também.
+  const { active, over } = useDndContext();
+  const isDraggingTask = active?.data.current?.type === 'Task';
+  const isOverTaskInThisBlock = !!over && String(over.id).startsWith(`task-block-${blockId}-`);
+  const highlighted = isDraggingTask && (isOver || isOverTaskInThisBlock);
+
   return (
-    <div ref={setNodeRef} className={cn(isOver && "ring-2 ring-primary/30 rounded-[10px]")}>
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "rounded-[10px] transition-all duration-150",
+        highlighted && "ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary/5"
+      )}
+    >
       {children}
     </div>
   );
 }
 
-function KanbanColumn({ status, label, color, tasks, onSelect, onToggle, onDelete, onPriorityChange, onStatusChange, onApprove, onReject, assigneeCandidates, onAssigneeChange, onAddTask }: {
+function KanbanColumn({ status, label, color, tasks, onSelect, onToggle, onDelete, onPriorityChange, onStatusChange, onApprove, onReject, assigneeCandidates, onAssigneeChange, onAddTask, projects, sections }: {
   status: string; label: string; color: string; tasks: Task[];
   onSelect: (t: Task) => void; onToggle: (t: Task) => void; onDelete: (id: number) => void;
   onPriorityChange?: (id: number, p: string | null) => void; onStatusChange?: (id: number) => void;
@@ -79,6 +146,8 @@ function KanbanColumn({ status, label, color, tasks, onSelect, onToggle, onDelet
   assigneeCandidates?: { user_id: string; full_name?: string | null; email?: string | null }[];
   onAssigneeChange?: (id: number, a: string | null) => void;
   onAddTask?: (title: string) => void;
+  projects?: Project[];
+  sections?: Section[];
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `kanban-${status}`, data: { type: 'kanban', status } });
   const [collapsed, setCollapsed] = useState(false);
@@ -109,6 +178,8 @@ function KanbanColumn({ status, label, color, tasks, onSelect, onToggle, onDelet
                 dragId={`task-kanban-${status}-${task.id}`}
                 task={task}
                 groups={[]}
+                projects={projects}
+                sections={sections}
                 size="md"
                 onToggle={onToggle}
                 onSelect={onSelect}
@@ -123,8 +194,8 @@ function KanbanColumn({ status, label, color, tasks, onSelect, onToggle, onDelet
             ))}
           </SortableContext>
           {tasks.length === 0 && (
-            <div className="flex items-center justify-center h-20 text-xs text-muted-foreground italic">
-              Nenhuma tarefa
+            <div className="flex items-center justify-center h-16 mx-3 my-2 text-[11px] text-muted-foreground/40 italic border-2 border-dashed border-border/40 rounded-lg hover:border-primary/30 transition-colors">
+              Arraste tarefas para cá
             </div>
           )}
         </div>
@@ -169,7 +240,12 @@ function DashboardContent() {
   const [unsectionedQuickAddOpen, setUnsectionedQuickAddOpen] = useState(false);
   const [editingSection, setEditingSection] = useState<number | null>(null);
   const [editingSectionTitle, setEditingSectionTitle] = useState('');
+  const [editSectionModalOpen, setEditSectionModalOpen] = useState(false);
+  const [editSectionColor, setEditSectionColor] = useState('#6366f1');
   const [isCreatingSection, setIsCreatingSection] = useState(false);
+  const [newSectionModalOpen, setNewSectionModalOpen] = useState(false);
+  const [newSectionName, setNewSectionName] = useState('');
+  const [newSectionColor, setNewSectionColor] = useState('#6366f1');
   const [unsectionedTitle, setUnsectionedTitle] = useState('Sem Pasta');
   const [editingUnsectionedTitle, setEditingUnsectionedTitle] = useState(false);
   const [unsectionedTitleDraft, setUnsectionedTitleDraft] = useState('Sem Pasta');
@@ -189,10 +265,18 @@ function DashboardContent() {
   const [invitesLoaded, setInvitesLoaded] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [activeDragTask, setActiveDragTask] = useState<Task | null>(null);
+  const [activeDragSection, setActiveDragSection] = useState<Section | null>(null);
   const [pendingTaskIds, setPendingTaskIds] = useState<Record<number, boolean>>({});
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
+  const undoableDeleteTask = useUndoableDelete<Task>({
+    deleteFn: (task) => taskAPI.deleteTask(task.id),
+    onRemove: (task) => setTasks(prev => prev.filter(t => t.id !== task.id)),
+    onRestore: (task) => setTasks(prev => [task, ...prev]),
+    toast,
+    getId: (task) => task.id,
+  });
   const client = createClient();
   const skipRealtimeFetchRef = useRef(false);
   const lastPointerPos = useRef({ x: 0, y: 0 });
@@ -875,23 +959,10 @@ function DashboardContent() {
     }
   };
 
-  const deleteTask = async (taskId: number) => {
-    // OPTIMISTIC UPDATE: Injetar isSyncing: true
+  const deleteTask = (taskId: number) => {
     const taskToDelete = tasks.find(t => t.id === taskId);
     if (!taskToDelete) return;
-    const originalTask = { ...taskToDelete };
-
-    setTasks(prev => prev.map(t => 
-      t.id === taskId ? { ...t, isSyncing: true } : t
-    ));
-
-    const result = await taskAPI.deleteTask(taskId);
-    if (result.success) {
-      setTasks(prev => prev.filter(t => t.id !== taskId));
-    } else {
-      setTasks(prev => prev.map(t => t.id === taskId ? originalTask : t));
-      toast('Erro ao excluir tarefa', 'error');
-    }
+    undoableDeleteTask.remove(taskToDelete, 'Tarefa excluída');
   };
 
   const handlePriorityChange = async (taskId: number, priority: string | null) => {
@@ -922,8 +993,15 @@ function DashboardContent() {
     } else {
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isSyncing: false } : t));
       const senderName = (user as any)?.user_metadata?.full_name || user?.email || 'Usuário';
-      if (task.user_id && task.user_id !== user?.id) {
-        notificationAPI.createTaskReviewNotification(task.user_id, task.id, task.title, senderName, 'approved');
+      const project = task.project_id ? projects.find(p => p.id === task.project_id) : null;
+      const recipientId = task.assignee_id || task.user_id;
+      const notified = new Set<string>();
+      if (recipientId && recipientId !== user?.id) {
+        notificationAPI.createTaskReviewNotification(recipientId, task.id, task.title, senderName, 'approved');
+        notified.add(recipientId);
+      }
+      if (project?.owner_id && project.owner_id !== user?.id && !notified.has(project.owner_id)) {
+        notificationAPI.createTaskReviewNotification(project.owner_id, task.id, task.title, senderName, 'approved');
       }
     }
   };
@@ -943,8 +1021,16 @@ function DashboardContent() {
     } else {
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isSyncing: false } : t));
       const senderName = (user as any)?.user_metadata?.full_name || user?.email || 'Usuário';
-      if (task.user_id && task.user_id !== user?.id) {
-        notificationAPI.createTaskReviewNotification(task.user_id, task.id, task.title, senderName, 'rejected',
+      const project = task.project_id ? projects.find(p => p.id === task.project_id) : null;
+      const recipientId = task.assignee_id || task.user_id;
+      const notified = new Set<string>();
+      if (recipientId && recipientId !== user?.id) {
+        notificationAPI.createTaskReviewNotification(recipientId, task.id, task.title, senderName, 'rejected',
+          reason || 'Há erros a corrigir.');
+        notified.add(recipientId);
+      }
+      if (project?.owner_id && project.owner_id !== user?.id && !notified.has(project.owner_id)) {
+        notificationAPI.createTaskReviewNotification(project.owner_id, task.id, task.title, senderName, 'rejected',
           reason || 'Há erros a corrigir.');
       }
     }
@@ -992,8 +1078,15 @@ function DashboardContent() {
         }
       } else if (current === 'REVISAO' && next === 'CONCLUIDO') {
         const senderName = (user as any)?.user_metadata?.full_name || user?.email || 'Usuário';
-        if (task.user_id && task.user_id !== user?.id) {
-          notificationAPI.createTaskReviewNotification(task.user_id, task.id, task.title, senderName, 'approved');
+        const project = task.project_id ? projects.find(p => p.id === task.project_id) : null;
+        const recipientId = task.assignee_id || task.user_id;
+        const notified = new Set<string>();
+        if (recipientId && recipientId !== user?.id) {
+          notificationAPI.createTaskReviewNotification(recipientId, task.id, task.title, senderName, 'approved');
+          notified.add(recipientId);
+        }
+        if (project?.owner_id && project.owner_id !== user?.id && !notified.has(project.owner_id)) {
+          notificationAPI.createTaskReviewNotification(project.owner_id, task.id, task.title, senderName, 'approved');
         }
       }
     }
@@ -1015,27 +1108,32 @@ function DashboardContent() {
     }
   };
 
-  const createSection = async (title: string) => {
+  const createSection = async (title: string, color: string) => {
     if (!title.trim() || !user || !selectedProjectId) return;
     const nextOrder = sections.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
-    const { data } = await client
+    const { data, error } = await client
       .from('sections')
       .insert({
         user_id: user.id,
         project_id: parseInt(selectedProjectId),
         title: title.trim(),
+        color,
         order: nextOrder,
       })
       .select()
       .single();
+
+    if (error) {
+      console.error('Erro ao criar pasta:', error);
+      toast('Erro ao criar pasta', 'error');
+      return undefined;
+    }
 
     if (data) {
       const newSection = data as Section;
       skipSectionsFetchRef.current = true;
       setSections(prev => prev.some(s => s.id === newSection.id) ? prev : [...prev, newSection]);
       setExpandedSections(prev => ({ ...prev, [newSection.id]: true }));
-      setEditingSection(newSection.id);
-      setEditingSectionTitle(newSection.title);
       setTimeout(() => { skipSectionsFetchRef.current = false; }, 500);
       return newSection;
     }
@@ -1043,11 +1141,38 @@ function DashboardContent() {
     return undefined;
   };
 
-  const updateSection = async (sectionId: number, newTitle: string) => {
+  const handleCreateSectionSubmit = async () => {
+    const title = newSectionName.trim();
+    if (!title || creatingSectionRef.current) return;
+    creatingSectionRef.current = true;
+    setIsCreatingSection(true);
+    try {
+      const newSection = await createSection(title, newSectionColor);
+      if (newSection) {
+        setSectionQuickAddOpen(prev => ({ ...prev, [newSection.id]: true }));
+        setNewSectionModalOpen(false);
+        setNewSectionName('');
+        setNewSectionColor('#6366f1');
+      }
+    } finally {
+      creatingSectionRef.current = false;
+      setIsCreatingSection(false);
+    }
+  };
+
+  const updateSection = async (sectionId: number, newTitle: string, newColor?: string) => {
     if (!newTitle.trim()) return;
-    await client.from('sections').update({ title: newTitle.trim() }).eq('id', sectionId);
-    setSections(sections.map(s => s.id === sectionId ? { ...s, title: newTitle.trim() } : s));
+    const updates: { title: string; color?: string } = { title: newTitle.trim() };
+    if (newColor !== undefined) updates.color = newColor;
+    const { error } = await client.from('sections').update(updates).eq('id', sectionId);
+    if (error) {
+      console.error('Erro ao salvar pasta:', error);
+      toast('Erro ao salvar pasta', 'error');
+      return;
+    }
+    setSections(sections.map(s => s.id === sectionId ? { ...s, ...updates, title: newTitle.trim() } : s));
     setEditingSection(null);
+    setEditSectionModalOpen(false);
   };
 
   const deleteSection = async (sectionId: number) => {
@@ -1127,6 +1252,8 @@ function DashboardContent() {
   const openSectionEdit = (section: Section) => {
     setEditingSection(section.id);
     setEditingSectionTitle(section.title);
+    setEditSectionColor(section.color || '#6366f1');
+    setEditSectionModalOpen(true);
   };
 
   const isToday = (dateStr: string | null) => {
@@ -1422,10 +1549,10 @@ function DashboardContent() {
     }
   }, [setTasks, toast]);
 
-  const execProjectDrop = useCallback((activeTask: Task, projectId: number) => {
+  const execProjectDrop = useCallback((activeTask: Task, projectId: number, sectionId: number | null = null) => {
     const originalTask = { ...activeTask };
 
-    let updatedSnapshot: Task = { ...activeTask, project_id: projectId, view_group_id: null, section_id: null, isSyncing: true };
+    let updatedSnapshot: Task = { ...activeTask, project_id: projectId, view_group_id: null, section_id: sectionId, isSyncing: true };
     setTasks(prev => prev.map(t => {
       if (t.id !== activeTask.id) return t;
       return updatedSnapshot;
@@ -1448,7 +1575,7 @@ function DashboardContent() {
     setTimeout(() => { skipRealtimeFetchRef.current = false; }, 1000);
 
     (async () => {
-      const moveResult = await taskAPI.moveTaskToProject(activeTask.id, projectId);
+      const moveResult = await taskAPI.moveTaskToProject(activeTask.id, projectId, sectionId);
       if (!moveResult.success) {
         setTasks(prev => prev.map(t => t.id === activeTask.id ? originalTask : t));
         emitTaskMoveError({
@@ -1463,16 +1590,42 @@ function DashboardContent() {
     })();
   }, [setTasks, toast]);
 
+  const reorderSections = async (sectionId: number, targetIndex: number) => {
+    if (!selectedProjectId) return;
+    const projectId = parseInt(selectedProjectId);
+    const updated = await sectionAPI.reorderSections(sectionId, targetIndex, projectId);
+    if (!updated.success) {
+      toast('Erro ao reordenar pastas', 'error');
+      await fetchSections();
+    }
+  };
+
+  const moveSectionToProject = async (sectionId: number, targetProjectId: number) => {
+    const removedSection = sections.find(s => s.id === sectionId);
+    setSections(prev => prev.filter(s => s.id !== sectionId));
+    const result = await sectionAPI.moveSectionToProject(sectionId, targetProjectId);
+    if (!result.success) {
+      if (removedSection) setSections(prev => [...prev, removedSection]);
+      toast('Erro ao mover pasta entre projetos', 'error');
+    } else {
+      toast('Pasta movida com sucesso', 'success');
+    }
+  };
+
   const handleDragStart = (event: any) => {
     const { active } = event;
     if (active.data.current?.type === 'Task') {
       setActiveDragTask(active.data.current.task);
     }
+    if (active.data.current?.type === 'SectionDrag') {
+      setActiveDragSection(active.data.current.section);
+    }
   };
 
   const handleDragOver = (event: any) => {
     const { active } = event;
-    if (active.data.current?.type === 'Task') {
+    const dragType = active.data.current?.type;
+    if (dragType === 'Task') {
       const pos = lastPointerPos.current;
       const elements = document.elementsFromPoint(pos.x, pos.y);
       const el = elements.find(el => el.closest('[data-sidebar-type]'))?.closest('[data-sidebar-type]');
@@ -1480,7 +1633,21 @@ function DashboardContent() {
       if (el) {
         const id = parseInt(el.getAttribute('data-sidebar-id')!);
         const type = el.getAttribute('data-sidebar-type') as 'group' | 'project';
-        window.dispatchEvent(new CustomEvent('sidebar-drag-over', { detail: { id, type } }));
+        window.dispatchEvent(new CustomEvent('sidebar-drag-over', { detail: { id, type, entity: 'task' } }));
+      } else {
+        window.dispatchEvent(new CustomEvent('sidebar-drag-leave'));
+      }
+    }
+    if (dragType === 'SectionDrag') {
+      const pos = lastPointerPos.current;
+      const elements = document.elementsFromPoint(pos.x, pos.y);
+      const el = elements.find(e => e.closest('[data-sidebar-type]'))?.closest('[data-sidebar-type]');
+      if (el) {
+        const id = parseInt(el.getAttribute('data-sidebar-id')!);
+        const type = el.getAttribute('data-sidebar-type') as 'group' | 'project';
+        if (type === 'project') {
+          window.dispatchEvent(new CustomEvent('sidebar-drag-over', { detail: { id, type, entity: 'section' } }));
+        }
       } else {
         window.dispatchEvent(new CustomEvent('sidebar-drag-leave'));
       }
@@ -1489,13 +1656,63 @@ function DashboardContent() {
 
   const handleDragCancel = () => {
     setActiveDragTask(null);
+    setActiveDragSection(null);
     window.dispatchEvent(new CustomEvent('sidebar-drag-leave'));
   };
 
   const handleDragEnd = (event: any) => {
       setActiveDragTask(null);
+      const activeSection = activeDragSection;
+      setActiveDragSection(null);
       window.dispatchEvent(new CustomEvent('sidebar-drag-leave'));
       const { active, over } = event;
+
+      // ─── SECTION SIDEBAR DROP (move section to another project) ──────
+      if (active.data.current?.type === 'SectionDrag') {
+        const section = active.data.current.section as Section;
+        const pos = lastPointerPos.current;
+        const elements = document.elementsFromPoint(pos.x, pos.y);
+        const el = elements.find(e => e.closest('[data-sidebar-type]'))?.closest('[data-sidebar-type]');
+        if (el) {
+          const sidebarType = el.getAttribute('data-sidebar-type');
+          const sidebarId = parseInt(el.getAttribute('data-sidebar-id')!);
+          if (sidebarType === 'project' && sidebarId !== section.project_id) {
+            moveSectionToProject(section.id, sidebarId);
+            return;
+          }
+        }
+        if (!over) return;
+        // Section reorder within project
+        const overIdStr = String(over.id);
+        const currentSections = [...sections];
+        const fromIndex = currentSections.findIndex(s => s.id === section.id);
+        if (fromIndex === -1) return;
+        let toIndex: number | null = null;
+        if (overIdStr.startsWith('section-reorder-')) {
+          if (overIdStr === 'section-reorder-end') {
+            toIndex = currentSections.length;
+          } else {
+            const targetSectionId = parseInt(overIdStr.slice('section-reorder-'.length), 10);
+            toIndex = currentSections.findIndex(s => s.id === targetSectionId);
+          }
+        } else if (overIdStr.startsWith('section-')) {
+          const targetSectionId = parseInt(overIdStr.slice('section-'.length), 10);
+          if (!isNaN(targetSectionId)) {
+            toIndex = currentSections.findIndex(s => s.id === targetSectionId);
+          }
+        }
+        if (toIndex === null || toIndex === -1) return;
+        if (fromIndex === toIndex) return;
+        setSections(prev => {
+          const next = [...prev];
+          const [moved] = next.splice(fromIndex, 1);
+          next.splice(toIndex, 0, moved);
+          return next.map((s, i) => ({ ...s, order: i }));
+        });
+        reorderSections(section.id, toIndex);
+        return;
+        return;
+      }
 
       // ponytail: sidebar fallback – dnd-kit blocks native HTML5 drag,
       // so we detect sidebar drops by cursor position
@@ -1584,6 +1801,36 @@ function DashboardContent() {
       if (overType === 'project') {
         execProjectDrop(activeTask, overId as number);
         return;
+      }
+
+      // ─── DASHBOARD BLOCK DROP (soltou em cima de um card de tarefa que
+      // vive dentro de um bloco do Dashboard, não numa seção de projeto).
+      // Sem isso, pointerWithin sempre prioriza o card da tarefa sobre o
+      // bloco em si, então só soltar no espaço vazio (perto do botão
+      // "Adicionar") funcionava.
+      if (overType === 'Task') {
+        const blockMatch = String(over.id).match(/^task-block-(project|group):(\d+)-\d+$/);
+        // ponytail: mesmo problema, mas na página dedicada de uma lista
+        // (/?group=X) — os cards ali usam o prefixo "task-selected-group-"
+        // em vez de "task-block-group:", então precisam do próprio match.
+        const selectedGroupMatch = blockMatch ? null : String(over.id).match(/^task-selected-group-(\d+)-\d+$/);
+        if (blockMatch || selectedGroupMatch) {
+          const kind = blockMatch ? blockMatch[1] : 'group';
+          const targetId = blockMatch ? parseInt(blockMatch[2], 10) : parseInt(selectedGroupMatch![1], 10);
+          if (kind === 'project') {
+            // Herda a pasta da tarefa em que foi solto, em vez de sempre
+            // cair em "Sem Pasta" — assim ela fica na mesma pasta,
+            // independente de onde exatamente dentro do bloco foi solta.
+            const overTask = over.data.current!.task as Task;
+            const changed = activeTask.project_id !== targetId || activeTask.section_id !== overTask.section_id;
+            if (changed) execProjectDrop(activeTask, targetId, overTask.section_id);
+          } else {
+            const alreadyLinked = activeTask.view_group_id === targetId
+              || (activeTask.linked_view_group_ids || []).includes(targetId);
+            if (!alreadyLinked) execGroupDrop(activeTask, targetId);
+          }
+          return;
+        }
       }
 
       // ─── SECTION / TASK DROP (reorder within project) ────────────────
@@ -1709,6 +1956,8 @@ function DashboardContent() {
             task={task}
             currentGroupId={currentGroupId}
             groups={groups}
+            projects={projects}
+            sections={sections}
             userEmail={user?.email}
             onToggle={toggleTask}
             onSelect={setSelectedTask}
@@ -1728,23 +1977,28 @@ function DashboardContent() {
   };
 
   const renderStatusGroups = (sectionId: number | null) => {
-    return STATUS_GROUPS.flatMap(group => {
+    return STATUS_GROUPS.map(group => {
       const groupTasks = getTasksBySectionAndStatus(sectionId, group.key);
-      if (groupTasks.length === 0) return [];
-
+      const statusColor: Record<string, string> = {
+        'A_FAZER': 'bg-slate-400',
+        'EM_ANDAMENTO': 'bg-blue-500',
+        'REVISAO': 'bg-yellow-500',
+        'CONCLUIDO': 'bg-green-500',
+      };
       return (
         <div key={group.key}>
-          <div
-            className={cn(
-              "flex items-center gap-2 px-4 py-1.5 border-b border-border/40 text-xs font-medium uppercase tracking-wider text-muted-foreground/60"
-            )}
-          >
-            <span>{group.label}</span>
-            <span className="text-muted-foreground/40 font-normal normal-case ml-1">
-              ({groupTasks.length})
-            </span>
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 bg-muted/[0.03]">
+            <div className={cn("w-2 h-2 rounded-full flex-shrink-0", statusColor[group.key])} />
+            <span className="text-xs font-semibold text-muted-foreground">{group.label}</span>
+            <span className="text-[10px] text-muted-foreground/50 ml-auto tabular-nums">{groupTasks.length}</span>
           </div>
-          {renderTasksList(groupTasks, `section-${sectionId ?? 'none'}-${group.key}`)}
+          {groupTasks.length > 0 ? (
+            renderTasksList(groupTasks, `section-${sectionId ?? 'none'}-${group.key}`)
+          ) : (
+            <div className="mx-3 my-2 px-4 py-3 text-[11px] text-muted-foreground/40 italic text-center border-2 border-dashed border-border/30 rounded-lg hover:border-primary/30 hover:text-muted-foreground/60 transition-colors">
+              Arraste tarefas para cá
+            </div>
+          )}
         </div>
       );
     });
@@ -1993,6 +2247,91 @@ function DashboardContent() {
         />
       )}
 
+      {/* Modal de criação de nova pasta */}
+      <Dialog open={newSectionModalOpen} onOpenChange={(open) => { if (!open) setNewSectionModalOpen(false); }}>
+        <DialogContent className="sm:max-w-sm" finalFocus={false}>
+          <DialogHeader>
+            <DialogTitle>Nova pasta</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleCreateSectionSubmit(); }}
+            className="space-y-3"
+          >
+            <Input
+              autoFocus
+              value={newSectionName}
+              onChange={(e) => setNewSectionName(e.target.value)}
+              placeholder="Nome da pasta"
+              disabled={isCreatingSection}
+            />
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">Cor</label>
+              <div className="flex gap-2 flex-wrap">
+                {PROJECT_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => setNewSectionColor(color)}
+                    className={cn(
+                      'w-7 h-7 rounded-full transition-transform',
+                      newSectionColor === color && 'ring-2 ring-offset-2 ring-primary scale-110'
+                    )}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            </div>
+            <Button type="submit" className="w-full" disabled={!newSectionName.trim() || isCreatingSection}>
+              Criar
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de edição de pasta */}
+      <Dialog open={editSectionModalOpen} onOpenChange={(open) => { if (!open) { setEditSectionModalOpen(false); setEditingSection(null); } }}>
+        <DialogContent className="sm:max-w-sm" finalFocus={false}>
+          <DialogHeader>
+            <DialogTitle>Editar pasta</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (editingSection !== null) updateSection(editingSection, editingSectionTitle, editSectionColor);
+            }}
+            className="space-y-3"
+          >
+            <Input
+              autoFocus
+              value={editingSectionTitle}
+              onChange={(e) => setEditingSectionTitle(e.target.value)}
+              placeholder="Nome da pasta"
+              onFocus={(e) => e.target.select()}
+            />
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">Cor</label>
+              <div className="flex gap-2 flex-wrap">
+                {PROJECT_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => setEditSectionColor(color)}
+                    className={cn(
+                      'w-7 h-7 rounded-full transition-transform',
+                      editSectionColor === color && 'ring-2 ring-offset-2 ring-primary scale-110'
+                    )}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            </div>
+            <Button type="submit" className="w-full" disabled={!editingSectionTitle.trim()}>
+              Salvar
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal de Personalização do Dashboard */}
       <Dialog open={showDashboardConfig} onOpenChange={(open) => !open && setShowDashboardConfig(false)}>
         <DialogContent className="sm:max-w-md max-h-[80vh] flex flex-col">
@@ -2104,9 +2443,9 @@ function DashboardContent() {
 
       {/* Sticky topbar */}
       <div className="sticky top-0 z-10 bg-card border-b border-border">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex flex-col gap-3">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
+        <div className="max-w-4xl mx-auto px-5 py-3 flex flex-col gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             {selectedProject && editingProjectName ? (
               <Input
                 value={editingProjectNameDraft}
@@ -2116,28 +2455,26 @@ function DashboardContent() {
                   if (e.key === 'Enter') updateProjectName(editingProjectNameDraft);
                   if (e.key === 'Escape') { setEditingProjectName(false); setEditingProjectNameDraft(''); }
                 }}
-                className="h-9 text-xl font-semibold w-64"
+                className="h-8 text-base font-semibold w-48"
                 autoFocus
               />
             ) : (
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-semibold text-foreground">{pageTitle}</h1>
+              <>
+                <h1 className="text-base font-semibold text-foreground truncate">{pageTitle}</h1>
                 {selectedProject && user && selectedProject.owner_id === user.id && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
+                  <button
                     onClick={() => { setEditingProjectName(true); setEditingProjectNameDraft(selectedProject.name); }}
-                    className="h-7 w-7 text-muted-foreground/50 hover:text-primary"
+                    className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground/40 hover:text-primary hover:bg-accent transition-all"
                   >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </Button>
+                    <Edit2 className="w-3 h-3" />
+                  </button>
                 )}
-              </div>
+              </>
             )}
-            <p className="text-[11px] text-muted-foreground mt-0.5">{todayDisplay}</p>
+            <span className="text-[10px] text-muted-foreground/60 hidden sm:inline">{todayDisplay}</span>
           </div>
           {(selectedProject || selectedGroup) && user && !isOnlyAssignee ? (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <InlineTaskCreator
                 destination={selectedProject ? { type: 'project', id: selectedProject.id } : { type: 'group', id: selectedGroup!.id }}
                 onCreateTask={handleCreateTask}
@@ -2145,11 +2482,11 @@ function DashboardContent() {
                 placeholder="Digite o nome da tarefa"
               />
               {selectedProject && (
-                <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5 border border-border/50">
+                <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5 border border-border/50">
                   <button
                     onClick={() => setViewMode('list')}
                     className={cn(
-                      "px-2.5 py-1 text-xs font-medium rounded-md transition-colors",
+                      "px-2 py-0.5 text-[11px] font-medium rounded-sm transition-colors",
                       viewMode === 'list' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -2158,7 +2495,7 @@ function DashboardContent() {
                   <button
                     onClick={() => setViewMode('kanban')}
                     className={cn(
-                      "px-2.5 py-1 text-xs font-medium rounded-md transition-colors",
+                      "px-2 py-0.5 text-[11px] font-medium rounded-sm transition-colors",
                       viewMode === 'kanban' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -2168,13 +2505,13 @@ function DashboardContent() {
               )}
             </div>
           ) : selectedProject && user && isOnlyAssignee ? (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               {selectedProject && (
-                <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5 border border-border/50">
+                <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5 border border-border/50">
                   <button
                     onClick={() => setViewMode('list')}
                     className={cn(
-                      "px-2.5 py-1 text-xs font-medium rounded-md transition-colors",
+                      "px-2 py-0.5 text-[11px] font-medium rounded-sm transition-colors",
                       viewMode === 'list' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -2183,7 +2520,7 @@ function DashboardContent() {
                   <button
                     onClick={() => setViewMode('kanban')}
                     className={cn(
-                      "px-2.5 py-1 text-xs font-medium rounded-md transition-colors",
+                      "px-2 py-0.5 text-[11px] font-medium rounded-sm transition-colors",
                       viewMode === 'kanban' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -2194,7 +2531,7 @@ function DashboardContent() {
             </div>
           ) : null}
         </div>
-          <div className="flex items-center gap-2 pr-10 flex-wrap border-t border-border/60 pt-3">
+          <div className="flex items-center gap-1.5 pr-8 flex-wrap">
             {(selectedGroup || selectedProject) && (
               <Button variant="ghost" size="sm" onClick={() => router.push('/')} className="rounded-full h-7 text-xs gap-1">
                 <XCircle className="w-3.5 h-3.5" /> Limpar filtro
@@ -2242,7 +2579,7 @@ function DashboardContent() {
       </div>
 
       {/* Page content */}
-      <div className="max-w-4xl mx-auto w-full px-6 py-5 flex-1">
+      <div className="max-w-5xl mx-auto w-full px-5 py-4 flex-1">
 
       {/* MODO PROJETO: Kanban ou Seções expansíveis */}
       {selectedProject ? (
@@ -2272,6 +2609,8 @@ function DashboardContent() {
                   onReject={handleRejectTask}
                   assigneeCandidates={assigneeCandidates}
                   onAssigneeChange={handleAssigneeChange}
+                  projects={projects}
+                  sections={sections}
                   onAddTask={(title) => {
                     if (!user || !selectedProjectId) return;
                     const trimmed = title.trim();
@@ -2312,35 +2651,75 @@ function DashboardContent() {
           {isOnlyAssignee ? (
             loading ? (
               <div className="text-center py-8 text-muted-foreground">Carregando...</div>
-            ) : getProjectTasks().length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
-                <p>Nenhuma tarefa atribuída a você neste projeto.</p>
-              </div>
             ) : (
-              <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
-                {getProjectTasks().map(task => {
-                  const project = task.project_id ? projects.find(p => p.id === task.project_id) : null;
-                  const isOwner = task.user_id === user?.id || (project ? project.owner_id === user?.id : false);
-                  const showReviewActions = task.status === 'REVISAO' && isOwner;
-                  return (
-                  <SortableTaskItem
-                    key={task.id}
-                    dragId={`task-assigned-${task.id}`}
-                    task={task}
-                    groups={groups}
-                    userEmail={user?.email}
-                    onToggle={toggleTask}
-                    onSelect={setSelectedTask}
-                    onDelete={deleteTask}
-                    onPriorityChange={handlePriorityChange}
-                    onStatusChange={showReviewActions ? undefined : handleStatusCycle}
-                    onApprove={showReviewActions ? handleApproveTask : undefined}
-                    onReject={showReviewActions ? handleRejectTask : undefined}
-                    // ponytail: assignee não pode reatribuir, só owner; esconde dropdown
-                    isPending={!!pendingTaskIds[task.id]}
-                  />
-                )})}
-              </div>
+              <Card className="border-border/60 overflow-hidden" style={getSoftCardStyle(selectedProject?.color)}>
+                <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-border/60">
+                  <div className="w-1 h-4 rounded-full flex-shrink-0 bg-border" />
+                  <span className="text-sm font-semibold text-muted-foreground">Tarefas</span>
+                  <span className="text-[11px] text-muted-foreground/50 tabular-nums">{getProjectTasks().length}</span>
+                </div>
+                <div>
+                  {(() => {
+                    const statusColor: Record<string, string> = {
+                      'A_FAZER': 'bg-slate-400',
+                      'EM_ANDAMENTO': 'bg-blue-500',
+                      'REVISAO': 'bg-yellow-500',
+                      'CONCLUIDO': 'bg-green-500',
+                    };
+                    return STATUS_GROUPS.map(group => {
+                      const groupTasks = getProjectTasks().filter(t => group.match(t.status));
+                      return (
+                        <div key={group.key}>
+                          <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 bg-muted/[0.03]">
+                            <div className={cn("w-2 h-2 rounded-full flex-shrink-0", statusColor[group.key])} />
+                            <span className="text-xs font-semibold text-muted-foreground">{group.label}</span>
+                            <span className="text-[10px] text-muted-foreground/50 ml-auto tabular-nums">{groupTasks.length}</span>
+                          </div>
+                          {groupTasks.length > 0 ? (
+                            <SortableContext items={groupTasks.map(t => `task-assigned-${group.key}-${t.id}`)} strategy={verticalListSortingStrategy}>
+                              {groupTasks.map(task => {
+                                const project = task.project_id ? projects.find(p => p.id === task.project_id) : null;
+                                const isOwner = task.user_id === user?.id || (project ? project.owner_id === user?.id : false);
+                                const showReviewActions = task.status === 'REVISAO' && isOwner;
+                                return (
+                                  <SortableTaskItem
+                                    key={task.id}
+                                    dragId={`task-assigned-${group.key}-${task.id}`}
+                                    task={task}
+                                    groups={groups}
+                                    projects={projects}
+                                    sections={sections}
+                                    userEmail={user?.email}
+                                    onToggle={toggleTask}
+                                    onSelect={setSelectedTask}
+                                    onDelete={deleteTask}
+                                    onPriorityChange={handlePriorityChange}
+                                    onStatusChange={showReviewActions ? undefined : handleStatusCycle}
+                                    onApprove={showReviewActions ? handleApproveTask : undefined}
+                                    onReject={showReviewActions ? handleRejectTask : undefined}
+                                    isPending={!!pendingTaskIds[task.id]}
+                                  />
+                                );
+                              })}
+                            </SortableContext>
+                          ) : (
+                            <div className="mx-3 my-2 px-4 py-3 text-[11px] text-muted-foreground/40 italic text-center border-2 border-dashed border-border/30 rounded-lg hover:border-primary/30 hover:text-muted-foreground/60 transition-colors">
+                              Arraste tarefas para cá
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
+                  <div className="px-3 py-2 border-t border-border/40">
+                    <InlineTaskCreator
+                      onCreateSimpleTask={(title, desc) => handleAddTask(undefined, title, undefined, desc)}
+                      buttonText="+ Adicionar"
+                      placeholder="Nova tarefa..."
+                    />
+                  </div>
+                </div>
+              </Card>
             )
           ) : (
           <>
@@ -2350,159 +2729,145 @@ function DashboardContent() {
           {loading ? (
             <div className="text-center py-8 text-muted-foreground">Carregando...</div>
           ) : sections.length === 0 && getProjectTasks().length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
-              <p>Nenhuma pasta encontrada neste projeto.</p>
-              <Button
-                variant="default"
-                size="sm"
-                disabled={isCreatingSection}
-                onClick={async () => {
-                  if (creatingSectionRef.current) return;
-                  creatingSectionRef.current = true;
-                  setIsCreatingSection(true);
-                  try {
-                    await createSection('Nova pasta');
-                  } finally {
-                    creatingSectionRef.current = false;
-                    setIsCreatingSection(false);
-                  }
-                }}
-                className="rounded-full h-7 text-xs gap-1 mt-4"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Nova pasta
-              </Button>
-            </div>
+            <DroppableBlock blockId={`project:${selectedProject.id}`} blockType="project">
+              <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
+                <p>Nenhuma pasta encontrada neste projeto.</p>
+                <p className="text-xs mt-1">Arraste uma tarefa até aqui ou crie uma pasta.</p>
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={isCreatingSection}
+                  onClick={() => { setNewSectionName(''); setNewSectionModalOpen(true); }}
+                  className="rounded-full h-7 text-xs gap-1 mt-4"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Nova pasta
+                </Button>
+              </div>
+            </DroppableBlock>
           ) : (
+            <DroppableBlock blockId={`project:${selectedProject.id}`} blockType="project">
             <>
               {/* Lista de Seções */}
-              {sections.map((section) => (
-                <Card
-                  key={section.id}
-                  className={cn(
-                    "border-border/60 overflow-hidden transition-all duration-200"
-                  )}
-                  style={getSoftCardStyle(selectedProject?.color)}
-                >
-                  {/* Header da seção */}
-                  <div
-                    className="flex items-center justify-between px-4 py-2 border-b border-border/60 cursor-pointer hover:bg-accent/50 transition-colors"
-                    onClick={() => toggleSectionExpand(section.id)}
+              {sections.map((section, idx) => (
+                <Fragment key={section.id}>
+                  <SectionReorderDrop sectionId={section.id} />
+                  <DroppableSection sectionId={section.id}>
+                  <Card
+                    className={cn(
+                      "border-border/60 overflow-hidden transition-all duration-200 group/section mb-6"
+                    )}
+                    style={getSoftCardStyle(section.color || selectedProject?.color)}
                   >
-                    <div className="flex items-center gap-3">
-                      <ChevronDown
+                    {/* Header da seção com drag handle */}
+                    <DraggableSectionHeader section={section}>
+                    <div
+                      className="flex items-center justify-between flex-1 pr-4 py-2.5 border-b border-border/60 cursor-pointer hover:bg-accent/30 transition-colors min-w-0"
+                      onClick={() => toggleSectionExpand(section.id)}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <ChevronDown
+                          className={cn(
+                            'w-3.5 h-3.5 text-muted-foreground/60 transition-transform flex-shrink-0',
+                            !expandedSections[section.id] && '-rotate-90'
+                          )}
+                        />
+                        <div
+                          className="w-1 h-4 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: section.color || 'hsl(var(--primary) / 0.4)' }}
+                        />
+                        <span className="text-sm font-semibold truncate">{section.title}</span>
+                        <span className="text-[11px] text-muted-foreground/50 tabular-nums flex-shrink-0">
+                          {getTasksBySection(section.id).length}
+                        </span>
+                      </div>
+                      <div
                         className={cn(
-                          'w-4 h-4 text-muted-foreground transition-transform',
-                          !expandedSections[section.id] && '-rotate-90'
+                          "flex items-center gap-0.5",
+                          sectionQuickAddOpen[section.id] && "flex-1 min-w-0 justify-end"
                         )}
-                      />
-                      <Folder className="w-4 h-4 text-primary" />
-                      {editingSection === section.id ? (
-                        <Input
-                          value={editingSectionTitle}
-                          onChange={(e) => setEditingSectionTitle(e.target.value)}
-                          onBlur={() => updateSection(section.id, editingSectionTitle)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') updateSection(section.id, editingSectionTitle);
-                            if (e.key === 'Escape') { setEditingSection(null); setEditingSectionTitle(''); }
-                          }}
-                          className="h-8 py-1 text-sm font-semibold w-40"
-                          autoFocus
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          className="text-sm font-semibold text-left hover:text-primary transition-colors"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openSectionEdit(section);
-                          }}
-                        >
-                          {section.title}
-                        </button>
-                      )}
-                      <span className="text-xs text-muted-foreground">
-                        ({getTasksBySection(section.id).length})
-                      </span>
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {sectionQuickAddOpen[section.id] ? (
+                          <InlineTaskCreator
+                            defaultOpen
+                            autoFocus
+                            className="h-7 text-xs flex-1 min-w-0"
+                            onCreateSimpleTask={(title, desc) => handleAddTask(section.id, title, undefined, desc)}
+                            onCancel={() => toggleSectionQuickAdd(section.id)}
+                            placeholder="Nova tarefa..."
+                            buttonText=""
+                          />
+                        ) : (
+                          <button
+                            onClick={() => toggleSectionQuickAdd(section.id)}
+                            className="h-7 w-7 flex items-center justify-center rounded text-muted-foreground/40 hover:text-primary hover:bg-accent/50 opacity-0 group-hover/section:opacity-100 transition-all"
+                            title="Adicionar tarefa"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {!sectionQuickAddOpen[section.id] && (
+                          <>
+                            <button
+                              onClick={() => openSectionEdit(section)}
+                              className="h-7 w-7 flex items-center justify-center rounded text-muted-foreground/40 hover:text-primary hover:bg-accent/50 opacity-0 group-hover/section:opacity-100 transition-all"
+                              title="Editar pasta"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => setShareSectionTarget(section)}
+                              className="h-7 w-7 flex items-center justify-center rounded text-muted-foreground/40 hover:text-primary hover:bg-accent/50 opacity-0 group-hover/section:opacity-100 transition-all"
+                              title="Compartilhar pasta"
+                            >
+                              <Share className="w-3 h-3" />
+                            </button>
+                            <SectionSharedIndicator sectionId={section.id} />
+                            <button
+                              onClick={() => deleteSection(section.id)}
+                              className="h-7 w-7 flex items-center justify-center rounded text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover/section:opacity-100 transition-all"
+                              title="Excluir pasta"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                      {sectionQuickAddOpen[section.id] ? (
-                        <InlineTaskCreator
-                          autoFocus
-                          className="h-8 text-sm"
-                          onCreateSimpleTask={(title, desc) => handleAddTask(section.id, title, undefined, desc)}
-                          onCancel={() => toggleSectionQuickAdd(section.id)}
-                          placeholder="Nova tarefa..."
-                          buttonText=""
-                        />
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => toggleSectionQuickAdd(section.id)}
-                          className="h-8 w-8 text-muted-foreground/50 hover:text-primary"
-                          title="Adicionar tarefa nesta pasta"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openSectionEdit(section)}
-                        className="h-8 w-8 text-muted-foreground/50 hover:text-primary"
-                        title="Editar nome da pasta"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setShareSectionTarget(section)}
-                        className="h-8 w-8 text-muted-foreground/50 hover:text-primary"
-                        title="Compartilhar pasta"
-                      >
-                        <Share className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteSection(section.id)}
-                        className="h-8 w-8 text-muted-foreground/50 hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
+                    </DraggableSectionHeader>
 
                   {/* Tarefas da seção */}
                   {expandedSections[section.id] && (
-                    <DroppableSection sectionId={section.id}>
+                    <div className="border-t border-border/50">
                       {renderStatusGroups(section.id)}
-                      <div className="px-4 py-3 border-t border-border/60">
+                      <div className="px-3 py-2 border-t border-border/40">
                         <InlineTaskCreator
                           onCreateSimpleTask={(title, desc) => handleAddTask(section.id, title, undefined, desc)}
-                          buttonText="Adicionar tarefa"
-                          placeholder="Adicionar nova tarefa"
+                          buttonText="+ Adicionar"
+                          placeholder="Nova tarefa..."
                         />
                       </div>
-                    </DroppableSection>
+                    </div>
                   )}
                 </Card>
+                </DroppableSection>
+                </Fragment>
               ))}
+              {sections.length > 0 && <SectionReorderDrop sectionId={sections[sections.length - 1].id} isLast />}
 
               {/* Tarefas sem seção: só exibe o card quando houver ao menos 1 tarefa órfã */}
               {getTasksBySection(null).length > 0 && (
+              <DroppableSection sectionId={'unsectioned'}>
               <Card
                   className={cn(
-                    "border-border/60 overflow-hidden transition-all duration-200"
+                    "border-border/60 overflow-hidden transition-all duration-200 mb-6"
                   )}
                   style={getSoftCardStyle(selectedProject?.color)}
                 >
-                  <div className="flex items-center justify-between px-4 py-2 border-b border-border/60">
-                    <div className="flex items-center gap-3">
-                      <Folder className="w-4 h-4 text-muted-foreground" />
+                  <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/60 group/section">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-1 h-4 rounded-full flex-shrink-0 bg-border" />
                       {editingUnsectionedTitle ? (
                         <Input
                           value={unsectionedTitleDraft}
@@ -2527,68 +2892,75 @@ function DashboardContent() {
                               setEditingUnsectionedTitle(false);
                             }
                           }}
-                          className="h-8 py-1 text-sm font-semibold w-40"
+                          className="h-7 py-1 text-sm font-semibold w-40"
                           autoFocus
                           onClick={(e) => e.stopPropagation()}
                         />
                       ) : (
                         <span className="text-sm font-semibold text-muted-foreground">{unsectionedTitle}</span>
                       )}
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-[11px] text-muted-foreground/50 tabular-nums flex-shrink-0">
                         ({getTasksBySection(null).length})
                       </span>
                     </div>
-                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                    <div
+                      className={cn(
+                        "flex items-center gap-0.5",
+                        unsectionedQuickAddOpen && "flex-1 min-w-0 justify-end"
+                      )}
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {unsectionedQuickAddOpen ? (
                         <InlineTaskCreator
+                          defaultOpen
                           autoFocus
-                          className="h-8 text-sm"
+                          className="h-7 text-xs flex-1 min-w-0"
                           onCreateSimpleTask={(title, desc) => handleAddTask(undefined, title, undefined, desc)}
                           onCancel={() => setUnsectionedQuickAddOpen(false)}
                           placeholder="Nova tarefa..."
                           buttonText=""
                         />
                       ) : (
-                        <Button
-                          variant="ghost"
-                          size="icon"
+                        <button
                           onClick={() => setUnsectionedQuickAddOpen(true)}
-                          className="h-8 w-8 text-muted-foreground/50 hover:text-primary"
-                          title="Adicionar tarefa nesta pasta"
+                          className="h-7 w-7 flex items-center justify-center rounded text-muted-foreground/40 hover:text-primary hover:bg-accent/50 opacity-0 group-hover/section:opacity-100 transition-all"
+                          title="Adicionar tarefa"
                         >
-                          <Plus className="w-4 h-4" />
-                        </Button>
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setEditingUnsectionedTitle(true);
-                          setUnsectionedTitleDraft(unsectionedTitle);
-                        }}
-                        className="h-8 w-8 text-muted-foreground/50 hover:text-primary"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </Button>
+                      {!unsectionedQuickAddOpen && (
+                        <button
+                          onClick={() => {
+                            setEditingUnsectionedTitle(true);
+                            setUnsectionedTitleDraft(unsectionedTitle);
+                          }}
+                          className="h-7 w-7 flex items-center justify-center rounded text-muted-foreground/40 hover:text-primary hover:bg-accent/50 opacity-0 group-hover/section:opacity-100 transition-all"
+                          title="Renomear"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  <DroppableSection sectionId={'unsectioned'}>
+                  <div className="border-t border-border/50">
                     {renderStatusGroups(null)}
                     {getTasksBySection(null).length === 0 && (
                       <div className="px-4 py-3 text-xs text-muted-foreground/50 text-center italic">
                         Solte tarefas aqui para removê-las da organização
                       </div>
                     )}
-                    <div className="px-4 py-3 border-t border-border/60">
+                    <div className="px-3 py-2 border-t border-border/40">
                       <InlineTaskCreator
                         onCreateSimpleTask={(title, desc) => handleAddTask(undefined, title, undefined, desc)}
-                        buttonText="Adicionar tarefa"
-                        placeholder="Adicionar nova tarefa"
+                        buttonText="+ Adicionar"
+                        placeholder="Nova tarefa..."
                       />
                     </div>
-                  </DroppableSection>
+                  </div>
                 </Card>
+                </DroppableSection>
               )}
 
               {/* Botão nova seção */}
@@ -2597,17 +2969,7 @@ function DashboardContent() {
                   variant="default"
                   size="sm"
                   disabled={isCreatingSection}
-                  onClick={async () => {
-                    if (creatingSectionRef.current) return;
-                    creatingSectionRef.current = true;
-                    setIsCreatingSection(true);
-                    try {
-                      await createSection('Nova pasta');
-                    } finally {
-                      creatingSectionRef.current = false;
-                      setIsCreatingSection(false);
-                    }
-                  }}
+                  onClick={() => { setNewSectionName(''); setNewSectionModalOpen(true); }}
                   className="rounded-full h-7 text-xs gap-1"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -2615,6 +2977,7 @@ function DashboardContent() {
                 </Button>
               </div>
             </>
+            </DroppableBlock>
           )}
           </>
           )}
@@ -2626,10 +2989,12 @@ function DashboardContent() {
           {loading ? (
             <div className="text-center py-8 text-muted-foreground">Carregando...</div>
           ) : selectedGroup && filteredTasks.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
-              <p>Nenhuma tarefa neste grupo.</p>
-              <p className="text-sm mt-2">Adicione uma tarefa acima para começar.</p>
-            </div>
+            <DroppableBlock blockId={`group:${selectedGroup.id}`} blockType="group">
+              <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed">
+                <p>Nenhuma tarefa neste grupo.</p>
+                <p className="text-sm mt-2">Adicione uma tarefa acima para começar, ou arraste uma tarefa até aqui.</p>
+              </div>
+            </DroppableBlock>
           ) : (
             /* Seções organizadas do Dashboard */
             <>
@@ -2688,12 +3053,14 @@ function DashboardContent() {
 
               {/* Quando tem grupo selecionado: lista compacta única */}
               {selectedGroup && (
-                <div
-                  className="border rounded-[10px] overflow-hidden transition-colors duration-200"
-                  style={getSoftCardStyle(selectedGroup.color)}
-                >
-                  {renderTasksList(filteredTasks, `selected-group-${selectedGroup.id}`, selectedGroup.id)}
-                </div>
+                <DroppableBlock blockId={`group:${selectedGroup.id}`} blockType="group">
+                  <div
+                    className="border rounded-[10px] overflow-hidden transition-colors duration-200 min-h-[64px]"
+                    style={getSoftCardStyle(selectedGroup.color)}
+                  >
+                    {renderTasksList(filteredTasks, `selected-group-${selectedGroup.id}`, selectedGroup.id)}
+                  </div>
+                </DroppableBlock>
               )}
             </>
           )}
@@ -2724,12 +3091,28 @@ function DashboardContent() {
           <SortableTaskItem
             task={activeDragTask}
             groups={groups}
+            projects={projects}
             userEmail={user?.email}
             onToggle={() => {}}
             onSelect={() => {}}
             onDelete={() => {}}
             isOverlay
           />
+        ) : null}
+        {activeDragSection ? (
+          <Card className="border-primary/60 shadow-lg w-64">
+            <div className="flex items-center gap-2.5 px-4 py-2.5">
+              <GripVertical className="w-3.5 h-3.5 text-muted-foreground/40" />
+              <div
+                className="w-1 h-4 rounded-full flex-shrink-0"
+                style={{ backgroundColor: activeDragSection.color || 'hsl(var(--primary) / 0.4)' }}
+              />
+              <span className="text-sm font-semibold">{activeDragSection.title}</span>
+              <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full ml-auto">
+                Pasta
+              </span>
+            </div>
+          </Card>
         ) : null}
       </DragOverlay>
     </div>
@@ -2740,9 +3123,7 @@ function DashboardContent() {
 export default function DashboardPage() {
   return (
     <Suspense fallback={<div className="p-4 text-center">Carregando...</div>}>
-      <ToastProvider>
-        <DashboardContent />
-      </ToastProvider>
+      <DashboardContent />
     </Suspense>
   );
 }

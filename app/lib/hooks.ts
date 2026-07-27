@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import type { Task, Group, Project, Section, ProjectInvite, Finance, Goal } from '@/types/index';
 
@@ -202,6 +202,66 @@ export function useListFilters(initialFilters: Record<string, any> = {}) {
   }, []);
 
   return { filters, updateFilter, clearFilters, setAllFilters };
+}
+
+/**
+ * Hook para exclusão com "Desfazer".
+ * A exclusão real no backend é adiada por `delayMs`; se o usuário desfizer
+ * antes do prazo, o item é restaurado no estado local e a chamada ao backend
+ * é cancelada (nunca chega a apagar nada no banco).
+ */
+export function useUndoableDelete<T>({
+  deleteFn,
+  onRemove,
+  onRestore,
+  toast,
+  getId,
+  delayMs = 5000,
+}: {
+  deleteFn: (item: T) => Promise<{ success: boolean; error?: string }>;
+  onRemove: (item: T) => void;
+  onRestore: (item: T) => void;
+  toast: (message: string, type?: 'success' | 'error' | 'info', options?: { action?: { label: string; onClick: () => void }; duration?: number }) => void;
+  getId: (item: T) => number | string;
+  delayMs?: number;
+}) {
+  const pendingRef = useRef<Map<number | string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const remove = useCallback((item: T, message = 'Item excluído') => {
+    const id = getId(item);
+
+    const existingTimer = pendingRef.current.get(id);
+    if (existingTimer) clearTimeout(existingTimer);
+
+    onRemove(item);
+
+    const timer = setTimeout(async () => {
+      pendingRef.current.delete(id);
+      const result = await deleteFn(item);
+      if (!result.success) {
+        onRestore(item);
+        toast(result.error || 'Erro ao excluir item', 'error');
+      }
+    }, delayMs);
+
+    pendingRef.current.set(id, timer);
+
+    toast(message, 'info', {
+      duration: delayMs,
+      action: {
+        label: 'Desfazer',
+        onClick: () => {
+          const t = pendingRef.current.get(id);
+          if (!t) return;
+          clearTimeout(t);
+          pendingRef.current.delete(id);
+          onRestore(item);
+        },
+      },
+    });
+  }, [deleteFn, onRemove, onRestore, toast, getId, delayMs]);
+
+  return { remove };
 }
 
 /**

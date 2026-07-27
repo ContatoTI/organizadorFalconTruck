@@ -12,6 +12,8 @@ import { taskAPI } from '@/app/lib/taskAPI';
 import { NotificationBell, NotificationsPanel } from '@/app/components/NotificationsPanel';
 import { ProfileDialog } from '@/app/components/ProfileDialog';
 import { ProjectsView } from '@/app/components/ProjectsView';
+import { ProjectSharedIndicator } from '@/app/components/SharedWithIndicator';
+import { ToastProvider } from '@/app/components/Toast';
 import type { Project } from '@/types/index';
 import {
   LayoutDashboard,
@@ -36,6 +38,7 @@ import {
   Eye,
   EyeOff,
   Menu,
+  Share2,
 } from 'lucide-react';
 
 function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
@@ -493,16 +496,19 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
 
   const [isDragOver, setIsDragOver] = useState<number | null>(null);
   const [dragOverType, setDragOverType] = useState<'group' | 'project' | null>(null);
+  const [sidebarDragEntity, setSidebarDragEntity] = useState<'task' | 'section' | null>(null);
 
   useEffect(() => {
     const handleDragOverEvent = (e: any) => {
-      const { id, type } = e.detail;
+      const { id, type, entity } = e.detail;
       setIsDragOver(id);
       setDragOverType(type);
+      if (entity) setSidebarDragEntity(entity);
     };
     const handleDragLeaveEvent = () => {
       setIsDragOver(null);
       setDragOverType(null);
+      setSidebarDragEntity(null);
     };
 
     window.addEventListener('sidebar-drag-over', handleDragOverEvent);
@@ -1005,6 +1011,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                                 ? "bg-sidebar-accent text-sidebar-primary font-semibold"
                                 : "hover:bg-accent/50"
                           )}
+                          data-sidebar-drag-entity={sidebarDragEntity}
                         >
                           <Link
                             href={`/?project=${project.id}`}
@@ -1015,10 +1022,15 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                               className="w-3 h-3 rounded-full"
                               style={{ backgroundColor: project.color }}
                             />
-                            <span className="truncate">{project.name}</span>
-                            {!isOwner && (
-                              <span className="text-xs text-muted-foreground ml-auto">compartilhado</span>
+                            <span className="truncate flex-1 min-w-0">{project.name}</span>
+                            {sidebarDragEntity === 'section' && isDragOver === project.id ? (
+                              <span className="text-[10px] font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded-full ml-auto animate-pulse">
+                                Mover pasta
+                              </span>
+                            ) : !isOwner && (
+                              <ProjectSharedIndicator projectId={project.id} />
                             )}
+                            {isOwner && <ProjectSharedIndicator projectId={project.id} />}
                           </Link>
                           <button
                             onClick={(e) => { e.preventDefault(); toggleProjectVisibility(project); }}
@@ -1094,6 +1106,20 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                 </Link>
               </div>
 
+              {/* Compartilhamentos */}
+              <div className="pt-1">
+                <Link
+                  href="/shares"
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                    pathname === '/shares' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
+                  )}
+                >
+                  <Share2 className="w-4 h-4" />
+                  Compartilhamentos
+                </Link>
+              </div>
+
               {/* Sair */}
               <div className="pt-4 border-t">
                 <button
@@ -1134,8 +1160,10 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
 
 export default function DefaultLayout({ children }: { children: React.ReactNode }) {
   return (
-    <Suspense fallback={null}>
-      <DefaultLayoutInner>{children}</DefaultLayoutInner>
-    </Suspense>
+    <ToastProvider>
+      <Suspense fallback={null}>
+        <DefaultLayoutInner>{children}</DefaultLayoutInner>
+      </Suspense>
+    </ToastProvider>
   );
 }

@@ -120,6 +120,7 @@ export interface Section {
   user_id: string;
   title: string;
   order: number;
+  color?: string | null;
   created_at?: string;
   default_assignee_id?: string | null;
 }
