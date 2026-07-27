@@ -47,6 +47,7 @@ export interface Task {
   isSyncing?: boolean;
   assignee_id?: string | null;
   assignee_name?: string;
+  deleted_at?: string | null;
 }
 
 // ============= COMPARTILHAMENTO GRANULAR (pasta/tarefa) =============

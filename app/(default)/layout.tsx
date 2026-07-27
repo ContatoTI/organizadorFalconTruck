@@ -1120,6 +1120,20 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                 </Link>
               </div>
 
+              {/* Lixeira */}
+              <div className="pt-1">
+                <Link
+                  href="/lixeira"
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                    pathname === '/lixeira' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
+                  )}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Lixeira
+                </Link>
+              </div>
+
               {/* Sair */}
               <div className="pt-4 border-t">
                 <button

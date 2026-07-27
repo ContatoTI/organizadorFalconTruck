@@ -115,7 +115,7 @@ class TaskAPI {
 
       if (filters?.projectId) {
         // Filtro por projeto específico — RLS já garante acesso só se for membro
-        let q = client.from('todos').select('*').eq('project_id', filters.projectId);
+        let q = client.from('todos').select('*').eq('project_id', filters.projectId).is('deleted_at', null);
         if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
         if (!filters?.showCompleted) q = q.eq('is_completed', false);
         if (filters?.onlyToday) q = q.eq('due_date', new Date().toISOString().split('T')[0]);
@@ -138,7 +138,7 @@ class TaskAPI {
 
       // Query 1: tarefas pessoais do usuário
       {
-        let q = client.from('todos').select('*').eq('user_id', userId);
+        let q = client.from('todos').select('*').eq('user_id', userId).is('deleted_at', null);
         if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
         if (filters?.groupId) {
           // Inclui tarefas com view_group_id direto OU vinculadas via task_view_groups
@@ -163,7 +163,8 @@ class TaskAPI {
       if (ownProjectIds.length > 0) {
         let q = client.from('todos').select('*')
           .in('project_id', ownProjectIds)
-          .neq('user_id', userId);
+          .neq('user_id', userId)
+          .is('deleted_at', null);
         if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
         if (filters?.groupId) {
           const { data: linked } = await client
@@ -188,7 +189,8 @@ class TaskAPI {
         let q = client.from('todos').select('*')
           .in('project_id', memberProjectIds)
           .eq('assignee_id', userId)
-          .neq('user_id', userId);
+          .neq('user_id', userId)
+          .is('deleted_at', null);
         if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
         if (filters?.groupId) {
           const { data: linked } = await client
@@ -221,7 +223,7 @@ class TaskAPI {
         const sharedTaskIds = (taskSharesRes.data || []).map(t => t.task_id);
 
         if (sharedSectionIds.length > 0) {
-          let q = client.from('todos').select('*').in('section_id', sharedSectionIds);
+          let q = client.from('todos').select('*').in('section_id', sharedSectionIds).is('deleted_at', null);
           if (filters?.sectionId) q = q.eq('section_id', filters.sectionId);
           if (!filters?.showCompleted) q = q.eq('is_completed', false);
           if (filters?.onlyToday) q = q.eq('due_date', new Date().toISOString().split('T')[0]);
@@ -230,7 +232,7 @@ class TaskAPI {
         }
 
         if (sharedTaskIds.length > 0) {
-          const { data, error } = await client.from('todos').select('*').in('id', sharedTaskIds);
+          const { data, error } = await client.from('todos').select('*').in('id', sharedTaskIds).is('deleted_at', null);
           if (!error && data) allTasks.push(...(data as Task[]));
         }
       }
@@ -386,7 +388,9 @@ class TaskAPI {
   }
 
   /**
-   * Deletar tarefa — apenas o criador ou membros do projeto podem excluir
+   * Excluir tarefa (soft delete) — apenas o criador ou membros do projeto podem excluir.
+   * A tarefa não é removida do banco: fica marcada com deleted_at e some das listagens
+   * normais, mas continua disponível na Lixeira para restaurar ou excluir definitivamente.
    */
   async deleteTask(taskId: number): Promise<{ success: boolean; error?: string }> {
     try {
@@ -411,12 +415,71 @@ class TaskAPI {
         return { success: false, error: 'Apenas o criador ou membros do projeto podem excluir esta tarefa' };
       }
 
+      const { error } = await client
+        .from('todos')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', taskId);
+
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Restaurar tarefa da lixeira
+   */
+  async restoreTask(taskId: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      const client = createClient();
+      const { error } = await client
+        .from('todos')
+        .update({ deleted_at: null })
+        .eq('id', taskId);
+
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Excluir tarefa definitivamente (remove a linha do banco) — usado a partir da Lixeira
+   */
+  async permanentlyDeleteTask(taskId: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      const client = createClient();
       const { error } = await client.from('todos').delete().eq('id', taskId);
 
       if (error) return { success: false, error: error.message };
       return { success: true };
     } catch (error) {
       return { success: false, error: (error as Error).message };
+    }
+  }
+
+  /**
+   * Buscar tarefas na lixeira (soft-deleted). RLS já restringe às tarefas
+   * visíveis ao usuário (criador, responsável, dono do projeto ou compartilhadas).
+   */
+  async getDeletedTasks(): Promise<Task[]> {
+    try {
+      const client = createClient();
+      const { data, error } = await client
+        .from('todos')
+        .select('*')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false });
+
+      if (error || !data) return [];
+
+      const withCreators = await this.enrichWithCreatorNames(data as Task[]);
+      return this.enrichWithAssigneeNames(withCreators);
+    } catch (error) {
+      console.error('Erro ao buscar tarefas excluídas:', error);
+      return [];
     }
   }
 
