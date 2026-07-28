@@ -234,6 +234,11 @@ function DashboardContent() {
   const [showCompleted, setShowCompleted] = useState(true);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [onlyToday, setOnlyToday] = useState(false);
+  // ponytail: filtros de status exclusivos da visão em lista de um projeto (não afetam o Kanban).
+  // Por padrão só "A Fazer" aparece; o usuário liga cada um para revelar Em Andamento/Revisão/Concluído.
+  const [listShowInProgress, setListShowInProgress] = useState(false);
+  const [listShowReview, setListShowReview] = useState(false);
+  const [listShowCompleted, setListShowCompleted] = useState(false);
   const [now, setNow] = useState(new Date());
   const [expandedSections, setExpandedSections] = useState<Record<number, boolean>>({});
   const [sectionQuickAddOpen, setSectionQuickAddOpen] = useState<Record<number, boolean>>({});
@@ -284,9 +289,26 @@ function DashboardContent() {
   const skipSectionsFetchRef = useRef(false);
   const skipProjectsFetchRef = useRef(false);
 
+  // Pastas que o usuário fechou manualmente, persistidas entre projetos e reloads
+  // (por padrão toda pasta nova/nunca vista nasce aberta).
+  const collapsedSectionIdsRef = useRef<Set<number>>(
+    typeof window !== 'undefined'
+      ? new Set<number>(JSON.parse(localStorage.getItem('collapsedSectionIds') || '[]'))
+      : new Set<number>()
+  );
+  const persistCollapsedSectionIds = () => {
+    localStorage.setItem('collapsedSectionIds', JSON.stringify(Array.from(collapsedSectionIdsRef.current)));
+  };
+
   useEffect(() => {
     const stored = localStorage.getItem('showCompleted');
     if (stored !== null) setShowCompleted(stored !== 'false');
+    const storedListInProgress = localStorage.getItem('listShowInProgress');
+    if (storedListInProgress !== null) setListShowInProgress(storedListInProgress === 'true');
+    const storedListReview = localStorage.getItem('listShowReview');
+    if (storedListReview !== null) setListShowReview(storedListReview === 'true');
+    const storedListCompleted = localStorage.getItem('listShowCompleted');
+    if (storedListCompleted !== null) setListShowCompleted(storedListCompleted === 'true');
   }, []);
 
   useEffect(() => {
@@ -632,17 +654,18 @@ function DashboardContent() {
     if (data) {
       setSections(data as Section[]);
       setExpandedSections(prev => {
-        const next: Record<number, boolean> = {};
-        data.forEach(s => { next[s.id] = s.id in prev ? prev[s.id] : true; });
-        const prevKeys = Object.keys(prev);
-        if (prevKeys.length === data.length && data.every(s => s.id in prev)) {
-          let same = true;
-          for (const s of data) {
-            if (prev[s.id] !== next[s.id]) { same = false; break; }
+        // ponytail: preserva o estado de pastas de OUTROS projetos já vistos
+        // nesta sessão (em vez de reconstruir do zero), senão o mapa perdia
+        // as entradas ao trocar de projeto e tudo reabria ao voltar.
+        const next: Record<number, boolean> = { ...prev };
+        let changed = false;
+        data.forEach(s => {
+          if (!(s.id in next)) {
+            next[s.id] = !collapsedSectionIdsRef.current.has(s.id);
+            changed = true;
           }
-          if (same) return prev;
-        }
-        return next;
+        });
+        return changed ? next : prev;
       });
     }
   };
@@ -1242,7 +1265,13 @@ function DashboardContent() {
   };
 
   const toggleSectionExpand = (sectionId: number) => {
-    setExpandedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
+    setExpandedSections(prev => {
+      const nextExpanded = !prev[sectionId];
+      if (nextExpanded) collapsedSectionIdsRef.current.delete(sectionId);
+      else collapsedSectionIdsRef.current.add(sectionId);
+      persistCollapsedSectionIds();
+      return { ...prev, [sectionId]: nextExpanded };
+    });
   };
 
   const toggleSectionQuickAdd = (sectionId: number) => {
@@ -1266,8 +1295,16 @@ function DashboardContent() {
   const getProjectTasks = () => {
     return tasks.filter(task => {
       if (!selectedProjectId || task.project_id !== parseInt(selectedProjectId)) return false;
-      if (!showCompleted && task.is_completed) return false;
       if (onlyToday && !isToday(task.due_date)) return false;
+      // ponytail: no Kanban os 4 status sempre aparecem; na lista, Em Andamento/Revisão/Concluído
+      // ficam ocultos até o usuário ligar o toggle correspondente (STATUS_GROUPS[0] = A Fazer sempre visível).
+      if (viewMode === 'list') {
+        if (task.status === 'EM_ANDAMENTO' && !listShowInProgress) return false;
+        if (task.status === 'REVISAO' && !listShowReview) return false;
+        if (task.is_completed && !listShowCompleted) return false;
+      } else if (!showCompleted && task.is_completed) {
+        return false;
+      }
       return true;
     });
   };
@@ -1282,6 +1319,14 @@ function DashboardContent() {
     if (!group) return [];
     return getTasksBySection(sectionId).filter(t => group.match(t.status));
   };
+
+  // ponytail: grupos de status exibidos na visão em lista do projeto (Kanban sempre usa STATUS_GROUPS completo).
+  const visibleStatusGroups = STATUS_GROUPS.filter(g => {
+    if (g.key === 'EM_ANDAMENTO') return listShowInProgress;
+    if (g.key === 'REVISAO') return listShowReview;
+    if (g.key === 'CONCLUIDO') return listShowCompleted;
+    return true;
+  });
 
   // ponytail: só exibe tarefa de bloco de horário se a janela estiver aberta agora
   const isTimeWindowActive = (group: Group, currentTime: Date): boolean => {
@@ -1629,13 +1674,23 @@ function DashboardContent() {
       const pos = lastPointerPos.current;
       const elements = document.elementsFromPoint(pos.x, pos.y);
       const el = elements.find(el => el.closest('[data-sidebar-type]'))?.closest('[data-sidebar-type]');
-      
+
       if (el) {
         const id = parseInt(el.getAttribute('data-sidebar-id')!);
         const type = el.getAttribute('data-sidebar-type') as 'group' | 'project';
         window.dispatchEvent(new CustomEvent('sidebar-drag-over', { detail: { id, type, entity: 'task' } }));
       } else {
-        window.dispatchEvent(new CustomEvent('sidebar-drag-leave'));
+        // ponytail: se não achou um grupo/projeto específico, verifica se está
+        // sobre o cabeçalho de uma categoria (Blocos/Listas/Projetos) fechada
+        // — dispara evento para a sidebar auto-expandir após um delay, assim
+        // dá pra soltar a tarefa num item que estava escondido.
+        const catEl = elements.find(e => e.closest('[data-sidebar-category]'))?.closest('[data-sidebar-category]');
+        if (catEl) {
+          const category = catEl.getAttribute('data-sidebar-category')!;
+          window.dispatchEvent(new CustomEvent('sidebar-category-hover', { detail: { category } }));
+        } else {
+          window.dispatchEvent(new CustomEvent('sidebar-drag-leave'));
+        }
       }
     }
     if (dragType === 'SectionDrag') {
@@ -1977,7 +2032,7 @@ function DashboardContent() {
   };
 
   const renderStatusGroups = (sectionId: number | null) => {
-    return STATUS_GROUPS.map(group => {
+    return visibleStatusGroups.map(group => {
       const groupTasks = getTasksBySectionAndStatus(sectionId, group.key);
       const statusColor: Record<string, string> = {
         'A_FAZER': 'bg-slate-400',
@@ -2567,7 +2622,13 @@ function DashboardContent() {
                   { key: 'lists', label: 'Listas', checked: preferences.show_lists, onChange: (v: boolean) => setPreference('show_lists', v), title: 'Mostrar listas' },
                   { key: 'my-tasks', label: 'Minhas tarefas', checked: preferences.show_my_tasks_only, onChange: (v: boolean) => setPreference('show_my_tasks_only', v), title: 'Mostrar só tarefas criadas por você' },
                 ] : []),
-                { key: 'completed', label: 'Concluídas', checked: showCompleted, onChange: (v: boolean) => { setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }, title: 'Incluir tarefas concluídas' },
+                ...(selectedProject && viewMode === 'list' ? [
+                  { key: 'list-in-progress', label: 'Em andamento', checked: listShowInProgress, onChange: (v: boolean) => { setListShowInProgress(v); localStorage.setItem('listShowInProgress', String(v)); }, title: 'Mostrar tarefas em andamento na lista' },
+                  { key: 'list-review', label: 'Revisão', checked: listShowReview, onChange: (v: boolean) => { setListShowReview(v); localStorage.setItem('listShowReview', String(v)); }, title: 'Mostrar tarefas em revisão na lista' },
+                  { key: 'list-completed', label: 'Concluídas', checked: listShowCompleted, onChange: (v: boolean) => { setListShowCompleted(v); localStorage.setItem('listShowCompleted', String(v)); }, title: 'Mostrar tarefas concluídas na lista' },
+                ] : [
+                  { key: 'completed', label: 'Concluídas', checked: showCompleted, onChange: (v: boolean) => { setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }, title: 'Incluir tarefas concluídas' },
+                ]),
                 { key: 'today', label: 'Só hoje', checked: onlyToday, onChange: (v: boolean) => setOnlyToday(v), title: 'Mostrar só tarefas de hoje' },
               ]}
             />
@@ -2666,7 +2727,7 @@ function DashboardContent() {
                       'REVISAO': 'bg-yellow-500',
                       'CONCLUIDO': 'bg-green-500',
                     };
-                    return STATUS_GROUPS.map(group => {
+                    return visibleStatusGroups.map(group => {
                       const groupTasks = getProjectTasks().filter(t => group.match(t.status));
                       return (
                         <div key={group.key}>
@@ -2748,6 +2809,20 @@ function DashboardContent() {
           ) : (
             <DroppableBlock blockId={`project:${selectedProject.id}`} blockType="project">
             <>
+              {/* Botão nova pasta (topo) */}
+              <div className="flex items-center gap-2 mb-4">
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={isCreatingSection}
+                  onClick={() => { setNewSectionName(''); setNewSectionModalOpen(true); }}
+                  className="rounded-full h-7 text-xs gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Nova pasta
+                </Button>
+              </div>
+
               {/* Lista de Seções */}
               {sections.map((section, idx) => (
                 <Fragment key={section.id}>
@@ -2962,20 +3037,6 @@ function DashboardContent() {
                 </Card>
                 </DroppableSection>
               )}
-
-              {/* Botão nova seção */}
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="default"
-                  size="sm"
-                  disabled={isCreatingSection}
-                  onClick={() => { setNewSectionName(''); setNewSectionModalOpen(true); }}
-                  className="rounded-full h-7 text-xs gap-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Nova pasta
-                </Button>
-              </div>
             </>
             </DroppableBlock>
           )}

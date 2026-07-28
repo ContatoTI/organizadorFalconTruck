@@ -498,24 +498,53 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
   const [dragOverType, setDragOverType] = useState<'group' | 'project' | null>(null);
   const [sidebarDragEntity, setSidebarDragEntity] = useState<'task' | 'section' | null>(null);
 
+  // Auto-expandir categoria (Blocos/Listas/Projetos) quando uma tarefa é
+  // arrastada sobre o cabeçalho dela fechado, para permitir soltar num
+  // grupo/projeto específico sem precisar abrir a categoria antes.
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
+  const categoryHoverTimerRef = useRef<{ category: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+
+  const clearCategoryHover = () => {
+    if (categoryHoverTimerRef.current) {
+      clearTimeout(categoryHoverTimerRef.current.timer);
+      categoryHoverTimerRef.current = null;
+    }
+    setHoveredCategory(null);
+  };
+
   useEffect(() => {
     const handleDragOverEvent = (e: any) => {
       const { id, type, entity } = e.detail;
       setIsDragOver(id);
       setDragOverType(type);
       if (entity) setSidebarDragEntity(entity);
+      clearCategoryHover();
     };
     const handleDragLeaveEvent = () => {
       setIsDragOver(null);
       setDragOverType(null);
       setSidebarDragEntity(null);
+      clearCategoryHover();
+    };
+    const handleCategoryHoverEvent = (e: any) => {
+      const { category } = e.detail;
+      setHoveredCategory(category);
+      if (categoryHoverTimerRef.current?.category === category) return;
+      if (categoryHoverTimerRef.current) clearTimeout(categoryHoverTimerRef.current.timer);
+      const timer = setTimeout(() => {
+        setExpandedSections(prev => (prev[category] ? prev : { ...prev, [category]: true }));
+        categoryHoverTimerRef.current = null;
+      }, 600);
+      categoryHoverTimerRef.current = { category, timer };
     };
 
     window.addEventListener('sidebar-drag-over', handleDragOverEvent);
     window.addEventListener('sidebar-drag-leave', handleDragLeaveEvent);
+    window.addEventListener('sidebar-category-hover', handleCategoryHoverEvent);
     return () => {
       window.removeEventListener('sidebar-drag-over', handleDragOverEvent);
       window.removeEventListener('sidebar-drag-leave', handleDragLeaveEvent);
+      window.removeEventListener('sidebar-category-hover', handleCategoryHoverEvent);
     };
   }, []);
 
@@ -780,7 +809,11 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
               <div>
                 <div
                   onClick={() => toggleSection('blocos')}
-                  className="flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors cursor-pointer"
+                  data-sidebar-category="blocos"
+                  className={cn(
+                    "flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors cursor-pointer",
+                    hoveredCategory === 'blocos' && !expandedSections.blocos && "bg-primary/15 ring-2 ring-primary/50"
+                  )}
                 >
                   <div className="flex items-center gap-2">
                     <ChevronRight
@@ -869,7 +902,11 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
               <div>
                 <div
                   onClick={() => toggleSection('listas')}
-                  className="flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors cursor-pointer"
+                  data-sidebar-category="listas"
+                  className={cn(
+                    "flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors cursor-pointer",
+                    hoveredCategory === 'listas' && !expandedSections.listas && "bg-primary/15 ring-2 ring-primary/50"
+                  )}
                 >
                   <div className="flex items-center gap-2">
                     <ChevronRight
@@ -961,7 +998,11 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                     toggleSection('projetos');
                     setShowProjectsView(true);
                   }}
-                  className="flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors cursor-pointer"
+                  data-sidebar-category="projetos"
+                  className={cn(
+                    "flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors cursor-pointer",
+                    hoveredCategory === 'projetos' && !expandedSections.projetos && "bg-primary/15 ring-2 ring-primary/50"
+                  )}
                 >
                   <div className="flex items-center gap-2">
                     <ChevronRight

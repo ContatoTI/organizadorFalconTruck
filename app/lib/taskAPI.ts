@@ -52,6 +52,37 @@ class TaskAPI {
     }));
   }
 
+  /**
+   * Tarefas com prazo vencido que ainda não foram concluídas nem enviadas para
+   * revisão entram automaticamente em revisão, em vez de permanecerem como
+   * pendentes/em andamento indefinidamente.
+   */
+  private async autoMoveOverdueToReview(tasks: Task[]): Promise<Task[]> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const overdue = tasks.filter(t => {
+      if (!t.due_date || t.is_completed) return false;
+      if (t.status === 'CONCLUIDO' || t.status === 'REVISAO') return false;
+      const dueDate = new Date(t.due_date + 'T00:00:00');
+      return dueDate < today;
+    });
+
+    if (overdue.length === 0) return tasks;
+
+    const client = createClient();
+    const ids = overdue.map(t => t.id);
+    const { error } = await client.from('todos').update({ status: 'REVISAO' }).in('id', ids);
+
+    if (error) {
+      console.error('[taskAPI.autoMoveOverdueToReview] erro Supabase:', JSON.stringify(error, null, 2));
+      return tasks;
+    }
+
+    const idSet = new Set(ids);
+    return tasks.map(t => idSet.has(t.id) ? { ...t, status: 'REVISAO' } : t);
+  }
+
   private async enrichWithLinkedGroups(tasks: Task[]): Promise<Task[]> {
     if (tasks.length === 0) return tasks;
 
@@ -94,8 +125,9 @@ class TaskAPI {
       const [enrichedTask] = await this.enrichWithCreatorNames([data as Task]);
       const [withAssignee] = await this.enrichWithAssigneeNames([enrichedTask]);
       const [fullyEnrichedTask] = await this.enrichWithLinkedGroups([withAssignee]);
-      
-      return fullyEnrichedTask;
+      const [finalTask] = await this.autoMoveOverdueToReview([fullyEnrichedTask]);
+
+      return finalTask;
     } catch {
       return null;
     }
@@ -122,7 +154,8 @@ class TaskAPI {
         const { data, error } = await q.order('position', { ascending: true }).order('created_at', { ascending: true });
         if (error) throw error;
         const withCreators = await this.enrichWithCreatorNames((data as Task[]) || []);
-        return this.enrichWithAssigneeNames(withCreators);
+        const withAssignees = await this.enrichWithAssigneeNames(withCreators);
+        return this.autoMoveOverdueToReview(withAssignees);
       }
 
       // Buscar tarefas em 2 queries separadas (mais robusto que or() com RLS complexo)
@@ -249,7 +282,8 @@ class TaskAPI {
       const tasksWithLinks = await this.enrichWithLinkedGroups(unique);
 
       const withCreators = await this.enrichWithCreatorNames(tasksWithLinks);
-      return this.enrichWithAssigneeNames(withCreators);
+      const withAssignees = await this.enrichWithAssigneeNames(withCreators);
+      return this.autoMoveOverdueToReview(withAssignees);
     } catch (error) {
       console.error('Erro ao buscar tarefas:', error);
       return [];
