@@ -41,6 +41,8 @@ export interface Task {
   description: string | null;
   priority: string | null;
   status: string | null;
+  status_changed_at: string | null;
+  auto_review_reason: string | null;
   created_at: string;
   creator_name?: string;
   linked_view_group_ids?: number[];

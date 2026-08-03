@@ -12,6 +12,27 @@ export interface AssigneeCandidate {
   email?: string | null;
 }
 
+const STATUS_DOT_COLOR: Record<string, string> = {
+  A_FAZER: '#94a3b8',
+  EM_ANDAMENTO: '#3b82f6',
+  REVISAO: '#eab308',
+  CONCLUIDO: '#22c55e',
+};
+
+const STATUS_BADGE_CLASS: Record<string, string> = {
+  A_FAZER: 'bg-slate-500 text-white',
+  EM_ANDAMENTO: 'bg-blue-500 text-white',
+  REVISAO: 'bg-amber-500 text-black',
+  CONCLUIDO: 'bg-green-600 text-white',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  A_FAZER: 'A Fazer',
+  EM_ANDAMENTO: 'Em Andamento',
+  REVISAO: 'Em Revisão',
+  CONCLUIDO: 'Concluído',
+};
+
 interface SortableTaskItemProps {
   task: Task;
   currentGroupId?: number;
@@ -24,7 +45,7 @@ interface SortableTaskItemProps {
   onRemoveFromGroup?: (taskId: number, groupId: number) => void;
   onDelete: (taskId: number) => void;
   onPriorityChange?: (taskId: number, priority: string | null) => void;
-  onStatusChange?: (taskId: number) => void;
+  onStatusChange?: (taskId: number, newStatus: string) => void;
   onApprove?: (taskId: number) => void;
   onReject?: (taskId: number) => void;
   assigneeCandidates?: AssigneeCandidate[];
@@ -160,7 +181,7 @@ export const SortableTaskItem = memo(function SortableTaskItem({
         )}
       </button>
 
-      {/* Task title, context dot and description preview */}
+      {/* Task title, context dot, status and description preview */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           {contextDotColor && !isOverlay && (
@@ -188,6 +209,14 @@ export const SortableTaskItem = memo(function SortableTaskItem({
               {dueLabel}
             </span>
           )}
+          {task.auto_review_reason && (
+            <span
+              className="text-[9px] font-semibold px-1.5 py-[1px] rounded-full flex-shrink-0 bg-orange-100 text-orange-700 max-w-[180px] truncate"
+              title={task.auto_review_reason}
+            >
+              Não concluída · Remanejar
+            </span>
+          )}
         </div>
         {task.description && (
           <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-2">
@@ -195,6 +224,55 @@ export const SortableTaskItem = memo(function SortableTaskItem({
           </p>
         )}
       </div>
+
+      {/* Status badge (Select with A Fazer / Em Andamento / Em Revisão) */}
+      {onStatusChange && (
+        task.status === 'CONCLUIDO' ? (
+          <div
+            className={cn(
+              "h-4 w-fit justify-center gap-0.5 rounded-full border-0 px-1.5 py-0 text-[9px] font-semibold whitespace-nowrap flex-shrink-0",
+              STATUS_BADGE_CLASS.CONCLUIDO,
+            )}
+            title="Concluído (somente via aprovação)"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-white/90 flex-shrink-0" />
+            <span>{STATUS_LABEL.CONCLUIDO}</span>
+          </div>
+        ) : (
+          <Select
+            value={task.status || 'A_FAZER'}
+            onValueChange={(val) => { if (val) onStatusChange(task.id, val); }}
+          >
+            <SelectTrigger
+              className={cn(
+                "h-4 w-fit justify-center gap-0.5 rounded-full border-0 px-1.5 py-0 text-[9px] font-semibold whitespace-nowrap flex-shrink-0 cursor-pointer data-[size=default]:h-4 [&>svg:last-child]:hidden transition-opacity hover:opacity-80",
+                STATUS_BADGE_CLASS[task.status || 'A_FAZER'],
+              )}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              title="Alterar status"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-white/90 flex-shrink-0" />
+              <span>{STATUS_LABEL[task.status || 'A_FAZER']}</span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="A_FAZER">
+                <span className="w-2 h-2 rounded-full bg-slate-500" />
+                A Fazer
+              </SelectItem>
+              <SelectItem value="EM_ANDAMENTO">
+                <span className="w-2 h-2 rounded-full bg-blue-500" />
+                Em Andamento
+              </SelectItem>
+              <SelectItem value="REVISAO">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                Em Revisão
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        )
+      )}
 
       {/* Assignee / Creator avatar */}
       {(() => {

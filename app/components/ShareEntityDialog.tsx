@@ -88,6 +88,11 @@ export function ShareEntityDialog({
     const next = defaultAssigneeId === userId ? null : userId;
     onDefaultAssigneeChange(next);
     await shareAPI.setSectionDefaultAssignee(entityId, next);
+    // Marcar como responsável padrão já dá acesso à pasta, sem exigir compartilhar antes.
+    if (next && !sharedUserIds.includes(next)) {
+      setSharedUserIds(prev => [...prev, next]);
+      await shareAPI.shareSection(entityId, next);
+    }
   };
 
   return (
@@ -139,7 +144,7 @@ export function ShareEntityDialog({
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    {entityType === 'section' && isShared && (
+                    {entityType === 'section' && (
                       <Button
                         variant="ghost"
                         size="icon"

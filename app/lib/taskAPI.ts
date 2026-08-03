@@ -83,6 +83,44 @@ class TaskAPI {
     return tasks.map(t => idSet.has(t.id) ? { ...t, status: 'REVISAO' } : t);
   }
 
+  /**
+   * Tarefas que ficaram em A_FAZER / EM_ANDAMENTO por mais de 1 dia (sem mudança
+   * de status) são movidas automaticamente para REVISAO com a etiqueta
+   * "Tarefa não concluída - Remanejar" para sinalizar que precisam de ação.
+   */
+  private async autoMoveStaleToReview(tasks: Task[]): Promise<Task[]> {
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    const stale = tasks.filter(t => {
+      if (t.is_completed) return false;
+      if (t.status === 'CONCLUIDO' || t.status === 'REVISAO') return false;
+      if (!t.status_changed_at) return false;
+      return t.status_changed_at < oneDayAgo;
+    });
+
+    if (stale.length === 0) return tasks;
+
+    const client = createClient();
+    const now = new Date().toISOString();
+    const reason = 'Tarefa não concluída - Remanejar';
+    const ids = stale.map(t => t.id);
+    const { error } = await client
+      .from('todos')
+      .update({ status: 'REVISAO', status_changed_at: now, auto_review_reason: reason })
+      .in('id', ids);
+
+    if (error) {
+      console.error('[taskAPI.autoMoveStaleToReview] erro Supabase:', JSON.stringify(error, null, 2));
+      return tasks;
+    }
+
+    const idSet = new Set(ids);
+    return tasks.map(t => idSet.has(t.id)
+      ? { ...t, status: 'REVISAO', status_changed_at: now, auto_review_reason: reason }
+      : t
+    );
+  }
+
   private async enrichWithLinkedGroups(tasks: Task[]): Promise<Task[]> {
     if (tasks.length === 0) return tasks;
 
@@ -125,7 +163,8 @@ class TaskAPI {
       const [enrichedTask] = await this.enrichWithCreatorNames([data as Task]);
       const [withAssignee] = await this.enrichWithAssigneeNames([enrichedTask]);
       const [fullyEnrichedTask] = await this.enrichWithLinkedGroups([withAssignee]);
-      const [finalTask] = await this.autoMoveOverdueToReview([fullyEnrichedTask]);
+      const [overdueChecked] = await this.autoMoveOverdueToReview([fullyEnrichedTask]);
+      const [finalTask] = await this.autoMoveStaleToReview([overdueChecked]);
 
       return finalTask;
     } catch {
@@ -155,7 +194,8 @@ class TaskAPI {
         if (error) throw error;
         const withCreators = await this.enrichWithCreatorNames((data as Task[]) || []);
         const withAssignees = await this.enrichWithAssigneeNames(withCreators);
-        return this.autoMoveOverdueToReview(withAssignees);
+        const overdueChecked = await this.autoMoveOverdueToReview(withAssignees);
+        return this.autoMoveStaleToReview(overdueChecked);
       }
 
       // Buscar tarefas em 2 queries separadas (mais robusto que or() com RLS complexo)
@@ -283,7 +323,8 @@ class TaskAPI {
 
       const withCreators = await this.enrichWithCreatorNames(tasksWithLinks);
       const withAssignees = await this.enrichWithAssigneeNames(withCreators);
-      return this.autoMoveOverdueToReview(withAssignees);
+      const overdueChecked = await this.autoMoveOverdueToReview(withAssignees);
+      return this.autoMoveStaleToReview(overdueChecked);
     } catch (error) {
       console.error('Erro ao buscar tarefas:', error);
       return [];
@@ -352,6 +393,7 @@ class TaskAPI {
         due_date: dueDate || null,
         position: nextPosition,
         is_completed: false,
+        status_changed_at: new Date().toISOString(),
       };
 
       if (description !== undefined && description !== null) insertPayload.description = description;
@@ -383,9 +425,16 @@ class TaskAPI {
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const client = createClient();
+      const finalUpdates: Record<string, unknown> = { ...updates };
+      if ('status' in updates && updates.status !== undefined) {
+        finalUpdates.status_changed_at = new Date().toISOString();
+        if (updates.status !== 'REVISAO') {
+          finalUpdates.auto_review_reason = null;
+        }
+      }
       const { error } = await client
         .from('todos')
-        .update(updates)
+        .update(finalUpdates)
         .eq('id', taskId);
 
       if (error) {
@@ -411,7 +460,11 @@ class TaskAPI {
 
       const { error } = await client
         .from('todos')
-        .update({ is_completed: newState, status: newState ? 'CONCLUIDO' : 'A_FAZER' })
+        .update({
+          is_completed: newState,
+          status: newState ? 'CONCLUIDO' : 'A_FAZER',
+          status_changed_at: new Date().toISOString(),
+        })
         .eq('id', taskId);
 
       if (error) return { success: false, error: error.message };

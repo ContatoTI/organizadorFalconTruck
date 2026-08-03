@@ -8,6 +8,7 @@ import { cn, getSoftCardStyle, PROJECT_COLORS } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { projectAPI } from '@/app/lib/projectAPI';
 import { sectionAPI } from '@/app/lib/sectionAPI';
+import { shareAPI } from '@/app/lib/shareAPI';
 import { notificationAPI } from '@/app/lib/notificationAPI';
 import { useGroups } from '@/app/lib/GroupsContext';
 import { fetchPreferences, savePreferences } from '@/app/lib/preferencesAPI';
@@ -18,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DndContext,
   DragOverlay,
@@ -141,7 +143,7 @@ function DroppableBlock({ blockId, blockType, children }: { blockId: string; blo
 function KanbanColumn({ status, label, color, tasks, onSelect, onToggle, onDelete, onPriorityChange, onStatusChange, onApprove, onReject, assigneeCandidates, onAssigneeChange, onAddTask, projects, sections }: {
   status: string; label: string; color: string; tasks: Task[];
   onSelect: (t: Task) => void; onToggle: (t: Task) => void; onDelete: (id: number) => void;
-  onPriorityChange?: (id: number, p: string | null) => void; onStatusChange?: (id: number) => void;
+  onPriorityChange?: (id: number, p: string | null) => void; onStatusChange?: (id: number, newStatus: string) => void;
   onApprove?: (id: number) => void; onReject?: (id: number) => void;
   assigneeCandidates?: { user_id: string; full_name?: string | null; email?: string | null }[];
   onAssigneeChange?: (id: number, a: string | null) => void;
@@ -247,10 +249,12 @@ function DashboardContent() {
   const [editingSectionTitle, setEditingSectionTitle] = useState('');
   const [editSectionModalOpen, setEditSectionModalOpen] = useState(false);
   const [editSectionColor, setEditSectionColor] = useState('#6366f1');
+  const [editSectionAssigneeId, setEditSectionAssigneeId] = useState<string | null>(null);
   const [isCreatingSection, setIsCreatingSection] = useState(false);
   const [newSectionModalOpen, setNewSectionModalOpen] = useState(false);
   const [newSectionName, setNewSectionName] = useState('');
   const [newSectionColor, setNewSectionColor] = useState('#6366f1');
+  const [newSectionAssigneeId, setNewSectionAssigneeId] = useState<string | null>(null);
   const [unsectionedTitle, setUnsectionedTitle] = useState('Sem Pasta');
   const [editingUnsectionedTitle, setEditingUnsectionedTitle] = useState(false);
   const [unsectionedTitleDraft, setUnsectionedTitleDraft] = useState('Sem Pasta');
@@ -738,6 +742,14 @@ function DashboardContent() {
       ...(selectedProjectId ? { projectId: parseInt(selectedProjectId) } : {}),
       ...(selectedGroupId && !selectedProjectId ? { groupId: parseInt(selectedGroupId) } : {}),
     });
+    const staleCount = data.filter(t => t.auto_review_reason).length;
+    if (staleCount > 0) {
+      toast(`${staleCount} tarefa(s) parada(s) há mais de 1 dia movida(s) para revisão.`, 'info');
+      if (viewMode === 'list' && !listShowReview) {
+        setListShowReview(true);
+        localStorage.setItem('listShowReview', 'true');
+      }
+    }
     setTasks(data);
     if (showLoading) setLoading(false);
   };
@@ -1059,57 +1071,57 @@ function DashboardContent() {
     }
   };
 
-  const handleStatusCycle = async (taskId: number) => {
+  const handleStatusCycle = async (taskId: number, newStatus: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
-    if (task.status === 'REVISAO') {
-      const project = task.project_id ? projects.find(p => p.id === task.project_id) : null;
-      const isTaskOwner = task.user_id === user?.id;
-      const isProjectOwner = project ? project.owner_id === user?.id : false;
-      if (!isTaskOwner && !isProjectOwner) {
-        toast('Apenas o proprietário pode aprovar ou reprovar a revisão.', 'error');
-        return;
+    if (newStatus === 'CONCLUIDO') {
+      toast('Tarefas só podem ser concluídas via aprovação.', 'error');
+      return;
+    }
+
+    if (viewMode === 'list') {
+      if (newStatus === 'EM_ANDAMENTO' && !listShowInProgress) {
+        setListShowInProgress(true);
+        localStorage.setItem('listShowInProgress', 'true');
+      }
+      if (newStatus === 'REVISAO' && !listShowReview) {
+        setListShowReview(true);
+        localStorage.setItem('listShowReview', 'true');
       }
     }
 
-    const cycle: Record<string, string> = {
-      'A_FAZER': 'EM_ANDAMENTO',
-      'EM_ANDAMENTO': 'REVISAO',
-      'REVISAO': 'CONCLUIDO',
-      'CONCLUIDO': 'EM_ANDAMENTO',
-    };
-    const current = task.status || 'A_FAZER';
-    const next = cycle[current] || 'A_FAZER';
-    const isCompleted = next === 'CONCLUIDO';
+    const isCompleted = newStatus === 'CONCLUIDO';
     const original = { ...task };
     setTasks(prev => prev.map(t =>
-      t.id === taskId ? { ...t, status: next, is_completed: isCompleted, isSyncing: true } : t
+      t.id === taskId ? { ...t, status: newStatus, is_completed: isCompleted, isSyncing: true } : t
     ));
-    const result = await taskAPI.updateTask(taskId, { status: next, is_completed: isCompleted });
+    const result = await taskAPI.updateTask(taskId, { status: newStatus, is_completed: isCompleted });
     if (!result.success) {
       setTasks(prev => prev.map(t => t.id === taskId ? { ...original, isSyncing: false } : t));
       toast('Erro ao atualizar status', 'error');
     } else {
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, isSyncing: false } : t));
-      if (next === 'REVISAO') {
+      if (newStatus === 'REVISAO') {
         const project = task.project_id ? projects.find(p => p.id === task.project_id) : null;
         const ownerId = project ? project.owner_id : task.user_id;
         if (ownerId && ownerId !== user?.id) {
           notificationAPI.createTaskReviewNotification(ownerId, task.id, task.title,
             (user as any)?.user_metadata?.full_name || user?.email || 'Usuário');
         }
-      } else if (current === 'REVISAO' && next === 'CONCLUIDO') {
+      } else if (task.status === 'REVISAO' && newStatus !== 'CONCLUIDO') {
         const senderName = (user as any)?.user_metadata?.full_name || user?.email || 'Usuário';
         const project = task.project_id ? projects.find(p => p.id === task.project_id) : null;
         const recipientId = task.assignee_id || task.user_id;
         const notified = new Set<string>();
         if (recipientId && recipientId !== user?.id) {
-          notificationAPI.createTaskReviewNotification(recipientId, task.id, task.title, senderName, 'approved');
+          notificationAPI.createTaskReviewNotification(recipientId, task.id, task.title, senderName, 'rejected',
+            'A revisão foi reaberta e ajustes são necessários.');
           notified.add(recipientId);
         }
         if (project?.owner_id && project.owner_id !== user?.id && !notified.has(project.owner_id)) {
-          notificationAPI.createTaskReviewNotification(project.owner_id, task.id, task.title, senderName, 'approved');
+          notificationAPI.createTaskReviewNotification(project.owner_id, task.id, task.title, senderName, 'rejected',
+            'A revisão foi reaberta e ajustes são necessários.');
         }
       }
     }
@@ -1131,7 +1143,7 @@ function DashboardContent() {
     }
   };
 
-  const createSection = async (title: string, color: string) => {
+  const createSection = async (title: string, color: string, defaultAssigneeId: string | null = null) => {
     if (!title.trim() || !user || !selectedProjectId) return;
     const nextOrder = sections.reduce((max, s) => Math.max(max, s.order ?? 0), -1) + 1;
     const { data, error } = await client
@@ -1142,6 +1154,7 @@ function DashboardContent() {
         title: title.trim(),
         color,
         order: nextOrder,
+        default_assignee_id: defaultAssigneeId,
       })
       .select()
       .single();
@@ -1158,6 +1171,8 @@ function DashboardContent() {
       setSections(prev => prev.some(s => s.id === newSection.id) ? prev : [...prev, newSection]);
       setExpandedSections(prev => ({ ...prev, [newSection.id]: true }));
       setTimeout(() => { skipSectionsFetchRef.current = false; }, 500);
+      // ponytail: garante que o responsável padrão também consiga ver a pasta (não só as tarefas via assignee_id).
+      if (defaultAssigneeId) await shareAPI.shareSection(newSection.id, defaultAssigneeId);
       return newSection;
     }
 
@@ -1170,12 +1185,13 @@ function DashboardContent() {
     creatingSectionRef.current = true;
     setIsCreatingSection(true);
     try {
-      const newSection = await createSection(title, newSectionColor);
+      const newSection = await createSection(title, newSectionColor, newSectionAssigneeId);
       if (newSection) {
         setSectionQuickAddOpen(prev => ({ ...prev, [newSection.id]: true }));
         setNewSectionModalOpen(false);
         setNewSectionName('');
         setNewSectionColor('#6366f1');
+        setNewSectionAssigneeId(null);
       }
     } finally {
       creatingSectionRef.current = false;
@@ -1183,10 +1199,11 @@ function DashboardContent() {
     }
   };
 
-  const updateSection = async (sectionId: number, newTitle: string, newColor?: string) => {
+  const updateSection = async (sectionId: number, newTitle: string, newColor?: string, newDefaultAssigneeId?: string | null) => {
     if (!newTitle.trim()) return;
-    const updates: { title: string; color?: string } = { title: newTitle.trim() };
+    const updates: { title: string; color?: string; default_assignee_id?: string | null } = { title: newTitle.trim() };
     if (newColor !== undefined) updates.color = newColor;
+    if (newDefaultAssigneeId !== undefined) updates.default_assignee_id = newDefaultAssigneeId;
     const { error } = await client.from('sections').update(updates).eq('id', sectionId);
     if (error) {
       console.error('Erro ao salvar pasta:', error);
@@ -1196,6 +1213,8 @@ function DashboardContent() {
     setSections(sections.map(s => s.id === sectionId ? { ...s, ...updates, title: newTitle.trim() } : s));
     setEditingSection(null);
     setEditSectionModalOpen(false);
+    // ponytail: garante que o responsável padrão também consiga ver a pasta (não só as tarefas via assignee_id).
+    if (newDefaultAssigneeId) await shareAPI.shareSection(sectionId, newDefaultAssigneeId);
   };
 
   const deleteSection = async (sectionId: number) => {
@@ -1282,6 +1301,7 @@ function DashboardContent() {
     setEditingSection(section.id);
     setEditingSectionTitle(section.title);
     setEditSectionColor(section.color || '#6366f1');
+    setEditSectionAssigneeId(section.default_assignee_id ?? null);
     setEditSectionModalOpen(true);
   };
 
@@ -1320,13 +1340,14 @@ function DashboardContent() {
     return getTasksBySection(sectionId).filter(t => group.match(t.status));
   };
 
-  // ponytail: grupos de status exibidos na visão em lista do projeto (Kanban sempre usa STATUS_GROUPS completo).
+  // ponytail: ordem de exibição na visão em lista — "Em andamento" antes de "A fazer" (Kanban sempre usa STATUS_GROUPS completo, ordem inalterada).
+  const LIST_STATUS_ORDER = ['EM_ANDAMENTO', 'A_FAZER', 'REVISAO', 'CONCLUIDO'];
   const visibleStatusGroups = STATUS_GROUPS.filter(g => {
     if (g.key === 'EM_ANDAMENTO') return listShowInProgress;
     if (g.key === 'REVISAO') return listShowReview;
     if (g.key === 'CONCLUIDO') return listShowCompleted;
     return true;
-  });
+  }).sort((a, b) => LIST_STATUS_ORDER.indexOf(a.key) - LIST_STATUS_ORDER.indexOf(b.key));
 
   // ponytail: só exibe tarefa de bloco de horário se a janela estiver aberta agora
   const isTimeWindowActive = (group: Group, currentTime: Date): boolean => {
@@ -2336,6 +2357,29 @@ function DashboardContent() {
                 ))}
               </div>
             </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">Responsável padrão</label>
+              <Select
+                value={newSectionAssigneeId ?? ''}
+                onValueChange={(value) => setNewSectionAssigneeId(value || null)}
+                disabled={isCreatingSection}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Nenhum" />
+                </SelectTrigger>
+                <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
+                  <SelectItem value="">Nenhum</SelectItem>
+                  {assigneeCandidates.map((candidate) => (
+                    <SelectItem key={candidate.user_id} value={candidate.user_id}>
+                      {candidate.full_name || candidate.email || 'Usuário'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Toda tarefa criada nesta pasta já nasce atribuída a essa pessoa.
+              </p>
+            </div>
             <Button type="submit" className="w-full" disabled={!newSectionName.trim() || isCreatingSection}>
               Criar
             </Button>
@@ -2352,7 +2396,7 @@ function DashboardContent() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (editingSection !== null) updateSection(editingSection, editingSectionTitle, editSectionColor);
+              if (editingSection !== null) updateSection(editingSection, editingSectionTitle, editSectionColor, editSectionAssigneeId);
             }}
             className="space-y-3"
           >
@@ -2379,6 +2423,28 @@ function DashboardContent() {
                   />
                 ))}
               </div>
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">Responsável padrão</label>
+              <Select
+                value={editSectionAssigneeId ?? ''}
+                onValueChange={(value) => setEditSectionAssigneeId(value || null)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Nenhum" />
+                </SelectTrigger>
+                <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
+                  <SelectItem value="">Nenhum</SelectItem>
+                  {assigneeCandidates.map((candidate) => (
+                    <SelectItem key={candidate.user_id} value={candidate.user_id}>
+                      {candidate.full_name || candidate.email || 'Usuário'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Toda tarefa criada nesta pasta já nasce atribuída a essa pessoa.
+              </p>
             </div>
             <Button type="submit" className="w-full" disabled={!editingSectionTitle.trim()}>
               Salvar
@@ -2798,7 +2864,7 @@ function DashboardContent() {
                   variant="default"
                   size="sm"
                   disabled={isCreatingSection}
-                  onClick={() => { setNewSectionName(''); setNewSectionModalOpen(true); }}
+                  onClick={() => { setNewSectionName(''); setNewSectionAssigneeId(null); setNewSectionModalOpen(true); }}
                   className="rounded-full h-7 text-xs gap-1 mt-4"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -2815,7 +2881,7 @@ function DashboardContent() {
                   variant="default"
                   size="sm"
                   disabled={isCreatingSection}
-                  onClick={() => { setNewSectionName(''); setNewSectionModalOpen(true); }}
+                  onClick={() => { setNewSectionName(''); setNewSectionAssigneeId(null); setNewSectionModalOpen(true); }}
                   className="rounded-full h-7 text-xs gap-1"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -2898,7 +2964,11 @@ function DashboardContent() {
                             >
                               <Share className="w-3 h-3" />
                             </button>
-                            <SectionSharedIndicator sectionId={section.id} />
+                            <SectionSharedIndicator
+                              sectionId={section.id}
+                              defaultAssigneeId={section.default_assignee_id ?? null}
+                              onOpenShare={() => setShareSectionTarget(section)}
+                            />
                             <button
                               onClick={() => deleteSection(section.id)}
                               className="h-7 w-7 flex items-center justify-center rounded text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover/section:opacity-100 transition-all"

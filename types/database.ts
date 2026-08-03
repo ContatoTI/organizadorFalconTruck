@@ -22,6 +22,8 @@ export interface Tables {
       description: string | null
       priority: string | null
       status: string | null
+      status_changed_at: string | null
+      auto_review_reason: string | null
       assignee_id: string | null
       created_at: string
     }
@@ -39,6 +41,8 @@ export interface Tables {
       description?: string | null
       priority?: string | null
       status?: string | null
+      status_changed_at?: string | null
+      auto_review_reason?: string | null
       assignee_id?: string | null
       created_at?: string
     }
@@ -56,6 +60,8 @@ export interface Tables {
       description?: string | null
       priority?: string | null
       status?: string | null
+      status_changed_at?: string | null
+      auto_review_reason?: string | null
       assignee_id?: string | null
       created_at?: string
     }
@@ -204,6 +210,8 @@ export interface Tables {
       project_id: number
       title: string
       order: number | null
+      color: string | null
+      default_assignee_id: string | null
       created_at: string
     }
     Insert: {
@@ -212,6 +220,8 @@ export interface Tables {
       project_id: number
       title: string
       order?: number | null
+      color?: string | null
+      default_assignee_id?: string | null
       created_at?: string
     }
     Update: {
@@ -220,6 +230,8 @@ export interface Tables {
       project_id?: number
       title?: string
       order?: number | null
+      color?: string | null
+      default_assignee_id?: string | null
       created_at?: string
     }
   }
