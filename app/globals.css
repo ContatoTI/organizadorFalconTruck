@@ -222,6 +222,16 @@
   .text-cat-teal   { color: hsl(var(--cat-teal)); }
   .text-cat-red    { color: hsl(var(--cat-red)); }
 
+  /* ── Cards com fundo suave (cor do projeto/pasta) ──────────────── */
+  /* getSoftCardStyle() sempre mistura a cor com branco, então o fundo
+     desses cards continua claro mesmo no tema dark — por isso o texto
+     precisa continuar escuro aqui, e não usar --foreground/--muted-foreground
+     globais (que ficam claros no dark, ficando invisível sobre o fundo claro). */
+  .dark .soft-card-surface {
+    --foreground: 222 47% 11%;
+    --muted-foreground: 215 16% 47%;
+  }
+
   /* ── Tipografia DS — tokens oficiais do Design System ─────────── */
   .ds-page-title    { font-size: 20px; font-weight: 600; line-height: 1.4; color: hsl(var(--foreground)); }
   .ds-section-title { font-size: 18px; font-weight: 600; line-height: 1.4; color: hsl(var(--foreground)); }

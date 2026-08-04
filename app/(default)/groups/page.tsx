@@ -245,7 +245,10 @@ function GroupsContent() {
           groups.map((group) => (
             <Card
               key={group.id}
-              className="p-4 shadow-card hover:shadow-card-hover transition-shadow overflow-hidden"
+              className={cn(
+                "p-4 shadow-card hover:shadow-card-hover transition-shadow overflow-hidden",
+                group.color && "soft-card-surface"
+              )}
               style={getSoftCardStyle(group.color)}
             >
               <div className="flex items-center gap-3">

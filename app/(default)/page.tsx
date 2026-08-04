@@ -2055,18 +2055,19 @@ function DashboardContent() {
   const renderStatusGroups = (sectionId: number | null) => {
     return visibleStatusGroups.map(group => {
       const groupTasks = getTasksBySectionAndStatus(sectionId, group.key);
-      const statusColor: Record<string, string> = {
-        'A_FAZER': 'bg-slate-400',
-        'EM_ANDAMENTO': 'bg-blue-500',
-        'REVISAO': 'bg-yellow-500',
-        'CONCLUIDO': 'bg-green-500',
+      const statusStyle: Record<string, { dot: string; text: string; bg: string }> = {
+        'A_FAZER': { dot: 'bg-slate-400', text: 'text-slate-600 dark:text-slate-300', bg: 'bg-slate-400/10' },
+        'EM_ANDAMENTO': { dot: 'bg-blue-500', text: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-500/10' },
+        'REVISAO': { dot: 'bg-yellow-500', text: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-500/10' },
+        'CONCLUIDO': { dot: 'bg-green-500', text: 'text-green-600 dark:text-green-400', bg: 'bg-green-500/10' },
       };
+      const style = statusStyle[group.key];
       return (
         <div key={group.key}>
           <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 bg-muted/[0.03]">
-            <div className={cn("w-2 h-2 rounded-full flex-shrink-0", statusColor[group.key])} />
-            <span className="text-xs font-semibold text-muted-foreground">{group.label}</span>
-            <span className="text-[10px] text-muted-foreground/50 ml-auto tabular-nums">{groupTasks.length}</span>
+            <div className={cn("w-2 h-2 rounded-full flex-shrink-0", style.dot)} />
+            <span className="text-xs font-semibold text-foreground">{group.label}</span>
+            <span className="text-[10px] ml-auto tabular-nums font-medium text-foreground">{groupTasks.length}</span>
           </div>
           {groupTasks.length > 0 ? (
             renderTasksList(groupTasks, `section-${sectionId ?? 'none'}-${group.key}`)
@@ -2089,7 +2090,10 @@ function DashboardContent() {
     const inner = (
       <div className="mb-5">
         <div
-          className="border rounded-[10px] overflow-hidden transition-colors duration-200"
+          className={cn(
+            "border rounded-[10px] overflow-hidden transition-colors duration-200",
+            groupInfo.color && "soft-card-surface"
+          )}
           style={surfaceStyle}
         >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 border-b border-border/40 gap-2" style={surfaceStyle}>
@@ -2779,7 +2783,7 @@ function DashboardContent() {
             loading ? (
               <div className="text-center py-8 text-muted-foreground">Carregando...</div>
             ) : (
-              <Card className="border-border/60 overflow-hidden" style={getSoftCardStyle(selectedProject?.color)}>
+              <Card className="border-border/60 overflow-hidden soft-card-surface" style={getSoftCardStyle(selectedProject?.color)}>
                 <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-border/60">
                   <div className="w-1 h-4 rounded-full flex-shrink-0 bg-border" />
                   <span className="text-sm font-semibold text-muted-foreground">Tarefas</span>
@@ -2787,20 +2791,21 @@ function DashboardContent() {
                 </div>
                 <div>
                   {(() => {
-                    const statusColor: Record<string, string> = {
-                      'A_FAZER': 'bg-slate-400',
-                      'EM_ANDAMENTO': 'bg-blue-500',
-                      'REVISAO': 'bg-yellow-500',
-                      'CONCLUIDO': 'bg-green-500',
+                    const statusStyle: Record<string, { dot: string; text: string; bg: string }> = {
+                      'A_FAZER': { dot: 'bg-slate-400', text: 'text-slate-600 dark:text-slate-300', bg: 'bg-slate-400/10' },
+                      'EM_ANDAMENTO': { dot: 'bg-blue-500', text: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-500/10' },
+                      'REVISAO': { dot: 'bg-yellow-500', text: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-500/10' },
+                      'CONCLUIDO': { dot: 'bg-green-500', text: 'text-green-600 dark:text-green-400', bg: 'bg-green-500/10' },
                     };
                     return visibleStatusGroups.map(group => {
                       const groupTasks = getProjectTasks().filter(t => group.match(t.status));
+                      const style = statusStyle[group.key];
                       return (
                         <div key={group.key}>
                           <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 bg-muted/[0.03]">
-                            <div className={cn("w-2 h-2 rounded-full flex-shrink-0", statusColor[group.key])} />
-                            <span className="text-xs font-semibold text-muted-foreground">{group.label}</span>
-                            <span className="text-[10px] text-muted-foreground/50 ml-auto tabular-nums">{groupTasks.length}</span>
+                            <div className={cn("w-2 h-2 rounded-full flex-shrink-0", style.dot)} />
+                            <span className={cn("text-xs font-semibold", style.text)}>{group.label}</span>
+                            <span className={cn("text-[10px] ml-auto tabular-nums font-medium", style.text)}>{groupTasks.length}</span>
                           </div>
                           {groupTasks.length > 0 ? (
                             <SortableContext items={groupTasks.map(t => `task-assigned-${group.key}-${t.id}`)} strategy={verticalListSortingStrategy}>
@@ -2896,7 +2901,7 @@ function DashboardContent() {
                   <DroppableSection sectionId={section.id}>
                   <Card
                     className={cn(
-                      "border-border/60 overflow-hidden transition-all duration-200 group/section mb-6"
+                      "border-border/60 overflow-hidden transition-all duration-200 group/section mb-6 soft-card-surface"
                     )}
                     style={getSoftCardStyle(section.color || selectedProject?.color)}
                   >
@@ -2917,7 +2922,7 @@ function DashboardContent() {
                           className="w-1 h-4 rounded-full flex-shrink-0"
                           style={{ backgroundColor: section.color || 'hsl(var(--primary) / 0.4)' }}
                         />
-                        <span className="text-sm font-semibold truncate">{section.title}</span>
+                        <span className="text-sm font-semibold truncate text-foreground">{section.title}</span>
                         <span className="text-[11px] text-muted-foreground/50 tabular-nums flex-shrink-0">
                           {getTasksBySection(section.id).length}
                         </span>
@@ -3006,7 +3011,7 @@ function DashboardContent() {
               <DroppableSection sectionId={'unsectioned'}>
               <Card
                   className={cn(
-                    "border-border/60 overflow-hidden transition-all duration-200 mb-6"
+                    "border-border/60 overflow-hidden transition-all duration-200 mb-6 soft-card-surface"
                   )}
                   style={getSoftCardStyle(selectedProject?.color)}
                 >
@@ -3186,7 +3191,10 @@ function DashboardContent() {
               {selectedGroup && (
                 <DroppableBlock blockId={`group:${selectedGroup.id}`} blockType="group">
                   <div
-                    className="border rounded-[10px] overflow-hidden transition-colors duration-200 min-h-[64px]"
+                    className={cn(
+                      "border rounded-[10px] overflow-hidden transition-colors duration-200 min-h-[64px]",
+                      selectedGroup.color && "soft-card-surface"
+                    )}
                     style={getSoftCardStyle(selectedGroup.color)}
                   >
                     {renderTasksList(filteredTasks, `selected-group-${selectedGroup.id}`, selectedGroup.id)}
