@@ -95,7 +95,7 @@ export function InlineTaskCreator({ onCreateTask, onCreateSimpleTask, onCancel, 
   }
 
   return (
-    <div className={cn("flex items-center gap-1", className)}>
+    <div className={cn("flex items-center gap-1 w-full", className)}>
       <textarea
         ref={inputRef}
         value={taskTitle}
@@ -103,7 +103,7 @@ export function InlineTaskCreator({ onCreateTask, onCreateSimpleTask, onCancel, 
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         rows={1}
-        className="min-w-[120px] max-w-[300px] max-h-[80px] bg-transparent border-0 border-b border-border/60 text-[13px] outline-none resize-none overflow-y-auto py-0 leading-tight focus:border-primary transition-colors"
+        className="flex-1 min-w-0 max-h-[80px] bg-transparent border-0 border-b border-border/60 text-[13px] outline-none resize-none overflow-y-auto py-0 leading-tight focus:border-primary transition-colors"
       />
       <Button
         variant="ghost"

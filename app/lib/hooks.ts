@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import type { Task, Group, Project, Section, ProjectInvite, Finance, Goal } from '@/types/index';
 
@@ -202,6 +202,123 @@ export function useListFilters(initialFilters: Record<string, any> = {}) {
   }, []);
 
   return { filters, updateFilter, clearFilters, setAllFilters };
+}
+
+/**
+ * Hook para exclusão com "Desfazer".
+ * A exclusão real no backend é adiada por `delayMs`; se o usuário desfizer
+ * antes do prazo, o item é restaurado no estado local e a chamada ao backend
+ * é cancelada (nunca chega a apagar nada no banco).
+ */
+export function useUndoableDelete<T>({
+  deleteFn,
+  onRemove,
+  onRestore,
+  toast,
+  getId,
+  delayMs = 5000,
+}: {
+  deleteFn: (item: T) => Promise<{ success: boolean; error?: string }>;
+  onRemove: (item: T) => void;
+  onRestore: (item: T) => void;
+  toast: (message: string, type?: 'success' | 'error' | 'info', options?: { action?: { label: string; onClick: () => void }; duration?: number }) => void;
+  getId: (item: T) => number | string;
+  delayMs?: number;
+}) {
+  const pendingRef = useRef<Map<number | string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const remove = useCallback((item: T, message = 'Item excluído') => {
+    const id = getId(item);
+
+    const existingTimer = pendingRef.current.get(id);
+    if (existingTimer) clearTimeout(existingTimer);
+
+    onRemove(item);
+
+    const timer = setTimeout(async () => {
+      pendingRef.current.delete(id);
+      const result = await deleteFn(item);
+      if (!result.success) {
+        onRestore(item);
+        toast(result.error || 'Erro ao excluir item', 'error');
+      }
+    }, delayMs);
+
+    pendingRef.current.set(id, timer);
+
+    toast(message, 'info', {
+      duration: delayMs,
+      action: {
+        label: 'Desfazer',
+        onClick: () => {
+          const t = pendingRef.current.get(id);
+          if (!t) return;
+          clearTimeout(t);
+          pendingRef.current.delete(id);
+          onRestore(item);
+        },
+      },
+    });
+  }, [deleteFn, onRemove, onRestore, toast, getId, delayMs]);
+
+  return { remove };
+}
+
+/**
+ * Concluir tarefa com desfazer.
+ *
+ * Diferente da exclusão, aqui a gravação vale na hora — marcar como feito é a
+ * ação mais frequente do app e não pode ficar pendurada num timer. O desfazer
+ * simplesmente escreve o estado anterior de volta.
+ *
+ * Quem chama continua responsável pelo estado otimista da lista; este hook
+ * cuida de gravar, reverter em erro e oferecer o "Desfazer" no toast.
+ */
+export function useUndoableComplete<T extends { id: number; is_completed: boolean; status?: string | null; title: string }>({
+  apply,
+  persist,
+  toast,
+  durationMs = 6000,
+}: {
+  /** Reflete o novo estado na lista (otimista e também na reversão). */
+  apply: (id: number, completed: boolean) => void;
+  persist: (id: number, completed: boolean) => Promise<{ success: boolean; error?: string }>;
+  toast: (message: string, type?: 'success' | 'error' | 'info', options?: { action?: { label: string; onClick: () => void }; duration?: number }) => void;
+  durationMs?: number;
+}) {
+  const toggle = useCallback(async (item: T) => {
+    const next = !item.is_completed;
+
+    apply(item.id, next);
+
+    const result = await persist(item.id, next);
+    if (!result.success) {
+      apply(item.id, item.is_completed);
+      toast(result.error || 'Erro ao atualizar tarefa', 'error');
+      return;
+    }
+
+    // Reabrir uma tarefa não precisa de desfazer: o próprio ato já é o desfazer.
+    if (!next) return;
+
+    const shortTitle = item.title.length > 32 ? item.title.slice(0, 32) + '…' : item.title;
+    toast(`Concluída: ${shortTitle}`, 'success', {
+      duration: durationMs,
+      action: {
+        label: 'Desfazer',
+        onClick: async () => {
+          apply(item.id, false);
+          const undo = await persist(item.id, false);
+          if (!undo.success) {
+            apply(item.id, true);
+            toast(undo.error || 'Não deu para desfazer', 'error');
+          }
+        },
+      },
+    });
+  }, [apply, persist, toast, durationMs]);
+
+  return { toggle };
 }
 
 /**

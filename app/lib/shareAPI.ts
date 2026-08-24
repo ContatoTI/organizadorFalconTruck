@@ -134,6 +134,100 @@ class ShareAPI {
       return [];
     }
   }
+
+  /**
+   * Retorna todas as pastas do usuário que têm compartilhamentos ativos,
+   * incluindo os dados dos usuários com quem foram compartilhadas.
+   */
+  async getMySharedSections(userId: string) {
+    try {
+      const client = createClient();
+
+      const { data: sections } = await client
+        .from('sections')
+        .select('id, project_id, title, color, order')
+        .eq('user_id', userId);
+
+      if (!sections || sections.length === 0) return [];
+
+      const sectionIds = sections.map(s => s.id);
+
+      const { data: shares } = await client
+        .from('section_shares')
+        .select('section_id, user_id')
+        .in('section_id', sectionIds);
+
+      if (!shares || shares.length === 0) return [];
+
+      const sharedSectionIds = [...new Set(shares.map(s => s.section_id))];
+      const userIds = [...new Set(shares.map(s => s.user_id))];
+
+      const [{ data: projects }, { data: profiles }] = await Promise.all([
+        client.from('projects').select('id, name, color').in('id', sections.map(s => s.project_id)),
+        client.from('profiles').select('id, full_name, email').in('id', userIds),
+      ]);
+
+      const projectMap = new Map((projects || []).map(p => [p.id, p]));
+      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+      return sharedSectionIds.map(sectionId => {
+        const section = sections.find(s => s.id === sectionId)!;
+        const sectionShares = shares.filter(s => s.section_id === sectionId);
+        return {
+          section,
+          project: projectMap.get(section.project_id) || null,
+          users: sectionShares.map(s => profileMap.get(s.user_id) || null).filter(Boolean),
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Retorna todas as pastas compartilhadas COM o usuário,
+   * incluindo dados do projeto e do dono.
+   */
+  async getSectionsSharedWithMe(userId: string) {
+    try {
+      const client = createClient();
+
+      const { data: shares } = await client
+        .from('section_shares')
+        .select('section_id, created_at')
+        .eq('user_id', userId);
+
+      if (!shares || shares.length === 0) return [];
+
+      const sectionIds = shares.map(s => s.section_id);
+
+      const { data: sections } = await client
+        .from('sections')
+        .select('id, project_id, title, color, order, user_id')
+        .in('id', sectionIds);
+
+      if (!sections || sections.length === 0) return [];
+
+      const projectIds = [...new Set(sections.map(s => s.project_id))];
+      const ownerIds = [...new Set(sections.map(s => s.user_id))];
+
+      const [{ data: projects }, { data: profiles }] = await Promise.all([
+        client.from('projects').select('id, name, color, owner_id').in('id', projectIds),
+        client.from('profiles').select('id, full_name, email').in('id', ownerIds),
+      ]);
+
+      const projectMap = new Map((projects || []).map(p => [p.id, p]));
+      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+      return sections.map(section => ({
+        section,
+        project: projectMap.get(section.project_id) || null,
+        owner: profileMap.get(section.user_id) || null,
+      }));
+    } catch {
+      return [];
+    }
+  }
 }
 
 export const shareAPI = new ShareAPI();

@@ -9,6 +9,7 @@ import { notificationAPI } from '@/app/lib/notificationAPI';
 import { createClient } from '@/app/lib/supabase/Client';
 import type { Task, Group } from '@/types/index';
 import { ShareEntityDialog } from '@/app/components/ShareEntityDialog';
+import { RecurrenceEditor, ruleToTask, type RecurrenceRule } from '@/app/components/RecurrenceEditor';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -57,6 +58,23 @@ function formatDateTime(dateStr: string): string {
   });
 }
 
+/** "2026-08-24T14:30:00Z" -> "14:30" no fuso local. "" quando nao ha hora. */
+function timeFromISO(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Junta "2026-08-24" + "14:30" num Date local. */
+function combine(date: string, time: string): Date | null {
+  if (!date) return null;
+  const [y, m, d] = date.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const [h, min] = time ? time.split(':').map(Number) : [0, 0];
+  return new Date(y, m - 1, d, h || 0, min || 0, 0, 0);
+}
+
 interface TaskDetailPanelProps {
   task: Task;
   groups: Group[];
@@ -73,6 +91,7 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
   const [status, setStatus] = useState(task.status ?? 'A_FAZER');
   const [priority, setPriority] = useState(task.priority ?? '');
   const [dueDate, setDueDate] = useState(task.due_date ?? '');
+  const [dueTime, setDueTime] = useState(() => timeFromISO(task.due_at));
   const [saving, setSaving] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [assigneeCandidates, setAssigneeCandidates] = useState<{user_id: string; full_name?: string; email?: string}[]>([]);
@@ -132,13 +151,27 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
           task.creator_name || 'Usuário');
       }
     } else if (prevStatus === 'REVISAO' && val === 'CONCLUIDO') {
-      if (task.user_id && task.user_id !== currentUserId) {
-        notificationAPI.createTaskReviewNotification(task.user_id, task.id, task.title,
+      const recipientId = task.assignee_id || task.user_id;
+      const notified = new Set<string>();
+      if (recipientId && recipientId !== currentUserId) {
+        notificationAPI.createTaskReviewNotification(recipientId, task.id, task.title,
+          task.creator_name || 'Usuário', 'approved');
+        notified.add(recipientId);
+      }
+      if (projectOwnerId && projectOwnerId !== currentUserId && !notified.has(projectOwnerId)) {
+        notificationAPI.createTaskReviewNotification(projectOwnerId, task.id, task.title,
           task.creator_name || 'Usuário', 'approved');
       }
     } else if (prevStatus === 'REVISAO' && val === 'EM_ANDAMENTO') {
-      if (task.user_id && task.user_id !== currentUserId) {
-        notificationAPI.createTaskReviewNotification(task.user_id, task.id, task.title,
+      const recipientId = task.assignee_id || task.user_id;
+      const notified = new Set<string>();
+      if (recipientId && recipientId !== currentUserId) {
+        notificationAPI.createTaskReviewNotification(recipientId, task.id, task.title,
+          task.creator_name || 'Usuário', 'rejected', 'Há erros a corrigir.');
+        notified.add(recipientId);
+      }
+      if (projectOwnerId && projectOwnerId !== currentUserId && !notified.has(projectOwnerId)) {
+        notificationAPI.createTaskReviewNotification(projectOwnerId, task.id, task.title,
           task.creator_name || 'Usuário', 'rejected', 'Há erros a corrigir.');
       }
     }
@@ -150,11 +183,48 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
     save({ priority: val || null });
   };
 
-  const handleDueDateChange = (value: string | null) => {
-    const val = value ?? '';
-    setDueDate(val);
-    save({ due_date: val || null });
+  /**
+   * Data e hora andam juntas: due_date guarda o dia e due_at o instante exato
+   * que o calendario usa. Gravar so um dos dois deixaria o calendario
+   * mostrando o horario antigo depois de mudar a data por aqui.
+   */
+  const applyDue = (nextDate: string, nextTime: string) => {
+    setDueDate(nextDate);
+    setDueTime(nextTime);
+
+    if (!nextDate) {
+      save({ due_date: null, due_at: null });
+      return;
+    }
+    const at = nextTime ? combine(nextDate, nextTime) : null;
+    save({ due_date: nextDate, due_at: at ? at.toISOString() : null });
   };
+
+  /**
+   * Repeticao: uma escrita so.
+   *
+   * Nao passa pelo `save` generico porque setRecurrence sabe explicar quando
+   * as colunas da migracao ainda nao existem — o updateTask cru falharia mudo.
+   */
+  const handleRecurrenceChange = async (rule: RecurrenceRule) => {
+    const patch = ruleToTask(rule);
+    onUpdate({ ...task, ...patch } as Task);
+
+    const result = await taskAPI.setRecurrence(task.id, {
+      freq: rule.freq,
+      interval: rule.interval,
+      weekdays: rule.weekdays,
+      until: rule.until,
+      count: rule.count,
+    });
+    if (!result.success) {
+      onUpdate(task);
+      console.error('Erro ao salvar repeticao:', result.error);
+    }
+  };
+
+  const handleDueDateChange = (value: string | null) => applyDue(value ?? '', dueTime);
+  const handleDueTimeChange = (value: string) => applyDue(dueDate, value);
 
   const handleAssigneeChange = (value: string | null) => {
     const newAssigneeId = value || null;
@@ -192,6 +262,7 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
     setStatus(task.status ?? 'A_FAZER');
     setPriority(task.priority ?? '');
     setDueDate(task.due_date ?? '');
+    setDueTime(timeFromISO(task.due_at));
   }, [task]);
 
   useEffect(() => {
@@ -237,7 +308,9 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    // data-detail-panel: marca que o teclado pertence a este painel, para a
+    // captura rápida do Dashboard não puxar o foco enquanto ele está aberto.
+    <div data-detail-panel className="fixed inset-0 z-50 flex justify-end">
       {/* Overlay - mesmo estilo do modal Novo Projeto */}
       <div
         className="absolute inset-0 bg-foreground/50 backdrop-blur-sm animate-in fade-in duration-200"
@@ -365,18 +438,38 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
               </Select>
             </div>
 
-            {/* Due Date */}
+            {/* Quando */}
             <div>
               <label className="text-sm text-muted-foreground block mb-1">
-                Data de entrega
+                Quando
               </label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => handleDueDateChange(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => handleDueDateChange(e.target.value)}
+                  className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <input
+                  type="time"
+                  value={dueTime}
+                  disabled={!dueDate}
+                  onChange={(e) => handleDueTimeChange(e.target.value)}
+                  title={dueDate ? 'Hora no calendário' : 'Escolha uma data primeiro'}
+                  className="w-[104px] shrink-0 px-2 py-2 rounded-lg border border-input bg-background text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-40"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {dueTime ? 'Aparece no calendário nesse horário.' : 'Sem hora, aparece como “dia todo”.'}
+              </p>
             </div>
+
+            {/* Repetição */}
+            <RecurrenceEditor
+              task={task}
+              disabled={!dueDate}
+              onChange={handleRecurrenceChange}
+            />
 
             {/* Assignee */}
             {task.project_id && (
@@ -457,7 +550,10 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
             {task.due_date && (
               <div className="flex items-center gap-3 text-sm text-muted-foreground">
                 <Clock className="w-4 h-4" />
-                <span>Entrega: {new Date(task.due_date).toLocaleDateString('pt-BR')}</span>
+                <span>
+                  Entrega: {new Date(task.due_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                  {task.due_at && ` às ${timeFromISO(task.due_at)}`}
+                </span>
               </div>
             )}
           </div>

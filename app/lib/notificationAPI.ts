@@ -165,7 +165,7 @@ class NotificationAPI {
     try {
       const { data: taskRow, error: taskError } = await client
         .from('todos')
-        .select('id, user_id, title')
+        .select('id, user_id, assignee_id, project_id, title')
         .eq('id', taskId)
         .single();
 
@@ -183,14 +183,40 @@ class NotificationAPI {
         return { success: false, error: updateError.message };
       }
 
-      if (taskRow.user_id && taskRow.user_id !== reviewerId) {
+      const notifType = approve ? 'approved' : 'rejected';
+      const notifNote = approve ? null : (note || 'Há erros a corrigir.');
+
+      let projectOwnerId: string | null = null;
+      if (taskRow.project_id) {
+        const { data: proj } = await client
+          .from('projects')
+          .select('owner_id')
+          .eq('id', taskRow.project_id)
+          .maybeSingle();
+        projectOwnerId = proj?.owner_id || null;
+      }
+
+      const recipientId = taskRow.assignee_id || taskRow.user_id;
+      const notified = new Set<string>();
+      if (recipientId && recipientId !== reviewerId) {
         await client.from('task_review_notifications').insert({
-          user_id: taskRow.user_id,
+          user_id: recipientId,
           task_id: taskId,
           task_title: taskRow.title,
           sender_name: reviewerName,
-          type: approve ? 'approved' : 'rejected',
-          note: approve ? null : (note || 'Há erros a corrigir.'),
+          type: notifType,
+          note: notifNote,
+        });
+        notified.add(recipientId);
+      }
+      if (projectOwnerId && projectOwnerId !== reviewerId && !notified.has(projectOwnerId)) {
+        await client.from('task_review_notifications').insert({
+          user_id: projectOwnerId,
+          task_id: taskId,
+          task_title: taskRow.title,
+          sender_name: reviewerName,
+          type: notifType,
+          note: notifNote,
         });
       }
 

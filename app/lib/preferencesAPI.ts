@@ -9,6 +9,8 @@ const DEFAULTS: UserPreferences = {
   show_time_blocks: true,
   show_projects: true,
   show_lists: true,
+  focus_mode: true,
+  last_capture_target: 'inbox',
 };
 
 export async function fetchPreferences(userId: string): Promise<UserPreferences> {
@@ -27,6 +29,8 @@ export async function fetchPreferences(userId: string): Promise<UserPreferences>
     if (typeof raw.show_time_blocks === 'boolean') prefs.show_time_blocks = raw.show_time_blocks;
     if (typeof raw.show_projects === 'boolean') prefs.show_projects = raw.show_projects;
     if (typeof raw.show_lists === 'boolean') prefs.show_lists = raw.show_lists;
+    if (typeof raw.focus_mode === 'boolean') prefs.focus_mode = raw.focus_mode;
+    if (typeof raw.last_capture_target === 'string') prefs.last_capture_target = raw.last_capture_target;
     // Migra modelo antigo (show_only_time_blocks / show_only_lists)
     if (typeof raw.show_time_blocks !== 'boolean' && typeof raw.show_only_time_blocks === 'boolean') {
       prefs.show_time_blocks = true;

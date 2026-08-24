@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
-import { X, Edit, Trash2, XCircle } from 'lucide-react';
+import { X, Edit, Trash2, XCircle, CheckSquare } from 'lucide-react';
 import { cn } from '@/app/lib/utils';
 import { taskAPI } from '@/app/lib/taskAPI';
 import { onTaskMoved, onTaskMoveError, shouldSkipRealtimeFetch, skipRealtimeFetch, TaskMovedEvent, TaskMoveErrorEvent } from '@/app/lib/taskEvents';
@@ -15,17 +15,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card } from '@/components/ui/card';
+import { PageShell, PageHeader, EmptyState, ListCard, ListRow, RowAction, PageSkeleton } from '@/app/components/ui/Page';
 import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
-import { InlineTaskCreator } from '@/app/components/InlineTaskCreator';
-import { ToastProvider, useToast } from '@/app/components/Toast';
+import { QuickCapture, type CaptureTarget, type CaptureDraft } from '@/app/components/QuickCapture';
+import { useToast } from '@/app/components/Toast';
 import { ToggleChips } from '@/app/components/ToggleChips';
+import { useUndoableDelete, useUndoableComplete } from '@/app/lib/hooks';
 
 export default function TodosPage() {
   const [user, setUser] = useState<any>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [showCompleted, setShowCompleted] = useState(true);
   const [editingTask, setEditingTask] = useState<Partial<Task> | null>(null);
@@ -33,6 +34,13 @@ export default function TodosPage() {
   const router = useRouter();
   const client = createClient();
   const { toast } = useToast();
+  const undoableDeleteTask = useUndoableDelete<Task>({
+    deleteFn: (task) => taskAPI.deleteTask(task.id),
+    onRemove: (task) => setTasks(prev => prev.filter(t => t.id !== task.id)),
+    onRestore: (task) => setTasks(prev => [task, ...prev]),
+    toast,
+    getId: (task) => task.id,
+  });
 
   useEffect(() => {
     const getUser = async () => {
@@ -125,90 +133,79 @@ export default function TodosPage() {
     return pb - pa;
   });
 
-  const addTask = async (titleOverride?: string) => {
-    const raw = (titleOverride ?? newTaskTitle).trim();
-    if (!raw || !user) return;
+  /**
+   * Captura rápida desta tela. O destino segue o filtro de grupo escolhido
+   * logo ao lado: com "Sem grupo" a tarefa cai na Caixa de Entrada, com um
+   * grupo selecionado ela já nasce dentro dele.
+   */
+  const handleQuickCapture = async (drafts: CaptureDraft[]) => {
+    if (!user || drafts.length === 0) return;
 
-    const titles = raw.split('\n').map(t => t.trim()).filter(Boolean);
-    if (titles.length === 0) return;
-
-    // OPTIMISTIC UPDATE
-    const newOptimisticTasks = titles.map((title, index) => ({
-      id: Date.now() + index, // Temporary ID
-      title,
+    const optimistic: Task[] = drafts.map((d, i) => ({
+      id: -(Date.now() + i),
       user_id: user.id,
+      title: d.title,
+      is_completed: false,
+      due_date: d.dueDate,
+      due_at: d.dueAt ? d.dueAt.toISOString() : null,
+      duration_min: d.durationMin ?? null,
+      view_group_id: selectedGroupId || null,
       project_id: null,
       section_id: null,
-      view_group_id: selectedGroupId || null,
-      is_completed: false,
       position: 99999,
-      created_at: new Date().toISOString(),
-      due_date: null,
       description: null,
-      priority: null,
+      priority: d.priority,
+      recur_freq: d.recur?.freq ?? null,
+      recur_interval: d.recur ? 1 : null,
+      recur_weekdays: d.recur?.freq === 'weekly' && d.recur.weekdays.length > 0 ? d.recur.weekdays : null,
       status: 'A_FAZER',
-      creator_name: (user as any).user_metadata?.full_name || user.email,
+      status_changed_at: new Date().toISOString(),
+      auto_review_reason: null,
+      created_at: new Date().toISOString(),
       isSyncing: true,
     } as Task));
 
-    setTasks(prev => [...newOptimisticTasks, ...prev]);
-    setNewTaskTitle('');
+    setTasks(prev => [...optimistic, ...prev]);
 
-    skipRealtimeFetch(1000);
-
-    const results = await Promise.all(titles.map(title => 
-      taskAPI.createTask(
-        user.id,
-        title,
-        undefined,
-        undefined,
-        selectedGroupId || undefined
-      )
+    const results = await Promise.all(drafts.map(d =>
+      taskAPI.createTaskFrom(user.id, {
+        title: d.title,
+        groupId: selectedGroupId || null,
+        dueDate: d.dueDate,
+        dueAt: d.dueAt ? d.dueAt.toISOString() : null,
+        durationMin: d.durationMin ?? (d.dueAt ? 30 : null),
+        priority: d.priority,
+        recur: d.recur,
+      })
     ));
 
-    if (results.some(r => !r.success)) {
-      const failedTempIds = new Set(newOptimisticTasks.filter((_, i) => !results[i].success).map(t => t.id));
-      setTasks(prev => prev.filter(t => !failedTempIds.has(t.id)));
-      toast('Erro ao criar tarefa(s)', 'error');
-    }
-
-    results.forEach((res, i) => {
-      if (res.success && res.data) {
-        setTasks(prev => {
-          const idx = prev.findIndex(t => t.id === newOptimisticTasks[i].id);
-          if (idx !== -1) {
-            const next = [...prev];
-            next[idx] = res.data as Task;
-            return next;
-          }
-          if (!prev.some(t => t.id === res.data!.id)) {
-            return [res.data as Task, ...prev];
-          }
-          return prev;
-        });
-      }
+    setTasks(prev => {
+      let next = prev;
+      results.forEach((res, i) => {
+        const tempId = optimistic[i].id;
+        next = res.success && res.data
+          ? next.map(t => (t.id === tempId ? { ...res.data!, isSyncing: false } : t))
+          : next.filter(t => t.id !== tempId);
+      });
+      return next;
     });
+
+    const failed = results.filter(r => !r.success).length;
+    if (failed > 0) toast(`Erro ao criar ${failed} tarefa(s)`, 'error');
   };
 
-  const toggleTask = async (task: Task) => {
-    // OPTIMISTIC UPDATE
-    const newState = !task.is_completed;
-    setTasks(prev => prev.map(t =>
-      t.id === task.id ? { ...t, is_completed: newState, status: newState ? 'CONCLUIDO' : 'A_FAZER', isSyncing: true } : t
-    ));
 
-    const result = await taskAPI.toggleTaskCompletion(task.id, task.is_completed);
-    if (!result.success) {
-      setTasks(prev => prev.map(t =>
-        t.id === task.id ? { ...t, is_completed: !newState, status: !newState ? 'CONCLUIDO' : 'A_FAZER', isSyncing: false } : t
-      ));
-      toast('Erro ao atualizar tarefa', 'error');
-    } else {
-      setTasks(prev => prev.map(t =>
-        t.id === task.id ? { ...t, isSyncing: false } : t
-      ));
-    }
-  };
+  // Concluir com desfazer: mesmo comportamento do Dashboard, para o gesto
+  // mais repetido do app se comportar igual em qualquer tela.
+  const { toggle: toggleTask } = useUndoableComplete<Task>({
+    apply: (id, completed) => setTasks(prev => prev.map(t => t.id === id
+      ? { ...t, is_completed: completed, status: completed ? 'CONCLUIDO' : 'A_FAZER' }
+      : t)),
+    // toggleTaskCompletion recebe o estado ATUAL e inverte, então passamos o
+    // oposto do estado que queremos alcançar.
+    persist: (id, completed) => taskAPI.toggleTaskCompletion(id, !completed),
+    toast,
+  });
 
   const handlePriorityChange = async (taskId: number, priority: string | null) => {
     const original = tasks.find(t => t.id === taskId);
@@ -224,23 +221,10 @@ export default function TodosPage() {
     }
   };
 
-  const deleteTask = async (taskId: number) => {
-    // OPTIMISTIC UPDATE
+  const deleteTask = (taskId: number) => {
     const taskToDelete = tasks.find(t => t.id === taskId);
     if (!taskToDelete) return;
-    const originalTask = { ...taskToDelete };
-
-    setTasks(prev => prev.map(t => 
-      t.id === taskId ? { ...t, isSyncing: true } : t
-    ));
-
-    const result = await taskAPI.deleteTask(taskId);
-    if (result.success) {
-      setTasks(prev => prev.filter(t => t.id !== taskId));
-    } else {
-      setTasks(prev => prev.map(t => t.id === taskId ? originalTask : t));
-      toast('Erro ao excluir tarefa', 'error');
-    }
+    undoableDeleteTask.remove(taskToDelete, 'Tarefa excluída');
   };
 
   const updateTask = async () => {
@@ -269,26 +253,46 @@ export default function TodosPage() {
   };
 
   if (!user) {
-    return <div className="p-6">Carregando...</div>;
+    return <PageShell><PageSkeleton /></PageShell>;
   }
 
-  return (
-    <ToastProvider>
-    <div className="p-6 w-full max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-8">Todas as Tarefas</h1>
+  const activeGroup = selectedGroupId ? groups.find(g => g.id === selectedGroupId) : null;
+  const captureTargets: CaptureTarget[] = [
+    activeGroup
+      ? {
+          key: `group:${activeGroup.id}`,
+          label: activeGroup.title,
+          kind: activeGroup.type === 'time' ? 'group-time' : 'group-list',
+          color: activeGroup.color,
+        }
+      : { key: 'inbox', label: 'Caixa de Entrada', kind: 'inbox', color: null },
+  ];
 
-      <div className="flex gap-2 mb-8">
-        <InlineTaskCreator
-          onCreateSimpleTask={async (title) => await addTask(title)}
-          placeholder="Adicionar nova tarefa..."
-          buttonText="Nova tarefa"
-          className="flex-1"
+  const pending = displayedTasks.filter(t => !t.is_completed).length;
+
+  return (
+    <PageShell>
+      <PageHeader
+        icon={CheckSquare}
+        title="Todas as tarefas"
+        subtitle={`${pending} em aberto`}
+      />
+
+      <div className="mb-3 max-w-3xl">
+        <QuickCapture
+          targets={captureTargets}
+          activeKey={captureTargets[0].key}
+          onActiveKeyChange={() => {}}
+          onCreate={handleQuickCapture}
         />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         <Select
           value={selectedGroupId?.toString() || "none"}
           onValueChange={(val: string | null) => setSelectedGroupId(val === "none" || !val ? null : parseInt(val))}
         >
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-[170px] h-8 text-[13px]">
             <SelectValue>
               {(value: string) => (value === 'none' || !value) ? 'Sem grupo' : groups.find((g) => g.id.toString() === value)?.title ?? 'Sem grupo'}
             </SelectValue>
@@ -301,40 +305,44 @@ export default function TodosPage() {
           </SelectContent>
         </Select>
         <ToggleChips
-          className="ml-auto"
           options={[
             { key: 'completed', label: 'Concluídas', checked: showCompleted, onChange: (v: boolean) => { setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }, title: 'Incluir tarefas concluídas' },
           ]}
         />
       </div>
 
-      <div className="space-y-2">
-        {loading ? (
-          <div className="text-center py-8 text-muted-foreground">Carregando...</div>
-        ) : displayedTasks.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed border-border">
-            <p>Nenhuma tarefa encontrada.</p>
-          </div>
-        ) : (
-          displayedTasks.map((task) => (
-            <Card
-              key={task.id}
-              className="flex items-center gap-3 p-4 hover:bg-accent/50 transition-colors group shadow-xs"
-            >
+      {loading ? (
+        <PageSkeleton rows={5} />
+      ) : displayedTasks.length === 0 ? (
+        <ListCard>
+          <EmptyState
+            icon={CheckSquare}
+            title="Nenhuma tarefa encontrada."
+            hint={showCompleted ? 'Nada por aqui com os filtros atuais.' : 'Ative “Concluídas” para ver o que já foi feito.'}
+          />
+        </ListCard>
+      ) : (
+        <ListCard>
+          {displayedTasks.map((task) => (
+            <ListRow key={task.id}>
               <Checkbox
                 checked={task.is_completed}
                 onCheckedChange={() => toggleTask(task)}
               />
               <div className={cn(
                 "w-1.5 h-1.5 rounded-full flex-shrink-0",
-                task.priority === 'alta' && "bg-red-600",
-                task.priority === 'media' && "bg-yellow-500",
-                (task.priority === 'baixa' || !task.priority) && "bg-green-600",
+                task.priority === 'urgente' && "bg-red-500",
+                task.priority === 'alta' && "bg-orange-500",
+                task.priority === 'media' && "bg-amber-400",
+                (task.priority === 'baixa' || !task.priority) && "bg-slate-300",
               )} />
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <button
                   onClick={() => setSelectedTask(task)}
-                  className={'text-left bg-transparent border-none p-0 cursor-pointer hover:underline' + (task.is_completed ? ' line-through text-muted-foreground' : '')}
+                  className={cn(
+                    'text-left text-[13.5px] leading-5 bg-transparent border-none p-0 cursor-pointer hover:text-primary transition-colors',
+                    task.is_completed && 'line-through text-muted-foreground'
+                  )}
                 >
                   {task.title}
                 </button>
@@ -350,7 +358,7 @@ export default function TodosPage() {
                     const g = groups.find(g => g.id === gid);
                     if (!g) return null;
                     return (
-                      <span key={gid} className="ml-1 text-xs bg-muted px-2 py-0.5 rounded inline-flex items-center gap-1">
+                      <span key={gid} className="ml-1.5 text-[10.5px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded inline-flex items-center gap-1">
                         {g.title}
                         <button
                           onClick={async (e) => {
@@ -365,34 +373,21 @@ export default function TodosPage() {
                             ));
                           }}
                           className="hover:text-destructive"
+                          aria-label={`Tirar de ${g.title}`}
                         >
-                          <X className="w-3 h-3" />
+                          <X className="w-2.5 h-2.5" />
                         </button>
                       </span>
                     );
                   });
                 })()}
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setEditingTask(task)}
-                className="text-muted-foreground hover:text-primary"
-              >
-                <Edit className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => deleteTask(task.id)}
-                className="text-muted-foreground hover:text-destructive"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </Card>
-          ))
-        )}
-      </div>
+              <RowAction icon={Edit} label="Editar tarefa" onClick={() => setEditingTask(task)} />
+              <RowAction icon={Trash2} label="Excluir tarefa" danger onClick={() => deleteTask(task.id)} />
+            </ListRow>
+          ))}
+        </ListCard>
+      )}
 
       <Dialog open={!!editingTask} onOpenChange={(open) => !open && setEditingTask(null)}>
         <DialogContent>
@@ -476,7 +471,6 @@ export default function TodosPage() {
           }}
         />
       )}
-    </div>
-    </ToastProvider>
+    </PageShell>
   );
 }

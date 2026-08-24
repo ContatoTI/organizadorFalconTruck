@@ -57,8 +57,11 @@ class ProjectAPI {
       );
 
       return uniqueProjects;
-    } catch (error) {
-      console.error('[ProjectAPI] Erro em getUserProjects:', error instanceof Error ? error.message : error, error instanceof Error ? error.stack : undefined);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error
+        ? error.message
+        : (typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error));
+      console.error('[ProjectAPI] Erro em getUserProjects:', errMsg);
       return [];
     }
   }
@@ -367,6 +370,103 @@ class ProjectAPI {
     } catch (error) {
       console.error('Erro ao verificar ownership:', error);
       return false;
+    }
+  }
+
+  /**
+   * Retorna projetos do usuário com suas listas de membros (com perfis).
+   * Útil para a página de compartilhamentos.
+   */
+  async getMySharedProjects(userId: string) {
+    try {
+      const client = createClient();
+
+      const { data: owned } = await client
+        .from('projects')
+        .select('id, name, color')
+        .eq('owner_id', userId);
+
+      if (!owned || owned.length === 0) return [];
+
+      const projectIds = owned.map(p => p.id);
+
+      const { data: members } = await client
+        .from('project_members')
+        .select('project_id, user_id')
+        .in('project_id', projectIds);
+
+      if (!members || members.length === 0) return [];
+
+      const userIds = [...new Set(members.map(m => m.user_id))];
+
+      const { data: profiles } = await client
+        .from('profiles')
+        .select('id, full_name, email')
+        .in('id', userIds);
+
+      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+      return projectIds
+        .map(pid => {
+          const project = owned.find(p => p.id === pid)!;
+          const projectMembers = members.filter(m => m.project_id === pid);
+          return {
+            project,
+            members: projectMembers
+              .map(m => profileMap.get(m.user_id) || null)
+              .filter(Boolean),
+          };
+        })
+        .filter(p => p.members.length > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Retorna projetos onde o usuário é membro (não dono),
+   * com o perfil do dono e contagem de membros.
+   */
+  async getProjectsImMemberOf(userId: string) {
+    try {
+      const client = createClient();
+
+      const { data: membership } = await client
+        .from('project_members')
+        .select('project_id')
+        .eq('user_id', userId);
+
+      if (!membership || membership.length === 0) return [];
+
+      const projectIds = membership.map(m => m.project_id);
+
+      const { data: projects } = await client
+        .from('projects')
+        .select('id, name, color, owner_id')
+        .in('id', projectIds);
+
+      if (!projects || projects.length === 0) return [];
+
+      const ownerIds = [...new Set(projects.map(p => p.owner_id))];
+
+      const [{ data: allMembers }, { data: profiles }] = await Promise.all([
+        client.from('project_members').select('project_id, user_id').in('project_id', projectIds),
+        client.from('profiles').select('id, full_name, email').in('id', ownerIds),
+      ]);
+
+      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+      const memberCountMap = new Map<number, number>();
+      (allMembers || []).forEach(m => {
+        memberCountMap.set(m.project_id, (memberCountMap.get(m.project_id) || 0) + 1);
+      });
+
+      return projects.map(p => ({
+        project: p,
+        owner: profileMap.get(p.owner_id) || null,
+        memberCount: memberCountMap.get(p.id) || 0,
+      }));
+    } catch {
+      return [];
     }
   }
 
