@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
-import { LogIn, Mail, Lock, UserPlus, Loader2 } from 'lucide-react';
+import { LogIn, Mail, Lock, UserPlus, Loader2, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [message, setMessage] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isForgot, setIsForgot] = useState(false);
   const router = useRouter();
   const client = createClient();
 
@@ -80,6 +81,28 @@ export default function LoginPage() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    setLoading(true);
+    setErrorMsg('');
+    setMessage('');
+
+    try {
+      // window.location.origin, não uma env var: é o mesmo destino que o
+      // usuário já está acessando, então funciona em qualquer ambiente sem
+      // precisar configurar URL nenhuma.
+      const { error } = await client.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      });
+
+      if (error) throw error;
+      setMessage('Enviamos um link para redefinir sua senha. Confira seu email.');
+    } catch (e: any) {
+      setErrorMsg(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSignUp = async () => {
     setLoading(true);
     setErrorMsg('');
@@ -115,6 +138,15 @@ export default function LoginPage() {
 
   const toggleMode = () => {
     setIsSignUp(!isSignUp);
+    setIsForgot(false);
+    setErrorMsg('');
+    setMessage('');
+    setPassword('');
+    setConfirmPassword('');
+  };
+
+  const toggleForgot = (value: boolean) => {
+    setIsForgot(value);
     setErrorMsg('');
     setMessage('');
     setPassword('');
@@ -126,7 +158,9 @@ export default function LoginPage() {
       <Card className="w-full max-w-md shadow-xl border-accent/20">
         <form onSubmit={(e) => {
           e.preventDefault();
-          if (isSignUp) {
+          if (isForgot) {
+            handleForgotPassword();
+          } else if (isSignUp) {
             handleSignUp();
           } else {
             handleLogin();
@@ -134,10 +168,14 @@ export default function LoginPage() {
         }}>
           <CardHeader className="text-center space-y-1">
             <CardTitle className="text-3xl font-bold tracking-tight">
-              {isSignUp ? 'Criar Conta' : 'Entrar'}
+              {isForgot ? 'Redefinir Senha' : isSignUp ? 'Criar Conta' : 'Entrar'}
             </CardTitle>
             <CardDescription>
-              {isSignUp ? 'Crie sua conta para gerenciar tarefas' : 'Acesse sua conta para ver suas tarefas'}
+              {isForgot
+                ? 'Informe seu email para receber o link de redefinição'
+                : isSignUp
+                ? 'Crie sua conta para gerenciar tarefas'
+                : 'Acesse sua conta para ver suas tarefas'}
             </CardDescription>
           </CardHeader>
 
@@ -158,22 +196,24 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Senha</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10"
-                  required
-                />
+            {!isForgot && (
+              <div className="space-y-2">
+                <Label htmlFor="password">Senha</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="pl-10"
+                    required
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
-            {isSignUp && (
+            {!isForgot && isSignUp && (
               <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
                 <Label htmlFor="confirm-password">Confirmar Senha</Label>
                 <div className="relative">
@@ -205,7 +245,16 @@ export default function LoginPage() {
           </CardContent>
 
           <CardFooter className="flex flex-col gap-3">
-            {isSignUp ? (
+            {isForgot ? (
+              <Button
+                type="submit"
+                className="w-full h-11"
+                disabled={loading || !email}
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4 mr-2" />}
+                Enviar Link de Redefinição
+              </Button>
+            ) : isSignUp ? (
               <Button
                 type="submit"
                 className="w-full h-11"
@@ -238,14 +287,37 @@ export default function LoginPage() {
               </>
             )}
 
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full text-muted-foreground hover:text-primary"
-              onClick={toggleMode}
-            >
-              {isSignUp ? 'Já tem conta? Entrar' : 'Não tem conta? Criar'}
-            </Button>
+            {isForgot ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full text-muted-foreground hover:text-primary"
+                onClick={() => toggleForgot(false)}
+              >
+                Voltar para login
+              </Button>
+            ) : (
+              <>
+                {!isSignUp && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full text-muted-foreground hover:text-primary text-sm h-8"
+                    onClick={() => toggleForgot(true)}
+                  >
+                    Esqueceu a senha?
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full text-muted-foreground hover:text-primary"
+                  onClick={toggleMode}
+                >
+                  {isSignUp ? 'Já tem conta? Entrar' : 'Não tem conta? Criar'}
+                </Button>
+              </>
+            )}
           </CardFooter>
         </form>
       </Card>
