@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/app/lib/supabase/Client';
 import { useRouter } from 'next/navigation';
-import { RotateCcw, X } from 'lucide-react';
+import { RotateCcw, X, Trash2 } from 'lucide-react';
+import { PageShell, PageHeader, EmptyState, ListCard, ListRow, RowAction, PageSkeleton } from '@/app/components/ui/Page';
 import { taskAPI } from '@/app/lib/taskAPI';
 import type { Task } from '@/types/index';
 import { useToast } from '@/app/components/Toast';
@@ -74,29 +75,27 @@ export default function LixeiraPage() {
   };
 
   if (!user) {
-    return <div className="p-6">Carregando...</div>;
+    return <PageShell><PageSkeleton /></PageShell>;
   }
 
   return (
-    <div className="p-6 w-full max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-2">Lixeira</h1>
-      <p className="text-muted-foreground mb-8">
-        Tarefas excluídas ficam aqui até serem restauradas ou removidas definitivamente.
-      </p>
+    <PageShell>
+      <PageHeader
+        icon={Trash2}
+        title="Lixeira"
+        subtitle="Tarefas excluídas ficam aqui até serem restauradas ou removidas de vez."
+      />
 
       {loading ? (
-        <div className="text-center py-8 text-muted-foreground">Carregando...</div>
+        <PageSkeleton rows={3} />
       ) : tasks.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground bg-muted/20 rounded-xl border border-dashed border-border">
-          <p>A lixeira está vazia.</p>
-        </div>
+        <ListCard>
+          <EmptyState icon={Trash2} title="A lixeira está vazia." hint="Nada excluído por aqui." />
+        </ListCard>
       ) : (
-        <div className="border border-border rounded-[10px] overflow-hidden bg-card shadow-xs">
+        <ListCard>
           {tasks.map((task) => (
-            <div
-              key={task.id}
-              className="group/task flex items-center gap-2 py-2 px-[14px] border-b border-border/30 last:border-b-0 hover:bg-accent/[0.04] transition-colors"
-            >
+            <ListRow key={task.id}>
               <div className="flex-1 min-w-0">
                 <span className="block text-[13px] truncate text-muted-foreground line-through">
                   {task.title}
@@ -105,24 +104,12 @@ export default function LixeiraPage() {
                   Excluída em {formatDeletedAt(task.deleted_at)}
                 </span>
               </div>
-              <button
-                onClick={() => restoreTask(task)}
-                title="Restaurar tarefa"
-                className="flex-shrink-0 opacity-0 group-hover/task:opacity-60 hover:!opacity-100 transition-all text-muted-foreground hover:text-primary"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => permanentlyDeleteTask(task)}
-                title="Excluir definitivamente"
-                className="flex-shrink-0 opacity-0 group-hover/task:opacity-30 hover:!opacity-100 transition-all text-muted-foreground hover:text-red-500"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
+              <RowAction icon={RotateCcw} label="Restaurar tarefa" onClick={() => restoreTask(task)} />
+              <RowAction icon={X} label="Excluir definitivamente" danger onClick={() => permanentlyDeleteTask(task)} />
+            </ListRow>
           ))}
-        </div>
+        </ListCard>
       )}
-    </div>
+    </PageShell>
   );
 }

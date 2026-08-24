@@ -252,3 +252,107 @@
   0%, 100% { opacity: 1; transform: scaleY(1); }
   50% { opacity: 0.6; transform: scaleY(1.5); }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CALENDÁRIO (FullCalendar) — veste a grade com os tokens do Design System
+   ------------------------------------------------------------------------
+   O FullCalendar v6 injeta o próprio CSS via JS. Aqui só sobrescrevemos as
+   variáveis dele e alguns detalhes, para a grade ficar com a mesma cara do
+   resto do app e funcionar no tema escuro.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.fc-shell {
+  --fc-border-color: hsl(var(--border));
+  --fc-page-bg-color: hsl(var(--background));
+  --fc-neutral-bg-color: hsl(var(--muted));
+  --fc-neutral-text-color: hsl(var(--muted-foreground));
+  --fc-today-bg-color: hsl(var(--accent) / 0.55);
+  --fc-now-indicator-color: #ef4444;
+  --fc-highlight-color: hsl(var(--primary) / 0.14);
+  --fc-event-selected-overlay-color: hsl(var(--primary) / 0.18);
+  height: 100%;
+}
+
+.fc-shell .fc {
+  height: 100%;
+  font-family: inherit;
+  color: hsl(var(--foreground));
+}
+
+/* Cabeçalho dos dias — discreto como o do Google, com o dia em destaque */
+.fc-shell .fc-col-header-cell {
+  background: hsl(var(--card));
+  padding: 6px 0;
+  font-weight: 500;
+}
+.fc-shell .fc-col-header-cell-cushion {
+  font-size: 11.5px;
+  color: hsl(var(--muted-foreground));
+  text-transform: capitalize;
+  padding: 2px 4px;
+}
+.fc-shell .fc-day-today .fc-col-header-cell-cushion {
+  color: hsl(var(--primary));
+  font-weight: 700;
+}
+
+/* Coluna das horas */
+.fc-shell .fc-timegrid-slot-label-cushion {
+  font-size: 10.5px;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+.fc-shell .fc-timegrid-slot { height: 26px; }
+.fc-shell .fc-timegrid-slot-minor { border-top-style: dotted; }
+
+/* Eventos: bloco cheio, texto legível, cantos suaves */
+.fc-shell .fc-event {
+  border-radius: 6px;
+  border-width: 0 0 0 3px;
+  padding: 1px 4px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+}
+.fc-shell .fc-event-main { color: #fff; }
+.fc-shell .fc-event-time { font-weight: 600; opacity: 0.9; }
+.fc-shell .fc-event-title { font-weight: 500; }
+.fc-shell .fc-task-done .fc-event-title { text-decoration: line-through; opacity: 0.75; }
+
+/* Mês: números de dia com o peso certo */
+.fc-shell .fc-daygrid-day-number {
+  font-size: 12px;
+  padding: 4px 6px;
+  color: hsl(var(--muted-foreground));
+}
+.fc-shell .fc-day-today .fc-daygrid-day-number {
+  color: #fff;
+  background: hsl(var(--primary));
+  border-radius: 9999px;
+  min-width: 22px;
+  text-align: center;
+  margin: 3px;
+  padding: 3px 0;
+  font-weight: 600;
+}
+.fc-shell .fc-daygrid-more-link {
+  font-size: 10.5px;
+  color: hsl(var(--primary));
+}
+
+/* Faixa "dia todo" */
+.fc-shell .fc-timegrid-axis-cushion,
+.fc-shell .fc-daygrid-day-events { font-size: 11px; }
+.fc-shell .fc-timegrid-axis-cushion {
+  color: hsl(var(--muted-foreground));
+  text-transform: lowercase;
+  font-size: 10px;
+}
+
+/* Fantasma da seleção de horário */
+.fc-shell .fc-timegrid-event-harness-inset .fc-timegrid-event { box-shadow: none; }
+.fc-shell .fc-highlight { border-radius: 6px; }
+
+/* Enquanto arrasta uma tarefa de fora para a grade */
+.fc-shell .fc-event-dragging { opacity: 0.85; }

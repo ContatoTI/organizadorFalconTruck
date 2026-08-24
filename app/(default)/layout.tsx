@@ -14,6 +14,7 @@ import { ProfileDialog } from '@/app/components/ProfileDialog';
 import { ProjectsView } from '@/app/components/ProjectsView';
 import { ProjectSharedIndicator } from '@/app/components/SharedWithIndicator';
 import { ToastProvider } from '@/app/components/Toast';
+import { GroupStyleEditor } from '@/app/components/GroupStyleEditor';
 import type { Project } from '@/types/index';
 import {
   LayoutDashboard,
@@ -39,6 +40,7 @@ import {
   EyeOff,
   Menu,
   Share2,
+  Repeat,
 } from 'lucide-react';
 
 function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
@@ -444,6 +446,14 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     togglingVisibilityRef.current.delete(group.id);
   };
 
+  /** Grava ícone/cor na hora, com reversão silenciosa se o banco recusar. */
+  const updateGroupStyle = async (group: any, patch: { icon?: string | null; color?: string | null }) => {
+    const before = { icon: group.icon, color: group.color };
+    updateGroup(group.id, patch);
+    const { error } = await client.from('view_groups').update(patch).eq('id', group.id);
+    if (error) updateGroup(group.id, before);
+  };
+
   const toggleProjectVisibility = async (project: any) => {
     if (togglingVisibilityRef.current.has(project.id)) return;
     togglingVisibilityRef.current.add(project.id);
@@ -743,7 +753,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
           'md:static md:z-auto md:translate-x-0'
         )}
       >
-        <div className="p-5 border-b border-border">
+        <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between">
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-sidebar-muted uppercase tracking-widest mb-0.5">Organizador</p>
@@ -780,13 +790,13 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
               </p>
             </div>
           ) : (
-            <nav className="p-4 space-y-6">
+            <nav className="p-3 space-y-4">
               {/* Dashboard e Calendário */}
               <div className="space-y-2">
                 <Link
                   href="/"
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                    'flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[13px] hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
                     isDashboardRoot && 'bg-sidebar-accent text-sidebar-primary font-semibold'
                   )}
                 >
@@ -796,7 +806,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                 <Link
                   href="/calendar"
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                    'flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[13px] hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
                     pathname === '/calendar' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
                   )}
                 >
@@ -811,7 +821,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                   onClick={() => toggleSection('blocos')}
                   data-sidebar-category="blocos"
                   className={cn(
-                    "flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors cursor-pointer",
+                    "flex items-center justify-between px-3 py-2 w-full text-[10px] font-semibold text-sidebar-muted uppercase tracking-[0.08em] hover:bg-sidebar-accent rounded-lg transition-colors cursor-pointer",
                     hoveredCategory === 'blocos' && !expandedSections.blocos && "bg-primary/15 ring-2 ring-primary/50"
                   )}
                 >
@@ -837,9 +847,9 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                 {expandedSections.blocos && (
                   <div className="space-y-1 mt-1">
                     {loadingGroups ? (
-                      <div className="px-3 py-2 text-xs text-muted-foreground">Carregando...</div>
+                      <div className="px-2.5 py-1.5 text-[11px] text-muted-foreground/60">Carregando…</div>
                     ) : timeGroups.length === 0 ? (
-                      <div className="px-3 text-xs text-muted-foreground italic">
+                      <div className="px-2.5 text-[11px] text-muted-foreground/50">
                         Nenhum bloco definido
                       </div>
                     ) : (
@@ -853,7 +863,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                           data-sidebar-type="group"
                           data-sidebar-id={group.id}
                           className={cn(
-                            "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
+                            "flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors group/link",
                             (isDragOver === group.id && dragOverType === 'group')
                               ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm"
                               : activeGroupId === String(group.id)
@@ -872,6 +882,17 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                                 <span className="truncate">{group.title}</span>
                               </span>
                           </Link>
+                          <span
+                            onClick={(e) => e.preventDefault()}
+                            className="opacity-0 group-hover/link:opacity-100 focus-within:opacity-100 transition-opacity"
+                          >
+                            <GroupStyleEditor
+                              icon={getParsedValue(group.icon)}
+                              color={group.color}
+                              onChange={(patch) => updateGroupStyle(group, patch)}
+                              className="h-5 w-5"
+                            />
+                          </span>
                           <button
                             onClick={(e) => { e.preventDefault(); toggleGroupVisibility(group); }}
                             className={cn(
@@ -904,7 +925,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                   onClick={() => toggleSection('listas')}
                   data-sidebar-category="listas"
                   className={cn(
-                    "flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors cursor-pointer",
+                    "flex items-center justify-between px-3 py-2 w-full text-[10px] font-semibold text-sidebar-muted uppercase tracking-[0.08em] hover:bg-sidebar-accent rounded-lg transition-colors cursor-pointer",
                     hoveredCategory === 'listas' && !expandedSections.listas && "bg-primary/15 ring-2 ring-primary/50"
                   )}
                 >
@@ -930,9 +951,9 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                 {expandedSections.listas && (
                   <div className="space-y-1 mt-1">
                     {loadingGroups ? (
-                      <div className="px-3 py-2 text-xs text-muted-foreground">Carregando...</div>
+                      <div className="px-2.5 py-1.5 text-[11px] text-muted-foreground/60">Carregando…</div>
                     ) : listGroups.length === 0 ? (
-                      <div className="px-3 text-xs text-muted-foreground italic">
+                      <div className="px-2.5 text-[11px] text-muted-foreground/50">
                         Nenhuma lista definida
                       </div>
                     ) : (
@@ -946,7 +967,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                           data-sidebar-type="group"
                           data-sidebar-id={group.id}
                           className={cn(
-                            "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
+                            "flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors group/link",
                             (isDragOver === group.id && dragOverType === 'group')
                               ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm"
                               : activeGroupId === String(group.id)
@@ -965,6 +986,17 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                                 <span className="truncate">{group.title}</span>
                               </span>
                           </Link>
+                          <span
+                            onClick={(e) => e.preventDefault()}
+                            className="opacity-0 group-hover/link:opacity-100 focus-within:opacity-100 transition-opacity"
+                          >
+                            <GroupStyleEditor
+                              icon={getParsedValue(group.icon)}
+                              color={group.color}
+                              onChange={(patch) => updateGroupStyle(group, patch)}
+                              className="h-5 w-5"
+                            />
+                          </span>
                           <button
                             onClick={(e) => { e.preventDefault(); toggleGroupVisibility(group); }}
                             className={cn(
@@ -1000,7 +1032,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                   }}
                   data-sidebar-category="projetos"
                   className={cn(
-                    "flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors cursor-pointer",
+                    "flex items-center justify-between px-3 py-2 w-full text-[10px] font-semibold text-sidebar-muted uppercase tracking-[0.08em] hover:bg-sidebar-accent rounded-lg transition-colors cursor-pointer",
                     hoveredCategory === 'projetos' && !expandedSections.projetos && "bg-primary/15 ring-2 ring-primary/50"
                   )}
                 >
@@ -1027,9 +1059,9 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                 {expandedSections.projetos && (
                   <div className="space-y-1 mt-1">
                     {loadingProjects ? (
-                      <div className="px-3 py-2 text-xs text-muted-foreground">Carregando...</div>
+                      <div className="px-2.5 py-1.5 text-[11px] text-muted-foreground/60">Carregando…</div>
                     ) : projects.length === 0 ? (
-                      <div className="px-3 text-xs text-muted-foreground italic">
+                      <div className="px-2.5 text-[11px] text-muted-foreground/50">
                         Nenhum projeto definido
                       </div>
                     ) : (
@@ -1045,7 +1077,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                           data-sidebar-type="project"
                           data-sidebar-id={project.id}
                           className={cn(
-                            "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors group/link",
+                            "flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors group/link",
                             (isDragOver === project.id && dragOverType === 'project')
                               ? "bg-primary/15 ring-2 ring-primary/50 shadow-sm"
                               : activeProjectId === String(project.id)
@@ -1094,7 +1126,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
               <div>
                 <button
                   onClick={() => toggleSection('planejamento')}
-                  className="flex items-center justify-between px-3 py-2 w-full text-xs font-semibold text-sidebar-muted uppercase tracking-wider hover:bg-sidebar-accent rounded-md transition-colors"
+                  className="flex items-center justify-between px-3 py-2 w-full text-[10px] font-semibold text-sidebar-muted uppercase tracking-[0.08em] hover:bg-sidebar-accent rounded-lg transition-colors"
                 >
                   <div className="flex items-center gap-2">
                     <ChevronRight
@@ -1112,17 +1144,27 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                     <Link
                       href="/goals"
                       className={cn(
-                        'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                        'flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[13px] hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
                         pathname === '/goals' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
                       )}
                     >
                       <Target className="w-4 h-4" />
-                      Metas
+                      Objetivos
+                    </Link>
+                    <Link
+                      href="/habits"
+                      className={cn(
+                        'flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[13px] hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                        pathname === '/habits' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
+                      )}
+                    >
+                      <Repeat className="w-4 h-4" />
+                      Hábitos
                     </Link>
                     <Link
                       href="/finances"
                       className={cn(
-                        'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                        'flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[13px] hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
                         pathname === '/finances' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
                       )}
                     >
@@ -1138,7 +1180,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                 <Link
                   href="/todos"
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                    'flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[13px] hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
                     pathname === '/todos' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
                   )}
                 >
@@ -1152,7 +1194,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                 <Link
                   href="/shares"
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                    'flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[13px] hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
                     pathname === '/shares' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
                   )}
                 >
@@ -1166,7 +1208,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                 <Link
                   href="/lixeira"
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
+                    'flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[13px] hover:bg-sidebar-accent hover:text-sidebar-primary transition-colors',
                     pathname === '/lixeira' && 'bg-sidebar-accent text-sidebar-primary font-semibold'
                   )}
                 >

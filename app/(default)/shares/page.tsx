@@ -6,6 +6,7 @@ import { Share2, Users, Folder, ChevronDown, ChevronRight, ExternalLink } from '
 import { cn } from '@/app/lib/utils';
 import { shareAPI } from '@/app/lib/shareAPI';
 import { projectAPI } from '@/app/lib/projectAPI';
+import { PageShell, PageHeader, EmptyState, PageSkeleton } from '@/app/components/ui/Page';
 import { Card } from '@/components/ui/card';
 import { useRouter } from 'next/navigation';
 
@@ -45,25 +46,26 @@ export default function SharesPage() {
   const toggle = (key: string) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
 
   if (loading) {
-    return <div className="p-8 text-center text-muted-foreground">Carregando...</div>;
+    return <PageShell><PageSkeleton /></PageShell>;
   }
 
   const hasAnyShares = mySharedProjects.length > 0 || mySharedSections.length > 0
     || projectsImMemberOf.length > 0 || sectionsSharedWithMe.length > 0;
 
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-8">
-      <div className="flex items-center gap-3">
-        <Share2 className="w-6 h-6 text-primary" />
-        <h1 className="text-xl font-bold">Compartilhamentos</h1>
-      </div>
+    <PageShell className="space-y-6">
+      <PageHeader
+        icon={Share2}
+        title="Compartilhamentos"
+        subtitle="Projetos e pastas que você dividiu — e os que dividiram com você."
+      />
 
       {!hasAnyShares && (
-        <div className="text-center py-16 text-muted-foreground">
-          <Share2 className="w-12 h-12 mx-auto mb-4 opacity-30" />
-          <p className="text-lg">Nenhum compartilhamento encontrado</p>
-          <p className="text-sm mt-1">Compartilhe um projeto ou pasta para vê-lo aqui.</p>
-        </div>
+        <EmptyState
+          icon={Share2}
+          title="Nenhum compartilhamento por aqui."
+          hint="Compartilhe um projeto ou pasta para vê-lo nesta tela."
+        />
       )}
 
       {/* Projetos que compartilhei */}
@@ -229,6 +231,6 @@ export default function SharesPage() {
           )}
         </section>
       )}
-    </div>
+    </PageShell>
   );
 }
