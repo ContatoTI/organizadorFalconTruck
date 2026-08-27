@@ -4,15 +4,16 @@ import { useMemo } from 'react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
+  DropdownMenuSubContent, DropdownMenuRadioGroup, DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/app/lib/utils';
 import { planBuckets } from '@/app/lib/planning';
 import { blockTimeLabel } from '@/app/lib/timeBlocks';
+import { PRIORITIES, priorityMeta, type PriorityValue } from '@/app/lib/priority';
 import type { Task, Group, Project, Goal, PlanHorizon } from '@/types/index';
 import {
   MoreHorizontal, CalendarClock, UserPlus, Inbox, Clock, List as ListIcon,
-  Folder, Trash2, Undo2, Target,
+  Folder, Trash2, Undo2, Target, AlertCircle,
 } from 'lucide-react';
 
 export interface PersonOption {
@@ -30,6 +31,7 @@ interface TaskActionsMenuProps {
   onDelegate: (task: Task, personId: string | null) => void;
   onMove: (task: Task, key: string) => void;
   onDelete: (task: Task) => void;
+  onSetPriority?: (task: Task, priority: PriorityValue | null) => void;
   /** Objetivos disponíveis para pendurar a tarefa. */
   goals?: Goal[];
   onLinkGoal?: (task: Task, goalId: number | null) => void;
@@ -45,7 +47,7 @@ interface TaskActionsMenuProps {
  */
 export function TaskActionsMenu({
   task, groups, projects, people, now,
-  onDefer, onDelegate, onMove, onDelete, goals = [], onLinkGoal, className,
+  onDefer, onDelegate, onMove, onDelete, onSetPriority, goals = [], onLinkGoal, className,
 }: TaskActionsMenuProps) {
   const buckets = useMemo(() => planBuckets(now), [now]);
   const timeGroups = useMemo(() => groups.filter(g => g.type === 'time'), [groups]);
@@ -86,6 +88,43 @@ export function TaskActionsMenu({
             <Undo2 className="text-muted-foreground" />
             Trazer de volta para agora
           </DropdownMenuItem>
+        )}
+
+        {/* ── Prioridade ────────────────────────────────────────────── */}
+        {onSetPriority && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <AlertCircle className={priorityMeta(task.priority)?.text ?? 'text-muted-foreground'} />
+                {priorityMeta(task.priority)
+                  ? `Prioridade: ${priorityMeta(task.priority)!.label}`
+                  : 'Definir prioridade'}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="min-w-[170px]">
+                <DropdownMenuRadioGroup
+                  value={priorityMeta(task.priority)?.value ?? ''}
+                  onValueChange={(v) => onSetPriority(task, (v as PriorityValue) || null)}
+                >
+                  {PRIORITIES.map(p => (
+                    <DropdownMenuRadioItem key={p.value} value={p.value}>
+                      <span className={cn('w-2 h-2 rounded-full shrink-0', p.dot)} />
+                      {p.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+                {priorityMeta(task.priority) && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => onSetPriority(task, null)}>
+                      <Undo2 className="text-muted-foreground" />
+                      Remover prioridade
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          </>
         )}
 
         {/* ── Delegar ───────────────────────────────────────────────── */}

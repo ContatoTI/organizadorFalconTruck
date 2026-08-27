@@ -7,9 +7,11 @@ import { taskAPI } from '@/app/lib/taskAPI';
 import { projectAPI } from '@/app/lib/projectAPI';
 import { notificationAPI } from '@/app/lib/notificationAPI';
 import { createClient } from '@/app/lib/supabase/Client';
+import { useToast } from '@/app/components/Toast';
 import type { Task, Group } from '@/types/index';
 import { ShareEntityDialog } from '@/app/components/ShareEntityDialog';
 import { RecurrenceEditor, ruleToTask, type RecurrenceRule } from '@/app/components/RecurrenceEditor';
+import { PRIORITIES } from '@/app/lib/priority';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -40,12 +42,7 @@ function getAllowedStatuses(current: string | null): string[] {
   }
 }
 
-const PRIORITY_OPTIONS = [
-  { value: 'baixa', label: 'Baixa', color: 'bg-green-600' },
-  { value: 'media', label: 'Média', color: 'bg-yellow-500' },
-  { value: 'alta', label: 'Alta', color: 'bg-red-600' },
-  { value: 'urgente', label: 'Urgente', color: 'bg-red-700' },
-] as const;
+const PRIORITY_OPTIONS = PRIORITIES.map((p) => ({ value: p.value, label: p.label, color: p.dot }));
 
 function formatDateTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -94,6 +91,7 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
   const [dueTime, setDueTime] = useState(() => timeFromISO(task.due_at));
   const [saving, setSaving] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const { toast } = useToast();
   const [assigneeCandidates, setAssigneeCandidates] = useState<{user_id: string; full_name?: string; email?: string}[]>([]);
   const [isProjectOwner, setIsProjectOwner] = useState(false);
   const [canShare, setCanShare] = useState(false);
@@ -220,6 +218,7 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
     if (!result.success) {
       onUpdate(task);
       console.error('Erro ao salvar repeticao:', result.error);
+      toast(result.error ?? 'Não foi possível salvar a repetição.', 'error');
     }
   };
 
@@ -464,12 +463,15 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
               </p>
             </div>
 
-            {/* Repetição */}
-            <RecurrenceEditor
-              task={task}
-              disabled={!dueDate}
-              onChange={handleRecurrenceChange}
-            />
+            {/* Repetição — ocupa a linha inteira: os botões de frequência e de
+                dias da semana não cabem em meia coluna e vazam para a direita. */}
+            <div className="col-span-2 min-w-0">
+              <RecurrenceEditor
+                task={task}
+                disabled={!dueDate}
+                onChange={handleRecurrenceChange}
+              />
+            </div>
 
             {/* Assignee */}
             {task.project_id && (

@@ -22,10 +22,12 @@ import { TaskRow } from './TaskRow';
 import { AgendaRail } from './AgendaRail';
 import { DropTarget, DropZone, PlanChip } from './DropTarget';
 import { TaskActionsMenu, type PersonOption } from './TaskActionsMenu';
+import { priorityMeta, type PriorityValue } from '@/app/lib/priority';
 import { planBuckets, isDeferred, groupDeferred, anchorFor, toISODate, startOfDay } from '@/app/lib/planning';
 import { habitAPI, indexLogs } from '@/app/lib/habitAPI';
 import { goalAPI } from '@/app/lib/goalAPI';
 import { TodayHabits } from './TodayHabits';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import type { Task, Project, UserPreferences, PlanHorizon, Habit, HabitLog, Goal } from '@/types/index';
 import { Inbox, Clock, List as ListIcon, Folder, Eye, EyeOff, CheckCircle2, CalendarClock, UserCheck, ChevronDown, ChevronRight } from 'lucide-react';
 
@@ -145,6 +147,11 @@ export function HomeDashboard() {
       .channel('home-todos')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'todos', filter: `user_id=eq.${user.id}` },
         () => { if (!shouldSkipRealtimeFetch()) refetch(); })
+      // Vínculos de dupla vinculação (task_view_groups) mudam sem tocar em
+      // `todos` — sem isto, um link criado no quadro de projetos não
+      // apareceria aqui até um F5.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_view_groups' },
+        () => { if (!shouldSkipRealtimeFetch()) refetch(); })
       .subscribe();
 
     const onExternal = () => refetch();
@@ -224,8 +231,11 @@ export function HomeDashboard() {
   const countByGroup = useMemo(() => {
     const map = new Map<number, number>();
     for (const t of tasks) {
-      if (t.is_completed || !t.view_group_id) continue;
-      map.set(t.view_group_id, (map.get(t.view_group_id) ?? 0) + 1);
+      if (t.is_completed) continue;
+      if (t.view_group_id) map.set(t.view_group_id, (map.get(t.view_group_id) ?? 0) + 1);
+      for (const id of t.linked_view_group_ids || []) {
+        map.set(id, (map.get(id) ?? 0) + 1);
+      }
     }
     return map;
   }, [tasks]);
@@ -411,15 +421,37 @@ export function HomeDashboard() {
 
   const dropOnKey = useCallback((task: Task, key: string) => {
     if (key === 'inbox') {
-      if (!task.view_group_id && !task.project_id) return;
-      applyMove(task, { view_group_id: null, project_id: null, section_id: null },
-        () => taskAPI.moveTaskToGroup(task.id, null), 'Voltou para a Caixa de Entrada');
+      const linked = task.linked_view_group_ids || [];
+      if (!task.view_group_id && !task.project_id && linked.length === 0) return;
+      applyMove(task, { view_group_id: null, project_id: null, section_id: null, linked_view_group_ids: [] },
+        async () => {
+          const move = await taskAPI.moveTaskToGroup(task.id, null);
+          if (!move.success) return move;
+          for (const id of linked) {
+            const unlink = await taskAPI.unlinkTaskFromGroup(task.id, id);
+            if (!unlink.success) return unlink;
+          }
+          return { success: true };
+        },
+        'Voltou para a Caixa de Entrada');
       return;
     }
     if (key.startsWith('group:')) {
       const groupId = parseInt(key.slice(6), 10);
-      if (task.view_group_id === groupId) return;
+      const linked = task.linked_view_group_ids || [];
+      if (task.view_group_id === groupId || linked.includes(groupId)) return;
       const group = groups.find(g => g.id === groupId);
+
+      // Com projeto: dupla vinculação (mesma regra do quadro de projetos —
+      // ver ProjectWorkspace.execGroupDrop). O projeto não sai do lugar, a
+      // tarefa só passa a também aparecer no grupo (lista ou bloco de tempo).
+      if (task.project_id) {
+        applyMove(task, { linked_view_group_ids: [...linked, groupId] },
+          () => taskAPI.linkTaskToGroup(task.id, groupId),
+          `Também em “${group?.title ?? 'bloco'}”`);
+        return;
+      }
+
       applyMove(task, { view_group_id: groupId, project_id: null, section_id: null },
         () => taskAPI.moveTaskToGroup(task.id, groupId), `Movida para “${group?.title ?? 'bloco'}”`);
       return;
@@ -524,6 +556,17 @@ export function HomeDashboard() {
     }
   }, [user, habitMarks, toast]);
 
+  /** Trocar a prioridade da tarefa (do ícone de exclamação ou do menu). */
+  const setPriority = useCallback((task: Task, priority: PriorityValue | null) => {
+    if ((task.priority ?? null) === priority) return;
+    applyMove(
+      task,
+      { priority },
+      () => taskAPI.updateTask(task.id, { priority }),
+      priority ? `Prioridade: ${priorityMeta(priority)?.label}` : 'Prioridade removida'
+    );
+  }, [applyMove]);
+
   /** Pendurar a tarefa num objetivo (ou soltar dele). */
   const linkGoal = useCallback((task: Task, goalId: number | null) => {
     const goal = goalId ? goals.find(g => g.id === goalId) : null;
@@ -547,10 +590,11 @@ export function HomeDashboard() {
       onDelegate={delegateTask}
       onMove={dropOnKey}
       onDelete={deleteTask}
+      onSetPriority={setPriority}
       goals={goals}
       onLinkGoal={linkGoal}
     />
-  ), [groups, projects, people, now, deferTask, delegateTask, dropOnKey, deleteTask, goals, linkGoal]);
+  ), [groups, projects, people, now, deferTask, delegateTask, dropOnKey, deleteTask, setPriority, goals, linkGoal]);
 
   // ── Render ───────────────────────────────────────────────────────────────
   if (loading) {
@@ -567,6 +611,89 @@ export function HomeDashboard() {
   const doneToday = tasks.filter(t => t.is_completed).length;
   const dateLabel = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
     .format(now).replace(/^./, c => c.toUpperCase());
+
+  // Agenda, hábitos e listas de destino: no desktop ficam sempre visíveis na
+  // barra lateral; no mobile isso é conteúdo extra demais para vir logo de
+  // cara, então some atrás de um toggle (ver <aside> abaixo) para priorizar
+  // a lista de tarefas.
+  const asideExtras = (
+    <>
+      <AgendaRail
+        tasks={scheduled}
+        now={now}
+        selectedISO={agendaDay}
+        onSelectDay={setAgendaDay}
+        weekOffset={weekOffset}
+        onWeekOffset={setWeekOffset}
+        onSelect={setSelectedTask}
+      />
+
+      <TodayHabits
+        habits={habits}
+        marked={habitMarks}
+        today={todayISO}
+        now={now}
+        onToggle={toggleHabit}
+      />
+
+      {timeGroups.length > 0 && (
+        <section className="space-y-1.5">
+          <h2 className="ds-section-header px-1">Blocos de tempo</h2>
+          {sortBlocksByRelevance(timeGroups, now).map(group => {
+            const until = minutesUntilBlock(group, now);
+            const active = isBlockActiveNow(group, now);
+            return (
+              <DropTarget
+                key={group.id}
+                id={`group:${group.id}`}
+                label={group.title}
+                icon={Clock}
+                color={group.color}
+                count={countByGroup.get(group.id) ?? 0}
+                active={active}
+                hint={active ? `agora · ${blockTimeLabel(group, now)}` : until !== null ? formatCountdown(until) : (blockTimeLabel(group, now) ?? blockDaysLabel(group))}
+                onClick={() => router.push(`/?group=${group.id}`)}
+              />
+            );
+          })}
+        </section>
+      )}
+
+      {listGroups.length > 0 && (
+        <section className="space-y-1.5">
+          <h2 className="ds-section-header px-1">Listas</h2>
+          {listGroups.map(group => (
+            <DropTarget
+              key={group.id}
+              id={`group:${group.id}`}
+              label={group.title}
+              icon={ListIcon}
+              color={group.color}
+              count={countByGroup.get(group.id) ?? 0}
+              onClick={() => router.push(`/?group=${group.id}`)}
+            />
+          ))}
+        </section>
+      )}
+
+      {projects.length > 0 && (
+        <section className="space-y-1.5">
+          <h2 className="ds-section-header px-1">Projetos</h2>
+          {projects.map(project => (
+            <DropTarget
+              key={project.id}
+              id={`project:${project.id}`}
+              label={project.name}
+              icon={Folder}
+              color={project.color}
+              count={countByProject.get(project.id) ?? 0}
+              onClick={() => router.push(`/?project=${project.id}`)}
+            />
+          ))}
+        </section>
+      )}
+    </>
+  );
 
   return (
     <DndContext
@@ -643,6 +770,7 @@ export function HomeDashboard() {
                       onToggle={toggleTask}
                       onSelect={setSelectedTask}
                       onDelete={deleteTask}
+                      onSetPriority={setPriority}
                       actions={rowActions(task)}
                     />
                   ))
@@ -660,7 +788,7 @@ export function HomeDashboard() {
 
             {/* Agora: só o bloco cuja hora chegou */}
             {activeBlocks.map(group => {
-              const blockTasks = visible.filter(t => t.view_group_id === group.id);
+              const blockTasks = visible.filter(t => t.view_group_id === group.id || t.linked_view_group_ids?.includes(group.id));
               return (
                 <section key={group.id}>
                   <div className="flex items-center gap-2 mb-1.5 px-1">
@@ -689,6 +817,7 @@ export function HomeDashboard() {
                           onToggle={toggleTask}
                           onSelect={setSelectedTask}
                           onDelete={deleteTask}
+                          onSetPriority={setPriority}
                           actions={rowActions(task)}
                         />
                       ))
@@ -705,7 +834,7 @@ export function HomeDashboard() {
 
             {/* Fora do modo Agora: todos os blocos, sempre abertos */}
             {!focusMode && timeGroups.filter(g => !isBlockActiveNow(g, now)).map(group => {
-              const blockTasks = visible.filter(t => t.view_group_id === group.id);
+              const blockTasks = visible.filter(t => t.view_group_id === group.id || t.linked_view_group_ids?.includes(group.id));
               if (blockTasks.length === 0) return null;
               return (
                 <section key={group.id}>
@@ -724,6 +853,7 @@ export function HomeDashboard() {
                         onToggle={toggleTask}
                         onSelect={setSelectedTask}
                         onDelete={deleteTask}
+                        onSetPriority={setPriority}
                         actions={rowActions(task)}
                       />
                     ))}
@@ -767,6 +897,7 @@ export function HomeDashboard() {
                               onToggle={toggleTask}
                               onSelect={setSelectedTask}
                               onDelete={deleteTask}
+                              onSetPriority={setPriority}
                               actions={rowActions(task)}
                             />
                           ))}
@@ -809,6 +940,7 @@ export function HomeDashboard() {
                         onToggle={toggleTask}
                         onSelect={setSelectedTask}
                         onDelete={deleteTask}
+                        onSetPriority={setPriority}
                         actions={rowActions(task)}
                         assigneeLabel={waitingLabel(task)}
                       />
@@ -831,80 +963,20 @@ export function HomeDashboard() {
               </div>
             </section>
 
-            <AgendaRail
-              tasks={scheduled}
-              now={now}
-              selectedISO={agendaDay}
-              onSelectDay={setAgendaDay}
-              weekOffset={weekOffset}
-              onWeekOffset={setWeekOffset}
-              onSelect={setSelectedTask}
-            />
+            {/* Desktop: agenda/hábitos/listas sempre visíveis. */}
+            <div className="hidden lg:block space-y-4">{asideExtras}</div>
 
-            <TodayHabits
-              habits={habits}
-              marked={habitMarks}
-              today={todayISO}
-              now={now}
-              onToggle={toggleHabit}
-            />
-
-            {timeGroups.length > 0 && (
-              <section className="space-y-1.5">
-                <h2 className="ds-section-header px-1">Blocos de tempo</h2>
-                {sortBlocksByRelevance(timeGroups, now).map(group => {
-                  const until = minutesUntilBlock(group, now);
-                  const active = isBlockActiveNow(group, now);
-                  return (
-                    <DropTarget
-                      key={group.id}
-                      id={`group:${group.id}`}
-                      label={group.title}
-                      icon={Clock}
-                      color={group.color}
-                      count={countByGroup.get(group.id) ?? 0}
-                      active={active}
-                      hint={active ? `agora · ${blockTimeLabel(group, now)}` : until !== null ? formatCountdown(until) : (blockTimeLabel(group, now) ?? blockDaysLabel(group))}
-                      onClick={() => router.push(`/?group=${group.id}`)}
-                    />
-                  );
-                })}
-              </section>
-            )}
-
-            {listGroups.length > 0 && (
-              <section className="space-y-1.5">
-                <h2 className="ds-section-header px-1">Listas</h2>
-                {listGroups.map(group => (
-                  <DropTarget
-                    key={group.id}
-                    id={`group:${group.id}`}
-                    label={group.title}
-                    icon={ListIcon}
-                    color={group.color}
-                    count={countByGroup.get(group.id) ?? 0}
-                    onClick={() => router.push(`/?group=${group.id}`)}
-                  />
-                ))}
-              </section>
-            )}
-
-            {projects.length > 0 && (
-              <section className="space-y-1.5">
-                <h2 className="ds-section-header px-1">Projetos</h2>
-                {projects.map(project => (
-                  <DropTarget
-                    key={project.id}
-                    id={`project:${project.id}`}
-                    label={project.name}
-                    icon={Folder}
-                    color={project.color}
-                    count={countByProject.get(project.id) ?? 0}
-                    onClick={() => router.push(`/?project=${project.id}`)}
-                  />
-                ))}
-              </section>
-            )}
+            {/* Mobile: mesmo conteúdo, recolhido por padrão — prioriza a
+                lista de tarefas, que já veio antes na coluna principal. */}
+            <div className="lg:hidden">
+              <Collapsible>
+                <CollapsibleTrigger className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border border-border bg-card text-[12.5px] font-medium group">
+                  <span>Agenda, hábitos e listas</span>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground transition-transform group-data-[panel-open]:rotate-90" />
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-4 pt-3">{asideExtras}</CollapsibleContent>
+              </Collapsible>
+            </div>
           </aside>
         </div>
       </div>

@@ -90,8 +90,10 @@ export default function LoginPage() {
       // window.location.origin, não uma env var: é o mesmo destino que o
       // usuário já está acessando, então funciona em qualquer ambiente sem
       // precisar configurar URL nenhuma.
+      // O link cai em /auth/callback, que troca o código pela sessão no
+      // servidor e só então abre /auth/reset-password.
       const { error } = await client.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/reset-password`,
+        redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
       });
 
       if (error) throw error;

@@ -20,18 +20,19 @@ export default function ResetPasswordPage() {
   const client = createClient();
 
   useEffect(() => {
-    // O client troca o código do link pela sessão de recuperação sozinho
-    // (detectSessionInUrl); só esperamos o evento ou uma sessão já ativa.
-    const { data: { subscription } } = client.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setReady(true);
+    // A troca do código pela sessão já aconteceu em /auth/callback (no
+    // servidor), então normalmente chegamos aqui com a sessão pronta. O
+    // listener cobre o caso do link implícito (token no #hash), tratado
+    // pelo detectSessionInUrl do client.
+    const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
+      if (session) setReady(true);
     });
 
     client.auth.getSession().then(({ data: { session } }) => {
       if (session) setReady(true);
     });
 
-    // Link expirado/inválido nunca dispara o evento acima: depois de um tempo
-    // razoável, desiste de esperar e mostra o erro em vez de girar para sempre.
+    // Sem sessão depois de alguns segundos = link expirado ou já usado.
     const timer = setTimeout(() => {
       setReady(current => {
         if (!current) setErrorMsg('Link inválido ou expirado. Solicite um novo link de redefinição.');

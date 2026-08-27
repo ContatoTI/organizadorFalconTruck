@@ -641,7 +641,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
   const listGroups = groups.filter((g) => g.type === 'list');
 
   return (
-    <div className="flex h-screen bg-background relative">
+    <div className="flex h-dvh bg-background relative">
       {/* Botão hambúrguer - visível apenas em mobile, abre/fecha a sidebar */}
       <button
         onClick={() => setMobileMenuOpen((prev) => !prev)}
@@ -1232,7 +1232,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
         {showProjectsView && user ? (
           <ProjectsView
             projects={projects}

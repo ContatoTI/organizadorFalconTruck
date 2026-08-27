@@ -107,13 +107,13 @@ export function RecurrenceEditor({ task, onChange, disabled }: RecurrenceEditorP
       </div>
 
       {/* ── Frequência: nunca / dia / semana / mês / ano ────────────── */}
-      <div className="flex gap-1">
+      <div className="flex gap-1 min-w-0">
         <Button
           type="button"
           variant={rule.freq === null ? 'default' : 'outline'}
           size="sm"
           onClick={() => onChange({ freq: null, interval: 1, weekdays: [], until: null, count: null })}
-          className="h-8 flex-1 text-[12px]"
+          className="h-8 flex-1 shrink min-w-0 px-1 text-[12px]"
         >
           Nunca
         </Button>
@@ -131,7 +131,7 @@ export function RecurrenceEditor({ task, onChange, disabled }: RecurrenceEditorP
                 ? [anchorWeekday]
                 : rule.weekdays,
             })}
-            className="h-8 flex-1 text-[12px]"
+            className="h-8 flex-1 shrink min-w-0 px-1 text-[12px]"
           >
             {label}
           </Button>
@@ -144,7 +144,7 @@ export function RecurrenceEditor({ task, onChange, disabled }: RecurrenceEditorP
           {rule.freq === 'weekly' && (
             <div>
               <p className="text-[11.5px] text-muted-foreground mb-1.5">Em quais dias?</p>
-              <div className="flex gap-1">
+              <div className="flex gap-1 min-w-0">
                 {DAY_LABELS.map((label, index) => {
                   const active = rule.weekdays.includes(index);
                   return (
@@ -159,7 +159,7 @@ export function RecurrenceEditor({ task, onChange, disabled }: RecurrenceEditorP
                       })}
                       aria-label={DAY_NAMES[index]}
                       aria-pressed={active}
-                      className="h-8 flex-1 p-0 text-[12px]"
+                      className="h-8 flex-1 shrink min-w-0 p-0 text-[12px]"
                     >
                       {label}
                     </Button>

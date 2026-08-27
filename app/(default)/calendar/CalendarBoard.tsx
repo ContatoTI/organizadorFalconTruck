@@ -19,10 +19,11 @@ import { TaskDetailPanel } from '@/app/components/TaskDetailPanel';
 import { parseCapture } from '@/app/lib/quickParse';
 import { expandOccurrences, isRecurring, describeRecurrence } from '@/app/lib/recurrence';
 import { toISODate } from '@/app/lib/planning';
+import { PRIORITIES } from '@/app/lib/priority';
 import type { Task, Project, TaskOccurrence } from '@/types/index';
 import { fetchUserProjects } from '@/app/lib/helpers';
 import {
-  ChevronLeft, ChevronRight, Search, Inbox, GripVertical, CalendarX2, Plus, X, Repeat,
+  ChevronLeft, ChevronRight, Search, Inbox, GripVertical, CalendarX2, Plus, X, Repeat, Layers,
 } from 'lucide-react';
 
 type AppUser = { id: string; email?: string };
@@ -32,6 +33,17 @@ const VIEW_LABEL: Record<ViewKey, string> = {
   timeGridDay: 'Dia',
   timeGridWeek: 'Semana',
   dayGridMonth: 'Mês',
+};
+
+/** Como agrupar a fila de tarefas sem horário. */
+type GroupByKey = 'none' | 'list' | 'time' | 'priority' | 'created';
+
+const GROUP_BY_LABEL: Record<GroupByKey, string> = {
+  none: 'Sem agrupamento',
+  list: 'Por lista',
+  time: 'Por bloco de tempo',
+  priority: 'Por prioridade',
+  created: 'Por data de criação',
 };
 
 const DEFAULT_DURATION = 30;
@@ -60,6 +72,7 @@ export function CalendarBoard() {
   const [view, setView] = useState<ViewKey>('timeGridWeek');
   const [title, setTitle] = useState('');
   const [search, setSearch] = useState('');
+  const [groupBy, setGroupBy] = useState<GroupByKey>('none');
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   // A janela que o calendário está mostrando. É o intervalo que a série
@@ -132,13 +145,21 @@ export function CalendarBoard() {
     return map;
   }, [occurrences]);
 
-  // Lembra a última visão usada — quem trabalha em semana não quer voltar pro mês.
+  // Lembra a última visão e o agrupamento usados — não faz sentido reconfigurar
+  // a cada visita.
   useEffect(() => {
     const stored = localStorage.getItem('calendarView') as ViewKey | null;
     if (stored && stored in VIEW_LABEL) {
       setView(stored);
       calendarRef.current?.getApi().changeView(stored);
     }
+    const storedGroup = localStorage.getItem('calendarGroupBy') as GroupByKey | null;
+    if (storedGroup && storedGroup in GROUP_BY_LABEL) setGroupBy(storedGroup);
+  }, []);
+
+  const changeGroupBy = useCallback((next: GroupByKey) => {
+    setGroupBy(next);
+    localStorage.setItem('calendarGroupBy', next);
   }, []);
 
   // ── Tarefas sem horário: a fila de espera à esquerda ────────────────────
@@ -149,6 +170,89 @@ export function CalendarBoard() {
       .filter(t => !term || t.title.toLowerCase().includes(term))
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0) || a.id - b.id);
   }, [tasks, search, showCompleted]);
+
+  // Quebra a fila em seções conforme o agrupamento escolhido. Cada seção já vem
+  // ordenada por posição; seções vazias somem.
+  const unscheduledSections = useMemo(() => {
+    type Section = { key: string; label: string | null; color?: string | null; tasks: Task[] };
+    const bySort = (a: Task, b: Task) => (a.position ?? 0) - (b.position ?? 0) || a.id - b.id;
+    const sorted = [...unscheduled].sort(bySort);
+
+    if (groupBy === 'none') {
+      return [{ key: 'all', label: null, tasks: sorted } as Section];
+    }
+
+    if (groupBy === 'priority') {
+      const known = [...PRIORITIES].reverse(); // urgente → baixa
+      const sections: Section[] = known.map(p => ({
+        key: p.value,
+        label: p.label,
+        tasks: sorted.filter(t => t.priority === p.value),
+      }));
+      sections.push({
+        key: 'sem-prioridade',
+        label: 'Sem prioridade',
+        tasks: sorted.filter(t => !PRIORITIES.some(p => p.value === t.priority)),
+      });
+      return sections.filter(s => s.tasks.length > 0);
+    }
+
+    if (groupBy === 'list' || groupBy === 'time') {
+      const wanted = groups.filter(g => g.type === (groupBy === 'list' ? 'list' : 'time'));
+      const wantedIds = new Set(wanted.map(g => g.id));
+      const sections: Section[] = wanted.map(g => ({
+        key: `g${g.id}`,
+        label: g.title,
+        color: g.color,
+        tasks: sorted.filter(t => t.view_group_id === g.id),
+      }));
+      sections.push({
+        key: 'sem-grupo',
+        label: groupBy === 'list' ? 'Sem lista' : 'Sem bloco de tempo',
+        tasks: sorted.filter(t => !t.view_group_id || !wantedIds.has(t.view_group_id)),
+      });
+      return sections.filter(s => s.tasks.length > 0);
+    }
+
+    // created: buckets relativos a hoje
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const DAY = 86_400_000;
+    const bucketOf = (iso: string) => {
+      const t = new Date(iso).getTime();
+      if (isNaN(t)) return 4;
+      if (t >= startOfToday) return 0;
+      if (t >= startOfToday - DAY) return 1;
+      if (t >= startOfToday - 7 * DAY) return 2;
+      if (t >= startOfToday - 30 * DAY) return 3;
+      return 4;
+    };
+    const bucketLabels = ['Hoje', 'Ontem', 'Últimos 7 dias', 'Últimos 30 dias', 'Mais antigo'];
+    return bucketLabels
+      .map((label, i) => ({ key: `b${i}`, label, tasks: sorted.filter(t => bucketOf(t.created_at) === i) } as Section))
+      .filter(s => s.tasks.length > 0);
+  }, [unscheduled, groupBy, groups]);
+
+  const renderUnscheduledTask = (task: Task) => (
+    <div
+      key={task.id}
+      data-task-id={task.id}
+      data-task-title={task.title}
+      data-task-duration={task.duration_min ?? DEFAULT_DURATION}
+      onClick={() => setSelectedTask(task)}
+      className={cn(
+        'group flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-border bg-background',
+        'cursor-grab active:cursor-grabbing hover:border-primary/40 hover:shadow-sm transition-all',
+        task.is_completed && 'opacity-50'
+      )}
+      style={{ borderLeftWidth: 3, borderLeftColor: colorFor(task, groupColors) }}
+    >
+      <GripVertical className="w-3 h-3 text-muted-foreground/30 shrink-0" />
+      <span className={cn('flex-1 min-w-0 text-[12.5px] truncate', task.is_completed && 'line-through')}>
+        {task.title}
+      </span>
+    </div>
+  );
 
   // Torna a fila arrastável para dentro da grade (API externa do FullCalendar).
   useEffect(() => {
@@ -484,9 +588,23 @@ export function CalendarBoard() {
                 className="w-full h-7 pl-7 pr-2 rounded-md border border-border bg-background text-[12.5px] outline-none focus:border-primary transition-colors"
               />
             </div>
+
+            <div className="mt-2 flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+              <select
+                value={groupBy}
+                onChange={(e) => changeGroupBy(e.target.value as GroupByKey)}
+                aria-label="Agrupar tarefas por"
+                className="flex-1 min-w-0 h-7 px-1.5 rounded-md border border-border bg-background text-[12px] outline-none focus:border-primary transition-colors cursor-pointer"
+              >
+                {(Object.keys(GROUP_BY_LABEL) as GroupByKey[]).map(k => (
+                  <option key={k} value={k}>{GROUP_BY_LABEL[k]}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          <div ref={unscheduledRef} className="flex-1 overflow-y-auto p-2 space-y-1">
+          <div ref={unscheduledRef} className="flex-1 overflow-y-auto p-2">
             {loading ? (
               <div className="space-y-1">
                 {[0, 1, 2].map(i => <div key={i} className="h-8 rounded-md bg-muted animate-pulse" />)}
@@ -496,26 +614,24 @@ export function CalendarBoard() {
                 {search ? 'Nada encontrado.' : 'Tudo já tem horário.'}
               </p>
             ) : (
-              unscheduled.map(task => (
-                <div
-                  key={task.id}
-                  data-task-id={task.id}
-                  data-task-title={task.title}
-                  data-task-duration={task.duration_min ?? DEFAULT_DURATION}
-                  onClick={() => setSelectedTask(task)}
-                  className={cn(
-                    'group flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-border bg-background',
-                    'cursor-grab active:cursor-grabbing hover:border-primary/40 hover:shadow-sm transition-all',
-                    task.is_completed && 'opacity-50'
-                  )}
-                  style={{ borderLeftWidth: 3, borderLeftColor: colorFor(task, groupColors) }}
-                >
-                  <GripVertical className="w-3 h-3 text-muted-foreground/30 shrink-0" />
-                  <span className={cn('flex-1 min-w-0 text-[12.5px] truncate', task.is_completed && 'line-through')}>
-                    {task.title}
-                  </span>
-                </div>
-              ))
+              <div className="space-y-3">
+                {unscheduledSections.map(section => (
+                  <div key={section.key} className="space-y-1">
+                    {section.label && (
+                      <div className="flex items-center gap-1.5 px-1 pt-0.5">
+                        {section.color && (
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: section.color }} />
+                        )}
+                        <span className="flex-1 min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          {section.label}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground/60 tabular-nums">{section.tasks.length}</span>
+                      </div>
+                    )}
+                    {section.tasks.map(renderUnscheduledTask)}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 

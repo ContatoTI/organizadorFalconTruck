@@ -31,13 +31,10 @@ interface ProfileDialogProps {
 
 export function ProfileDialog({ open, onOpenChange, user }: ProfileDialogProps) {
   const [name, setName] = useState('');
-  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [saving, setSaving] = useState(false);
-  const [sendingReset, setSendingReset] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { theme, setTheme } = useTheme();
@@ -49,7 +46,6 @@ export function ProfileDialog({ open, onOpenChange, user }: ProfileDialogProps) 
   useEffect(() => {
     if (open && user) {
       setName(user.user_metadata?.full_name || '');
-      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setMessage(null);
@@ -72,12 +68,6 @@ export function ProfileDialog({ open, onOpenChange, user }: ProfileDialogProps) 
       return;
     }
 
-    if (newPassword && !currentPassword) {
-      setMessage({ type: 'error', text: 'Informe sua senha atual para definir uma nova senha.' });
-      setSaving(false);
-      return;
-    }
-
     const updates: Promise<any>[] = [];
 
     if (name !== (user.user_metadata?.full_name || '')) {
@@ -85,18 +75,8 @@ export function ProfileDialog({ open, onOpenChange, user }: ProfileDialogProps) 
     }
 
     if (newPassword) {
-      // Valida a senha atual antes de permitir a alteracao
-      const { error: signInError } = await client.auth.signInWithPassword({
-        email: user.email,
-        password: currentPassword,
-      });
-
-      if (signInError) {
-        setMessage({ type: 'error', text: 'Senha atual incorreta.' });
-        setSaving(false);
-        return;
-      }
-
+      // Já está logado: a sessão ativa basta para trocar a senha. Não pedimos
+      // a senha antiga — justamente para quem não lembra dela.
       updates.push(client.auth.updateUser({ password: newPassword }));
     }
 
@@ -114,7 +94,6 @@ export function ProfileDialog({ open, onOpenChange, user }: ProfileDialogProps) 
         setMessage({ type: 'error', text: errors.join('\n') });
       } else {
         setMessage({ type: 'success', text: 'Perfil atualizado com sucesso!' });
-        setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
         setTimeout(() => onOpenChange(false), 1200);
@@ -123,27 +102,6 @@ export function ProfileDialog({ open, onOpenChange, user }: ProfileDialogProps) 
       setMessage({ type: 'error', text: err?.message || 'Erro ao salvar alteracoes.' });
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleResetPassword = async () => {
-    setSendingReset(true);
-    setMessage(null);
-
-    try {
-      const { error } = await client.auth.resetPasswordForEmail(user.email, {
-        redirectTo: `${window.location.origin}/login`,
-      });
-
-      if (error) {
-        setMessage({ type: 'error', text: error.message });
-      } else {
-        setMessage({ type: 'success', text: 'Email de redefinicao enviado! Verifique sua caixa de entrada.' });
-      }
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err?.message || 'Erro ao enviar email de redefinicao.' });
-    } finally {
-      setSendingReset(false);
     }
   };
 
@@ -218,38 +176,6 @@ export function ProfileDialog({ open, onOpenChange, user }: ProfileDialogProps) 
           </div>
 
           <hr className="border-border" />
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <Label htmlFor="current-password">Senha atual</Label>
-              <button
-                type="button"
-                onClick={handleResetPassword}
-                disabled={sendingReset}
-                className="text-xs text-primary hover:underline disabled:opacity-50"
-              >
-                {sendingReset ? 'Enviando...' : 'Nao lembro minha senha'}
-              </button>
-            </div>
-            <div className="relative">
-              <Input
-                id="current-password"
-                type={showCurrentPassword ? 'text' : 'password'}
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="Sua senha atual"
-                className="pr-9"
-              />
-              <button
-                type="button"
-                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                tabIndex={-1}
-              >
-                {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
 
           <div>
             <Label htmlFor="new-password">Nova senha</Label>

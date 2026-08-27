@@ -32,9 +32,14 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isAuthRoute =
-    request.nextUrl.pathname.startsWith('/login') ||
-    request.nextUrl.pathname.startsWith('/auth');
+  const { pathname } = request.nextUrl;
+  const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/auth');
+
+  // Troca de senha: o link do e-mail chega com o usuário já autenticado (sessão
+  // de recuperação). Sem esta exceção, o middleware jogaria ele direto para "/"
+  // e a tela de nova senha nunca apareceria.
+  const isPasswordFlow =
+    pathname.startsWith('/auth/callback') || pathname.startsWith('/auth/reset-password');
 
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();
@@ -42,7 +47,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthRoute) {
+  if (user && isAuthRoute && !isPasswordFlow) {
     const url = request.nextUrl.clone();
     url.pathname = '/';
     return NextResponse.redirect(url);

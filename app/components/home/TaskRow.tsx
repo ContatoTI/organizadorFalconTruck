@@ -4,9 +4,11 @@ import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/app/lib/utils';
 import type { Task } from '@/types/index';
-import { GripVertical, Clock, Trash2, AlertTriangle, CalendarClock, UserCheck } from 'lucide-react';
+import { GripVertical, Clock, Trash2, AlertTriangle, AlertCircle, CalendarClock, UserCheck } from 'lucide-react';
 import { describeHorizon } from '@/app/lib/planning';
 import { RecurrenceBadge } from '@/app/components/RecurrenceEditor';
+import { PriorityPicker } from '@/app/components/PriorityPicker';
+import { priorityMeta, type PriorityValue } from '@/app/lib/priority';
 
 /** Rótulo curto de quando a tarefa cai, já no fuso local. */
 export function whenLabel(task: Task): { text: string; overdue: boolean } | null {
@@ -34,13 +36,6 @@ export function whenLabel(task: Task): { text: string; overdue: boolean } | null
   return { text, overdue: !task.is_completed && target.getTime() < now.getTime() && days <= 0 };
 }
 
-const PRIORITY_DOT: Record<string, string> = {
-  urgente: 'bg-red-500',
-  alta: 'bg-orange-500',
-  media: 'bg-amber-400',
-  baixa: 'bg-slate-300',
-};
-
 interface TaskRowProps {
   task: Task;
   /** Prefixo do id de drag, para o mesmo task poder existir em duas listas. */
@@ -56,9 +51,11 @@ interface TaskRowProps {
   actions?: React.ReactNode;
   /** Nome de quem está com a tarefa, quando ela foi delegada. */
   assigneeLabel?: string | null;
+  /** Trocar a prioridade direto na linha. Sem isso, o ícone fica só de leitura. */
+  onSetPriority?: (task: Task, priority: PriorityValue | null) => void;
 }
 
-export function TaskRow({ task, dragScope, onToggle, onSelect, onDelete, accent, isOverlay, className, actions, assigneeLabel }: TaskRowProps) {
+export function TaskRow({ task, dragScope, onToggle, onSelect, onDelete, accent, isOverlay, className, actions, assigneeLabel, onSetPriority }: TaskRowProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `${dragScope}:task:${task.id}`,
     data: { type: 'Task', task },
@@ -118,12 +115,19 @@ export function TaskRow({ task, dragScope, onToggle, onSelect, onDelete, accent,
         )}
       </button>
 
-      {task.priority && (
-        <span
-          className={cn('shrink-0 w-1.5 h-1.5 rounded-full', PRIORITY_DOT[task.priority] ?? 'bg-slate-300')}
-          title={`Prioridade ${task.priority}`}
+      {!isOverlay && onSetPriority ? (
+        <PriorityPicker
+          value={task.priority}
+          onChange={(p) => onSetPriority(task, p)}
         />
-      )}
+      ) : task.priority ? (
+        <span
+          className={cn('shrink-0', priorityMeta(task.priority)?.text ?? 'text-slate-400')}
+          title={`Prioridade: ${priorityMeta(task.priority)?.label ?? task.priority}`}
+        >
+          <AlertCircle className="w-4 h-4" />
+        </span>
+      ) : null}
 
       <button
         type="button"
