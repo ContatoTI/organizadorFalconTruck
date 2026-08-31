@@ -53,16 +53,21 @@ interface TaskRowProps {
   assigneeLabel?: string | null;
   /** Trocar a prioridade direto na linha. Sem isso, o ícone fica só de leitura. */
   onSetPriority?: (task: Task, priority: PriorityValue | null) => void;
+  /**
+   * Substitui o rótulo de "quando" calculado da tarefa. Útil para uma
+   * ocorrência de série, cuja data mostrada difere da âncora da tarefa.
+   */
+  whenOverride?: { text: string; overdue: boolean } | null;
 }
 
-export function TaskRow({ task, dragScope, onToggle, onSelect, onDelete, accent, isOverlay, className, actions, assigneeLabel, onSetPriority }: TaskRowProps) {
+export function TaskRow({ task, dragScope, onToggle, onSelect, onDelete, accent, isOverlay, className, actions, assigneeLabel, onSetPriority, whenOverride }: TaskRowProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `${dragScope}:task:${task.id}`,
     data: { type: 'Task', task },
     disabled: isOverlay,
   });
 
-  const when = whenLabel(task);
+  const when = whenOverride !== undefined ? whenOverride : whenLabel(task);
   const horizon = describeHorizon(task);
 
   return (

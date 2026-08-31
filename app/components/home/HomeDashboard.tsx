@@ -23,13 +23,14 @@ import { AgendaRail } from './AgendaRail';
 import { DropTarget, DropZone, PlanChip } from './DropTarget';
 import { TaskActionsMenu, type PersonOption } from './TaskActionsMenu';
 import { priorityMeta, type PriorityValue } from '@/app/lib/priority';
-import { planBuckets, isDeferred, groupDeferred, anchorFor, toISODate, startOfDay } from '@/app/lib/planning';
+import { planBuckets, isDeferred, groupDeferred, anchorFor, toISODate, startOfDay, startOfWeek } from '@/app/lib/planning';
+import { isRecurring, expandOccurrences } from '@/app/lib/recurrence';
 import { habitAPI, indexLogs } from '@/app/lib/habitAPI';
 import { goalAPI } from '@/app/lib/goalAPI';
 import { TodayHabits } from './TodayHabits';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import type { Task, Project, UserPreferences, PlanHorizon, Habit, HabitLog, Goal } from '@/types/index';
-import { Inbox, Clock, List as ListIcon, Folder, Eye, EyeOff, CheckCircle2, CalendarClock, UserCheck, ChevronDown, ChevronRight } from 'lucide-react';
+import { Inbox, Clock, List as ListIcon, Folder, Eye, EyeOff, CheckCircle2, CalendarClock, CalendarDays, CalendarRange, UserCheck, ChevronDown, ChevronRight } from 'lucide-react';
 
 type AppUser = { id: string; email?: string; user_metadata?: Record<string, unknown> };
 
@@ -204,10 +205,57 @@ export function HomeDashboard() {
       // Tem dia marcado (com ou sem hora) = já mora na agenda.
       .filter(t => !t.due_at && !t.due_date)
       .filter(t => !isDeferred(t, now))
+      // Horizonte "semana" que já chegou tem seção própria ("Esta semana").
+      .filter(t => t.plan_horizon !== 'week')
       .filter(t => t.status !== 'AGUARDANDO')
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0) || a.id - b.id),
     [visible, now]
   );
+
+  /**
+   * O que está marcado para hoje na agenda — com hora ou "dia todo", incluindo
+   * as ocorrências de séries que caem hoje. Ordenado pela hora (sem hora primeiro).
+   */
+  const todayAgenda = useMemo(() => {
+    const iso = toISODate(startOfDay(now));
+    const dayStart = new Date(iso + 'T00:00:00');
+    const dayEnd = new Date(iso + 'T23:59:59');
+    const rows: Array<{ task: Task; override?: { text: string; overdue: boolean }; sortKey: number }> = [];
+
+    for (const t of visible) {
+      if (isRecurring(t)) {
+        const hits = expandOccurrences(t, dayStart, dayEnd);
+        if (hits.length === 0) continue;
+        const at = t.due_at ? hits[0] : null;
+        rows.push({
+          task: t,
+          override: at
+            ? { text: `hoje ${new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(at)}`, overdue: !t.is_completed && at.getTime() < now.getTime() }
+            : { text: 'hoje', overdue: false },
+          sortKey: at ? at.getTime() : 0,
+        });
+      } else if (t.due_at) {
+        const at = new Date(t.due_at);
+        if (toISODate(at) === iso) rows.push({ task: t, sortKey: at.getTime() });
+      } else if (t.due_date === iso) {
+        rows.push({ task: t, sortKey: 0 });
+      }
+    }
+    return rows.sort((a, b) => a.sortKey - b.sortKey);
+  }, [visible, now]);
+
+  /**
+   * Guardado para "esta semana" sem escolher um dia: o horizonte de semana já
+   * chegou (não está mais adiado) e a tarefa não tem data marcada.
+   */
+  const thisWeekTasks = useMemo(() => {
+    const weekStartISO = toISODate(startOfWeek(now));
+    return visible
+      .filter(t => t.plan_horizon === 'week' && !isDeferred(t, now))
+      .filter(t => !t.due_at && !t.due_date)
+      .filter(t => !t.plan_date || t.plan_date >= weekStartISO)
+      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0) || a.id - b.id);
+  }, [visible, now]);
 
   /** O que está guardado para depois, agrupado por horizonte. */
   const laterGroups = useMemo(() => groupDeferred(visible, now), [visible, now]);
@@ -747,6 +795,64 @@ export function HomeDashboard() {
               onActiveKeyChange={(key) => setPref('last_capture_target', key)}
               onCreate={handleCreate}
             />
+
+            {/* Hoje na agenda: o que foi marcado para hoje (com hora ou não) */}
+            {todayAgenda.length > 0 && (
+              <section>
+                <div className="flex items-center gap-2 mb-1.5 px-1">
+                  <CalendarDays className="w-3.5 h-3.5 text-primary" />
+                  <h2 className="text-[13px] font-semibold">Hoje na agenda</h2>
+                  <span className="text-[10px] font-semibold bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full tabular-nums">
+                    {todayAgenda.filter(r => !r.task.is_completed).length}
+                  </span>
+                </div>
+                <div className="rounded-xl border border-border bg-card overflow-hidden">
+                  {todayAgenda.map(({ task, override }) => (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      dragScope="today-agenda"
+                      onToggle={toggleTask}
+                      onSelect={setSelectedTask}
+                      onDelete={deleteTask}
+                      onSetPriority={setPriority}
+                      whenOverride={override}
+                      actions={rowActions(task)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Esta semana: guardado para a semana, sem um dia definido */}
+            {thisWeekTasks.length > 0 && (
+              <section>
+                <div className="flex items-center gap-2 mb-1.5 px-1">
+                  <CalendarRange className="w-3.5 h-3.5 text-violet-500" />
+                  <h2 className="text-[13px] font-semibold">Esta semana</h2>
+                  <span className="text-[10px] font-semibold bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full tabular-nums">
+                    {thisWeekTasks.filter(t => !t.is_completed).length}
+                  </span>
+                  <span className="ml-auto text-[11px] text-muted-foreground/60">
+                    sem dia definido
+                  </span>
+                </div>
+                <div className="rounded-xl border border-border bg-card overflow-hidden">
+                  {thisWeekTasks.map(task => (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      dragScope="this-week"
+                      onToggle={toggleTask}
+                      onSelect={setSelectedTask}
+                      onDelete={deleteTask}
+                      onSetPriority={setPriority}
+                      actions={rowActions(task)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
 
             {/* Caixa de Entrada */}
             <section>
