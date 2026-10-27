@@ -1,0 +1,598 @@
+'use client';
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { X, Calendar, User, Clock, Share } from 'lucide-react';
+import { cn } from '@/src/lib/utils';
+import { taskAPI } from '@/src/views/tarefas/clienteTarefas';
+import { projectAPI } from '@/src/views/projetos/clienteProjetos';
+import { notificationAPI } from '@/src/views/notificacoes/clienteNotificacoes';
+import { useToast } from '@/src/components/Toast';
+import type { Task, Group } from '@/types/index';
+import { ShareEntityDialog } from '@/src/views/compartilhamentos/ShareEntityDialog';
+import { RecurrenceEditor, ruleToTask, type RecurrenceRule } from '@/src/views/tarefas/RecurrenceEditor';
+import { PRIORITIES } from '@/src/lib/priority';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  SelectGroup,
+  SelectLabel,
+} from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { AnexosTarefa } from '@/src/views/tarefas/AnexosTarefa';
+import { perfilAPI } from '@/src/views/perfis/clientePerfis';
+
+const STATUS_OPTIONS = [
+  { value: 'A_FAZER', label: 'A fazer' },
+  { value: 'EM_ANDAMENTO', label: 'Em andamento' },
+  { value: 'REVISAO', label: 'Revisão' },
+  { value: 'CONCLUIDO', label: 'Concluído' },
+] as const;
+
+function getAllowedStatuses(current: string | null): string[] {
+  switch (current) {
+    case 'A_FAZER': return ['A_FAZER', 'EM_ANDAMENTO'];
+    case 'EM_ANDAMENTO': return ['EM_ANDAMENTO', 'REVISAO'];
+    case 'REVISAO': return ['REVISAO', 'EM_ANDAMENTO', 'CONCLUIDO'];
+    case 'CONCLUIDO': return ['CONCLUIDO', 'A_FAZER'];
+    default: return ['A_FAZER', 'EM_ANDAMENTO'];
+  }
+}
+
+const PRIORITY_OPTIONS = PRIORITIES.map((p) => ({ value: p.value, label: p.label, color: p.dot }));
+
+function formatDateTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/** "2026-08-24T14:30:00Z" -> "14:30" no fuso local. "" quando nao ha hora. */
+function timeFromISO(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Junta "2026-08-24" + "14:30" num Date local. */
+function combine(date: string, time: string): Date | null {
+  if (!date) return null;
+  const [y, m, d] = date.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const [h, min] = time ? time.split(':').map(Number) : [0, 0];
+  return new Date(y, m - 1, d, h || 0, min || 0, 0, 0);
+}
+
+interface TaskDetailPanelProps {
+  task: Task;
+  groups: Group[];
+  currentUserId: string;
+  projectOwnerId?: string | null;
+  onClose: () => void;
+  onUpdate: (updatedTask: Task) => void;
+  onMoveToGroup: (groupId: number) => void;
+}
+
+export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, onClose, onUpdate, onMoveToGroup }: TaskDetailPanelProps) {
+  const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description ?? '');
+  const [status, setStatus] = useState(task.status ?? 'A_FAZER');
+  const [priority, setPriority] = useState(task.priority ?? '');
+  const [dueDate, setDueDate] = useState(task.due_date ?? '');
+  const [dueTime, setDueTime] = useState(() => timeFromISO(task.due_at));
+  const [saving, setSaving] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const { toast } = useToast();
+  const [assigneeCandidates, setAssigneeCandidates] = useState<{user_id: string; full_name?: string; email?: string}[]>([]);
+  const [isProjectOwner, setIsProjectOwner] = useState(false);
+  const [canShare, setCanShare] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const lists = groups.filter((g) => g.type === 'list');
+  const timeBlocks = groups.filter((g) => g.type === 'time');
+
+  const allowedStatuses = getAllowedStatuses(status);
+  const filteredStatusOptions = STATUS_OPTIONS.filter(opt => allowedStatuses.includes(opt.value));
+
+  const isTaskOwner = task.user_id === currentUserId;
+  const canManageReview = isTaskOwner || isProjectOwner;
+  const isReviewLocked = status === 'REVISAO' && !canManageReview;
+
+  const save = useCallback(async (updates: Partial<Task>) => {
+    setSaving(true);
+    // OPTIMISTIC UPDATE: Atualiza UI antes da resposta
+    onUpdate({ ...task, ...updates } as Task);
+
+    const result = await taskAPI.updateTask(task.id, updates);
+    if (!result.success) {
+      // Reverte em caso de erro
+      onUpdate(task);
+      console.error('Erro ao atualizar tarefa:', result.error);
+    }
+    setSaving(false);
+  }, [task, onUpdate]);
+
+  const debouncedSave = useCallback((updates: Partial<Task>) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => save(updates), 600);
+  }, [save]);
+
+  const handleTitleChange = (value: string) => {
+    setTitle(value);
+    debouncedSave({ title: value });
+  };
+
+  const handleDescriptionChange = (value: string) => {
+    setDescription(value);
+    debouncedSave({ description: value || null });
+  };
+
+  const handleStatusChange = (value: string | null) => {
+    const val = value ?? 'A_FAZER';
+    const prevStatus = task.status;
+    setStatus(val);
+    const isCompleted = val === 'CONCLUIDO';
+    save({ status: val, is_completed: isCompleted });
+    if (val === 'REVISAO') {
+      const ownerId = task.project_id ? projectOwnerId : task.user_id;
+      if (ownerId && ownerId !== currentUserId) {
+        notificationAPI.createTaskReviewNotification(ownerId, task.id, task.title,
+          task.creator_name || 'Usuário');
+      }
+    } else if (prevStatus === 'REVISAO' && val === 'CONCLUIDO') {
+      const recipientId = task.assignee_id || task.user_id;
+      const notified = new Set<string>();
+      if (recipientId && recipientId !== currentUserId) {
+        notificationAPI.createTaskReviewNotification(recipientId, task.id, task.title,
+          task.creator_name || 'Usuário', 'approved');
+        notified.add(recipientId);
+      }
+      if (projectOwnerId && projectOwnerId !== currentUserId && !notified.has(projectOwnerId)) {
+        notificationAPI.createTaskReviewNotification(projectOwnerId, task.id, task.title,
+          task.creator_name || 'Usuário', 'approved');
+      }
+    } else if (prevStatus === 'REVISAO' && val === 'EM_ANDAMENTO') {
+      const recipientId = task.assignee_id || task.user_id;
+      const notified = new Set<string>();
+      if (recipientId && recipientId !== currentUserId) {
+        notificationAPI.createTaskReviewNotification(recipientId, task.id, task.title,
+          task.creator_name || 'Usuário', 'rejected', 'Há erros a corrigir.');
+        notified.add(recipientId);
+      }
+      if (projectOwnerId && projectOwnerId !== currentUserId && !notified.has(projectOwnerId)) {
+        notificationAPI.createTaskReviewNotification(projectOwnerId, task.id, task.title,
+          task.creator_name || 'Usuário', 'rejected', 'Há erros a corrigir.');
+      }
+    }
+  };
+
+  const handlePriorityChange = (value: string | null) => {
+    const val = value ?? '';
+    setPriority(val);
+    save({ priority: val || null });
+  };
+
+  /**
+   * Data e hora andam juntas: due_date guarda o dia e due_at o instante exato
+   * que o calendario usa. Gravar so um dos dois deixaria o calendario
+   * mostrando o horario antigo depois de mudar a data por aqui.
+   */
+  const applyDue = (nextDate: string, nextTime: string) => {
+    setDueDate(nextDate);
+    setDueTime(nextTime);
+
+    if (!nextDate) {
+      save({ due_date: null, due_at: null });
+      return;
+    }
+    const at = nextTime ? combine(nextDate, nextTime) : null;
+    save({ due_date: nextDate, due_at: at ? at.toISOString() : null });
+  };
+
+  /**
+   * Repeticao: uma escrita so.
+   *
+   * Nao passa pelo `save` generico porque setRecurrence sabe explicar quando
+   * as colunas da migracao ainda nao existem — o updateTask cru falharia mudo.
+   */
+  const handleRecurrenceChange = async (rule: RecurrenceRule) => {
+    const patch = ruleToTask(rule);
+    onUpdate({ ...task, ...patch } as Task);
+
+    const result = await taskAPI.setRecurrence(task.id, {
+      freq: rule.freq,
+      interval: rule.interval,
+      weekdays: rule.weekdays,
+      until: rule.until,
+      count: rule.count,
+    });
+    if (!result.success) {
+      onUpdate(task);
+      console.error('Erro ao salvar repeticao:', result.error);
+      toast(result.error ?? 'Não foi possível salvar a repetição.', 'error');
+    }
+  };
+
+  const handleDueDateChange = (value: string | null) => applyDue(value ?? '', dueTime);
+  const handleDueTimeChange = (value: string) => applyDue(dueDate, value);
+
+  const handleAssigneeChange = (value: string | null) => {
+    const newAssigneeId = value || null;
+    save({ assignee_id: newAssigneeId });
+    if (newAssigneeId && newAssigneeId !== task.assignee_id && newAssigneeId !== currentUserId) {
+      notificationAPI.createTaskReviewNotification(newAssigneeId, task.id, task.title,
+        task.creator_name || 'Usuário', 'assigned');
+    }
+  };
+
+  const handleMoveToGroup = (value: string | null) => {
+    if (!value) return;
+    const groupId = parseInt(value, 10);
+    if (groupId === task.view_group_id) return;
+    onMoveToGroup(groupId);
+    onClose();
+  };
+
+  const handleTitleBlur = () => {
+    if (title !== task.title) {
+      save({ title });
+    }
+  };
+
+  const handleDescriptionBlur = () => {
+    const val = description || null;
+    if (val !== task.description) {
+      save({ description: val });
+    }
+  };
+
+  useEffect(() => {
+    setTitle(task.title);
+    setDescription(task.description ?? '');
+    setStatus(task.status ?? 'A_FAZER');
+    setPriority(task.priority ?? '');
+    setDueDate(task.due_date ?? '');
+    setDueTime(timeFromISO(task.due_at));
+  }, [task]);
+
+  useEffect(() => {
+    if (task.project_id) {
+      projectAPI.isProjectOwner(task.project_id).then(setIsProjectOwner);
+      // canShare = dono ou membro do projeto. Não-membro (só assignee) não compartilha.
+      projectAPI.isProjectMember(task.project_id).then(setCanShare);
+    } else {
+      setIsProjectOwner(false);
+      setCanShare(false);
+    }
+  }, [task.project_id, currentUserId]);
+
+  // ponytail: dono pode atribuir a qualquer usuário do sistema, não só a membros.
+  // Carrega todos os perfis quando o usuário atual é o dono do projeto da tarefa.
+  useEffect(() => {
+    if (!task.project_id || !isProjectOwner) { setAssigneeCandidates([]); return; }
+    perfilAPI.list({ limite: 500 })
+      .then((data) => {
+        setAssigneeCandidates(data.map(p => ({
+          user_id: p.id,
+          full_name: p.full_name ?? undefined,
+          email: p.email ?? undefined,
+        })));
+      });
+  }, [task.project_id, isProjectOwner]);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    // data-detail-panel: marca que o teclado pertence a este painel, para a
+    // captura rápida do Dashboard não puxar o foco enquanto ele está aberto.
+    <div data-detail-panel className="fixed inset-0 z-50 flex justify-end">
+      {/* Overlay - mesmo estilo do modal Novo Projeto */}
+      <div
+        className="absolute inset-0 bg-foreground/50 backdrop-blur-sm animate-in fade-in duration-200"
+        onClick={onClose}
+      />
+
+      {/* Panel - mesma linguagem visual do modal */}
+      <div
+        className={cn(
+          "relative w-full max-w-lg bg-card text-card-foreground shadow-modal border-l border-border",
+          "flex flex-col h-full",
+          "animate-in slide-in-from-right duration-300"
+        )}
+      >
+        {/* Header - mesmo estilo do modal Novo Projeto */}
+        <div className="flex items-center justify-between p-6 pb-4">
+          <h3 className="text-lg font-semibold">
+            {task.title}
+          </h3>
+          <button onClick={onClose} className="p-1 hover:bg-accent rounded">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-4">
+          {/* Title - editável inline com estilo do modal */}
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">
+              Título
+            </label>
+            <Input
+              value={title}
+              onChange={(e) => handleTitleChange(e.target.value)}
+              onBlur={handleTitleBlur}
+              placeholder="Título da tarefa"
+              className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          {/* Description + anexos (Ctrl+V de imagem na descrição vira anexo) */}
+          <AnexosTarefa tarefaId={task.id}>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">
+                Descrição
+              </label>
+              <Textarea
+                value={description}
+                onChange={(e) => handleDescriptionChange(e.target.value)}
+                onBlur={handleDescriptionBlur}
+                placeholder="Adicione uma descrição..."
+                className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary min-h-[100px] resize-y"
+              />
+            </div>
+          </AnexosTarefa>
+
+          {/* Aprovar/Reprovar revisão */}
+          {status === 'REVISAO' && canManageReview && (
+            <div className="p-3 rounded-lg border border-yellow-300 bg-yellow-50 dark:bg-yellow-950/20 dark:border-yellow-900">
+              <p className="text-sm font-medium mb-2">Esta tarefa está aguardando revisão</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleStatusChange('CONCLUIDO')}
+                  className="flex-1 py-1.5 rounded-md bg-green-500 text-white hover:bg-green-600 text-xs font-medium"
+                >
+                  Aprovar
+                </button>
+                <button
+                  onClick={() => handleStatusChange('EM_ANDAMENTO')}
+                  className="flex-1 py-1.5 rounded-md bg-red-500 text-white hover:bg-red-600 text-xs font-medium"
+                >
+                  Reprovar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Grid fields */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Status */}
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">
+                Status
+              </label>
+              <Select value={status} onValueChange={handleStatusChange} disabled={isReviewLocked}>
+                <SelectTrigger className="w-full">
+                  <SelectValue>
+                    {(value: string) => STATUS_OPTIONS.find((opt) => opt.value === value)?.label ?? value}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
+                  {filteredStatusOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {isReviewLocked && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Apenas o proprietário pode aprovar ou reprovar a revisão.
+                </p>
+              )}
+            </div>
+
+            {/* Priority */}
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">
+                Prioridade
+              </label>
+              <Select value={priority} onValueChange={handlePriorityChange}>
+                <SelectTrigger className="w-full">
+                  <SelectValue>
+                    {(value: string) => PRIORITY_OPTIONS.find((opt) => opt.value === value)?.label ?? 'Sem prioridade'}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
+                  {PRIORITY_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <div className="flex items-center gap-2">
+                        <div className={cn('w-2 h-2 rounded-full', opt.color)} />
+                        {opt.label}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Quando */}
+            <div>
+              <label className="text-sm text-muted-foreground block mb-1">
+                Quando
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => handleDueDateChange(e.target.value)}
+                  className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <input
+                  type="time"
+                  value={dueTime}
+                  disabled={!dueDate}
+                  onChange={(e) => handleDueTimeChange(e.target.value)}
+                  title={dueDate ? 'Hora no calendário' : 'Escolha uma data primeiro'}
+                  className="w-[104px] shrink-0 px-2 py-2 rounded-lg border border-input bg-background text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-40"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {dueTime ? 'Aparece no calendário nesse horário.' : 'Sem hora, aparece como “dia todo”.'}
+              </p>
+            </div>
+
+            {/* Repetição — ocupa a linha inteira: os botões de frequência e de
+                dias da semana não cabem em meia coluna e vazam para a direita. */}
+            <div className="col-span-2 min-w-0">
+              <RecurrenceEditor
+                task={task}
+                disabled={!dueDate}
+                onChange={handleRecurrenceChange}
+              />
+            </div>
+
+            {/* Assignee */}
+            {task.project_id && (
+              <div>
+                <label className="text-sm text-muted-foreground block mb-1">
+                  Responsável
+                </label>
+                {isProjectOwner ? (
+                  <Select value={task.assignee_id ?? ''} onValueChange={handleAssigneeChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Sem responsável" />
+                    </SelectTrigger>
+                    <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
+                      <SelectItem value="">Sem responsável</SelectItem>
+                      {assigneeCandidates.map((candidate) => (
+                        <SelectItem key={candidate.user_id} value={candidate.user_id}>
+                          {candidate.full_name || candidate.email || 'Usuário'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="w-full px-3 py-2 rounded-lg border border-input bg-muted/50 text-sm text-muted-foreground">
+                    {task.assignee_name || 'Sem responsável'}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Move to list / time block */}
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">
+              Mover para
+            </label>
+            <Select value={task.view_group_id ? String(task.view_group_id) : ''} onValueChange={handleMoveToGroup}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecione uma lista ou bloco de tempo" />
+              </SelectTrigger>
+              <SelectContent side="bottom" align="start" className="bg-popover border border-border shadow-lg z-[100]">
+                {lists.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Listas</SelectLabel>
+                    {lists.map((g) => (
+                      <SelectItem key={g.id} value={String(g.id)}>
+                        {g.title}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+                {timeBlocks.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Blocos de Tempo</SelectLabel>
+                    {timeBlocks.map((g) => (
+                      <SelectItem key={g.id} value={String(g.id)}>
+                        {g.title}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Metadata */}
+          <div className="pt-4 space-y-3">
+            <h4 className="text-sm text-muted-foreground font-medium">
+              Detalhes
+            </h4>
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <User className="w-4 h-4" />
+              <span>{task.creator_name || 'Usuário'}</span>
+            </div>
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <Calendar className="w-4 h-4" />
+              <span>Criado em {formatDateTime(task.created_at)}</span>
+            </div>
+            {task.due_date && (
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <Clock className="w-4 h-4" />
+                <span>
+                  Entrega: {new Date(task.due_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                  {task.due_at && ` às ${timeFromISO(task.due_at)}`}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">
+            {saving ? 'Salvando...' : 'Todas as alterações são salvas automaticamente'}
+          </span>
+          <div className="flex items-center gap-2">
+            {task.project_id && canShare && (
+              <button
+                type="button"
+                onClick={() => setShowShareDialog(true)}
+                className="flex items-center gap-1 px-2 py-1 rounded hover:bg-accent text-xs text-muted-foreground"
+                title="Compartilhar esta tarefa"
+              >
+                <Share className="w-3.5 h-3.5" /> Compartilhar
+              </button>
+            )}
+            <Badge variant="outline" className="text-xs">
+              #{task.id}
+            </Badge>
+          </div>
+        </div>
+      </div>
+
+      {showShareDialog && (
+        <ShareEntityDialog
+          open={showShareDialog}
+          onClose={() => setShowShareDialog(false)}
+          entityType="task"
+          entityId={task.id}
+          currentUserId={currentUserId}
+        />
+      )}
+    </div>
+  );
+}

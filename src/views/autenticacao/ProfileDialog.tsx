@@ -1,0 +1,239 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { clienteAuth } from './clienteAuth';
+import { validarNovaSenha } from '@/src/models/autenticacao/regras';
+import { ForcaSenha } from './ForcaSenha';
+import { cn } from '@/lib/utils';
+import { CheckCircle, AlertCircle, Eye, EyeOff, Loader2, Sun, Moon, Monitor } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+interface ProfileDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  user: any;
+}
+
+export function ProfileDialog({ open, onOpenChange, user }: ProfileDialogProps) {
+  const [name, setName] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (open && user) {
+      setName(user.user_metadata?.full_name || '');
+      setNewPassword('');
+      setConfirmPassword('');
+      setMessage(null);
+    }
+  }, [open, user]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMessage(null);
+
+    // Senha em branco = não trocar a senha.
+    const erroSenha = newPassword || confirmPassword ? validarNovaSenha(newPassword, confirmPassword, { email: user?.email, nome: name }) : null;
+    if (erroSenha) {
+      setMessage({ type: 'error', text: erroSenha });
+      setSaving(false);
+      return;
+    }
+
+    const updates: Promise<void>[] = [];
+
+    if (name !== (user.user_metadata?.full_name || '')) {
+      updates.push(clienteAuth.trocarNome(name));
+    }
+
+    if (newPassword) {
+      updates.push(clienteAuth.trocarSenha(newPassword));
+    }
+
+    if (updates.length === 0) {
+      setMessage({ type: 'error', text: 'Nenhuma alteracao para salvar.' });
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const results = await Promise.allSettled(updates);
+      const errors = results
+        .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+        .map(r => (r.reason as Error).message);
+
+      if (errors.length > 0) {
+        setMessage({ type: 'error', text: errors.join('\n') });
+      } else {
+        setMessage({ type: 'success', text: 'Perfil atualizado com sucesso!' });
+        setNewPassword('');
+        setConfirmPassword('');
+        setTimeout(() => onOpenChange(false), 1200);
+      }
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err?.message || 'Erro ao salvar alteracoes.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Meu Perfil</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-5 py-4">
+          {message && (
+            <div
+              className={cn(
+                'flex items-center gap-2 px-3 py-2 rounded-lg text-sm',
+                message.type === 'success'
+                  ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+                  : 'bg-destructive/10 text-destructive'
+              )}
+            >
+              {message.type === 'success' ? (
+                <CheckCircle className="w-4 h-4 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0" />
+              )}
+              <span>{message.text}</span>
+            </div>
+          )}
+
+          <div>
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              value={user?.email || ''}
+              disabled
+              className="opacity-60"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="name">Nome</Label>
+            <Input
+              id="name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Seu nome"
+            />
+          </div>
+
+          <hr className="border-border" />
+
+          <div>
+            <Label htmlFor="name">Tema</Label>
+            <Select value={mounted ? (theme ?? 'system') : 'system'} onValueChange={(v) => v && setTheme(v)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">
+                  <span className="flex items-center gap-2"><Sun className="w-4 h-4" />Claro</span>
+                </SelectItem>
+                <SelectItem value="dark">
+                  <span className="flex items-center gap-2"><Moon className="w-4 h-4" />Escuro</span>
+                </SelectItem>
+                <SelectItem value="system">
+                  <span className="flex items-center gap-2"><Monitor className="w-4 h-4" />Sistema</span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <hr className="border-border" />
+
+          <div>
+            <Label htmlFor="new-password">Nova senha</Label>
+            <div className="relative">
+              <Input
+                id="new-password"
+                type={showNewPassword ? 'text' : 'password'}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Nova senha"
+                className="pr-9"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword(!showNewPassword)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                tabIndex={-1}
+              >
+                {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            {newPassword && <div className="mt-2"><ForcaSenha senha={newPassword} pessoal={{ email: user?.email, nome: name }} /></div>}
+          </div>
+
+          <div>
+            <Label htmlFor="confirm-password">Confirmar nova senha</Label>
+            <div className="relative">
+              <Input
+                id="confirm-password"
+                type={showConfirmPassword ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repita a nova senha"
+                className="pr-9"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                tabIndex={-1}
+              >
+                {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Deixe a senha em branco para mante-la inalterada.
+          </p>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {saving ? 'Salvando...' : 'Salvar'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

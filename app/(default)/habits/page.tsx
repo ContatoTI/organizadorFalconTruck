@@ -1,7 +1,7 @@
 'use client';
 
-import { HabitsBoard } from './HabitsBoard';
+import { PainelHabitos } from '@/src/views/habitos/PainelHabitos';
 
 export default function HabitsPage() {
-  return <HabitsBoard />;
+  return <PainelHabitos />;
 }

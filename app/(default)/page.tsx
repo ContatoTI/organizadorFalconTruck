@@ -2,8 +2,8 @@
 
 import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { HomeDashboard } from '@/app/components/home/HomeDashboard';
-import { ProjectWorkspace } from '@/app/components/workspace/ProjectWorkspace';
+import { HomeDashboard } from '@/src/views/tarefas/home/HomeDashboard';
+import { ProjectWorkspace } from '@/src/views/tarefas/ProjectWorkspace';
 
 /**
  * A rota `/` atende duas telas bem diferentes:

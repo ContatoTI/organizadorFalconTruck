@@ -1,7 +1,7 @@
 'use client';
 
-import { CalendarBoard } from './CalendarBoard';
+import { PainelCalendario } from '@/src/views/calendario/PainelCalendario';
 
 export default function CalendarPage() {
-  return <CalendarBoard />;
+  return <PainelCalendario />;
 }

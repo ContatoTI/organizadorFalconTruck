@@ -3,18 +3,19 @@
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
-import { createClient } from '@/app/lib/supabase/Client';
-import { cn, GroupIcon, PROJECT_COLORS } from '@/app/lib/utils';
-import { useGroups } from '@/app/lib/GroupsContext';
-import { projectAPI } from '@/app/lib/projectAPI';
-import { notificationAPI } from '@/app/lib/notificationAPI';
-import { taskAPI } from '@/app/lib/taskAPI';
-import { NotificationBell, NotificationsPanel } from '@/app/components/NotificationsPanel';
-import { ProfileDialog } from '@/app/components/ProfileDialog';
-import { ProjectsView } from '@/app/components/ProjectsView';
-import { ProjectSharedIndicator } from '@/app/components/SharedWithIndicator';
-import { ToastProvider } from '@/app/components/Toast';
-import { GroupStyleEditor } from '@/app/components/GroupStyleEditor';
+import { createClient } from '@/src/lib/supabase/Client';
+import { cn, GroupIcon, PROJECT_COLORS } from '@/src/lib/utils';
+import { useGroups } from '@/src/views/grupos/GroupsContext';
+import { grupoAPI } from '@/src/views/grupos/clienteGrupos';
+import { projectAPI } from '@/src/views/projetos/clienteProjetos';
+import { notificationAPI } from '@/src/views/notificacoes/clienteNotificacoes';
+import { taskAPI } from '@/src/views/tarefas/clienteTarefas';
+import { NotificationBell, NotificationsPanel } from '@/src/views/notificacoes/NotificationsPanel';
+import { ProfileDialog } from '@/src/views/autenticacao/ProfileDialog';
+import { ProjectsView } from '@/src/views/projetos/ProjectsView';
+import { ProjectSharedIndicator } from '@/src/views/projetos/SharedWithIndicator';
+import { ToastProvider } from '@/src/components/Toast';
+import { GroupStyleEditor } from '@/src/views/grupos/GroupStyleEditor';
 import type { Project } from '@/types/index';
 import {
   LayoutDashboard,
@@ -180,8 +181,8 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     try {
       const [{ pendingInvites: invites, declineNotifications: declined }, taskReviews] =
         await Promise.all([
-          notificationAPI.getUserNotifications(curUser.id),
-          notificationAPI.getTaskReviewNotifications(curUser.id),
+          notificationAPI.getUserNotifications(),
+          notificationAPI.getTaskReviewNotifications(),
         ]);
 
       setPendingInvites(invites);
@@ -253,7 +254,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     const curUser = userRef.current;
     if (!curUser) return;
 
-    const result = await notificationAPI.acceptInvite(inviteId, projectId, curUser.id);
+    const result = await notificationAPI.acceptInvite(inviteId);
 
     if (result.success) {
       // Adiciona o projeto ao estado local imediatamente (com ou sem dados da notificação)
@@ -290,7 +291,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     const curUser = userRef.current;
     if (!curUser) return;
 
-    const result = await notificationAPI.declineInvite(inviteId, curUser.id);
+    const result = await notificationAPI.declineInvite(inviteId);
     if (!result.success) {
       console.error('[Layout] Erro ao recusar convite:', result.error);
       return;
@@ -301,10 +302,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
   };
 
   const dismissDeclineNotification = async (inviteId: number) => {
-    await client
-      .from('project_invites')
-      .delete()
-      .eq('id', inviteId);
+    await projectAPI.dismissDecline(inviteId);
 
     fetchNotifications();
   };
@@ -319,7 +317,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     if (!curUser) return;
 
     const reviewerName = curUser.user_metadata?.full_name || curUser.email?.split('@')[0] || 'Usuário';
-    const result = await notificationAPI.resolveTaskReview(notifId, taskId, approve, curUser.id, reviewerName, note);
+    const result = await notificationAPI.resolveTaskReview(notifId, taskId, approve, reviewerName, note);
 
     if (result.success) {
       setTaskReviewNotifications(prev => prev.filter(n => n.id !== notifId));
@@ -336,18 +334,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     const curUser = userRef.current;
     if (!curUser) return;
 
-    const { error: deleteError } = await client
-      .from('project_invites')
-      .delete()
-      .eq('project_id', projectId)
-      .eq('invited_user_id', userId);
-
-    if (deleteError) {
-      console.error('[Layout] Erro ao remover convite recusado:', deleteError);
-      return;
-    }
-
-    const result = await projectAPI.inviteUserToProject(projectId, userId, curUser.id);
+    const result = await projectAPI.reinvite(projectId, userId);
     if (!result.success) {
       console.error('[Layout] Erro ao re-convidar usuário:', result.error);
       return;
@@ -395,7 +382,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const allProjects = await projectAPI.getUserProjects(curUser.id);
+      const allProjects = await projectAPI.getUserProjects();
       mergeProjectsRef.current!(allProjects);
     } catch (error) {
       console.error('Erro ao buscar projetos:', error);
@@ -421,17 +408,15 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
 
     // OPTIMISTIC: remove do estado local antes da rede para feedback imediato.
     deleteGroupFromState(group.id);
-    try {
-      // Garante que as tarefas voltem para a Caixa de Entrada (sem bloco/lista).
-      // O banco já tem ON DELETE SET NULL, mas limpamos explicitamente como defesa em profundidade.
-      await taskAPI.clearTasksFromGroup(group.id);
-      await client.from('view_groups').delete().eq('id', group.id);
-      window.dispatchEvent(new CustomEvent('tasks-updated'));
-    } catch (error) {
-      console.error('Erro ao excluir grupo:', error);
+    // As tarefas voltam para a Caixa de Entrada (feito no servidor).
+    const res = await grupoAPI.remove(group.id);
+    if (!res.success) {
+      console.error('Erro ao excluir grupo:', res.error);
       // Reverte em caso de erro: refaz fetch para restaurar o estado correto.
       refreshGroups();
+      return;
     }
+    window.dispatchEvent(new CustomEvent('tasks-updated'));
   };
 
   const toggleGroupVisibility = async (group: any) => {
@@ -439,8 +424,8 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     togglingVisibilityRef.current.add(group.id);
     const next = !group.show_on_dashboard;
     updateGroup(group.id, { show_on_dashboard: next });
-    const { error } = await client.from('view_groups').update({ show_on_dashboard: next }).eq('id', group.id);
-    if (error) {
+    const res = await grupoAPI.update(group.id, { show_on_dashboard: next });
+    if (!res.success) {
       updateGroup(group.id, { show_on_dashboard: group.show_on_dashboard });
     }
     togglingVisibilityRef.current.delete(group.id);
@@ -450,8 +435,8 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
   const updateGroupStyle = async (group: any, patch: { icon?: string | null; color?: string | null }) => {
     const before = { icon: group.icon, color: group.color };
     updateGroup(group.id, patch);
-    const { error } = await client.from('view_groups').update(patch).eq('id', group.id);
-    if (error) updateGroup(group.id, before);
+    const res = await grupoAPI.update(group.id, patch);
+    if (!res.success) updateGroup(group.id, before);
   };
 
   const toggleProjectVisibility = async (project: any) => {
@@ -459,8 +444,8 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     togglingVisibilityRef.current.add(project.id);
     const next = !project.show_on_dashboard;
     setProjects(prev => prev.map(p => p.id === project.id ? { ...p, show_on_dashboard: next } : p));
-    const { error } = await client.from('projects').update({ show_on_dashboard: next }).eq('id', project.id);
-    if (error) {
+    const res = await projectAPI.updateProject(project.id, { show_on_dashboard: next });
+    if (!res.success) {
       setProjects(prev => prev.map(p => p.id === project.id ? { ...p, show_on_dashboard: !next } : p));
     }
     togglingVisibilityRef.current.delete(project.id);
@@ -469,28 +454,16 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
   const createProject = async () => {
     if (!newProjectName.trim() || !user) return;
 
-    const result = await projectAPI.createProject(user.id, newProjectName, newProjectColor);
+    // Pastas iniciais (uma por linha) são criadas junto, no servidor.
+    const sectionNames = newProjectSections.split('\n').map(s => s.trim()).filter(Boolean);
+    const result = await projectAPI.createProject(newProjectName, newProjectColor, sectionNames);
 
     if (!result.success || !result.data) {
       console.error('Erro ao criar projeto:', result.error);
       return;
     }
 
-    const projectId = result.data.id;
     setProjects(prev => [...prev, result.data!]);
-
-    // Create initial sections if provided
-    const sectionNames = newProjectSections.split('\n').map(s => s.trim()).filter(Boolean);
-    if (sectionNames.length > 0) {
-      await Promise.all(sectionNames.map((title, i) =>
-        client.from('sections').insert({
-          user_id: user.id,
-          project_id: projectId,
-          title,
-          order: i,
-        })
-      ));
-    }
 
     setNewProjectName('');
     setNewProjectColor('#6366f1');

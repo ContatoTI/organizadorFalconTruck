@@ -1,7 +1,7 @@
 'use client';
 
-import { GoalsBoard } from './GoalsBoard';
+import { PainelMetas } from '@/src/views/metas/PainelMetas';
 
 export default function GoalsPage() {
-  return <GoalsBoard />;
+  return <PainelMetas />;
 }

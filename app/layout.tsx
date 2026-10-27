@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { ThemeProvider } from 'next-themes';
-import { GroupsProvider } from './lib/GroupsContext';
+import { GroupsProvider } from '@/src/views/grupos/GroupsContext';
 import './globals.css';
 import { DM_Sans } from "next/font/google";
 import { cn } from "@/lib/utils";
