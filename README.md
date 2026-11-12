@@ -1,33 +1,46 @@
-# Organizador - Next.js
+# Organizador Falcon Truck
 
-Seu organizador pessoal de tarefas, finanças e metas.
+Organizador de tarefas, projetos, agenda, metas, hábitos e finanças.
+
+Stack: Next.js 15 + React 19 + Supabase + Tailwind (shadcn/ui).
 
 ## Setup
 
-Instale as dependências:
+1. Copie `.env.example` para `.env` e preencha as chaves do Supabase.
+2. Instale as dependências:
 
 ```bash
 npm install
 ```
 
-## Development Server
+## Desenvolvimento
 
-Inicie o servidor de desenvolvimento em `http://localhost:4000`:
+Servidor em `http://localhost:4000`:
 
 ```bash
 npm run dev
 ```
 
-## Production
+Testes:
 
-Crie a build de produção:
+```bash
+npm test
+```
+
+## Produção
 
 ```bash
 npm run build
-```
-
-Inicie o servidor de produção:
-
-```bash
 npm start
 ```
+
+## Estrutura (MVC)
+
+- `src/models/<modulo>` — regras de negócio e acesso a dados
+- `src/controllers/<modulo>` — orquestração usada pelas rotas da API
+- `src/views/<modulo>` — telas e componentes de cada módulo
+- `app/api/*` — rotas da API (finas, chamam os controllers)
+- `app/(default)/*` — páginas
+- `components/ui` — componentes base do shadcn/ui
+- `supabase/migrations` — migrações do banco
+- `supabase/dumps` — dumps de referência (schema e dados)
