@@ -228,11 +228,8 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
 
   const handleAssigneeChange = (value: string | null) => {
     const newAssigneeId = value || null;
+    // O aviso para o novo responsável sai do servidor, ao salvar.
     save({ assignee_id: newAssigneeId });
-    if (newAssigneeId && newAssigneeId !== task.assignee_id && newAssigneeId !== currentUserId) {
-      notificationAPI.createTaskReviewNotification(newAssigneeId, task.id, task.title,
-        task.creator_name || 'Usuário', 'assigned');
-    }
   };
 
   const handleMoveToGroup = (value: string | null) => {

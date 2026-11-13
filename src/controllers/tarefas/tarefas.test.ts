@@ -39,6 +39,12 @@ vi.mock('@/src/models/tarefas/mover', () => ({
   gruposVinculados: vi.fn(async () => [3]),
 }));
 
+vi.mock('@/src/models/notificacoes/notificacoes', () => ({
+  responsavelDaTarefa: vi.fn(async () => 'antigo'),
+  avisarNovoResponsavel: vi.fn(async () => {}),
+}));
+
+import * as notificacoes from '@/src/models/notificacoes/notificacoes';
 import * as consultas from '@/src/models/tarefas/consultas';
 import * as escrita from '@/src/models/tarefas/escrita';
 import * as mover from '@/src/models/tarefas/mover';
@@ -129,6 +135,41 @@ describe('escrita', () => {
     expect(escrita.delegar).toHaveBeenCalledWith(expect.anything(), 7, null);
     expect((await repetirTarefa(req({ freq: 'daily' }), '7')).status).toBe(204);
     expect(escrita.repetir).toHaveBeenCalledWith(expect.anything(), 7, expect.objectContaining({ freq: 'daily' }));
+  });
+});
+
+describe('aviso de novo responsável', () => {
+  const REMETENTE = { id: 'u1', nome: 'Ana' };
+  beforeEach(() => {
+    usuario.current = { id: 'u1', user_metadata: { full_name: 'Ana' } } as unknown as { id: string };
+  });
+
+  it('criar avisa (responsável pode vir da pasta)', async () => {
+    await criarTarefa(req({ title: 'X' }));
+    expect(notificacoes.avisarNovoResponsavel).toHaveBeenCalledWith(expect.anything(), REMETENTE, 3, null);
+  });
+
+  it('atualizar responsável lê o anterior e avisa', async () => {
+    await atualizarTarefa(req({ assignee_id: 'b' }), '7');
+    expect(notificacoes.responsavelDaTarefa).toHaveBeenCalledWith(expect.anything(), 7);
+    expect(notificacoes.avisarNovoResponsavel).toHaveBeenCalledWith(expect.anything(), REMETENTE, 7, 'antigo');
+  });
+
+  it('atualizar outro campo não consulta nem avisa', async () => {
+    await atualizarTarefa(req({ title: 'Y' }), '7');
+    expect(notificacoes.responsavelDaTarefa).not.toHaveBeenCalled();
+    expect(notificacoes.avisarNovoResponsavel).not.toHaveBeenCalled();
+  });
+
+  it('delegar avisa', async () => {
+    await delegarTarefa(req({ responsavelId: null }), '7');
+    expect(notificacoes.avisarNovoResponsavel).toHaveBeenCalledWith(expect.anything(), REMETENTE, 7, 'antigo');
+  });
+
+  it('sem nome no perfil usa o e-mail', async () => {
+    usuario.current = { id: 'u1', email: 'a@x.com' } as unknown as { id: string };
+    await delegarTarefa(req({ responsavelId: null }), '7');
+    expect(notificacoes.avisarNovoResponsavel).toHaveBeenCalledWith(expect.anything(), { id: 'u1', nome: 'a@x.com' }, 7, 'antigo');
   });
 });
 

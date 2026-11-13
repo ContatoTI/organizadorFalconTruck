@@ -5,7 +5,77 @@ import { ErroValidacao } from '@/src/lib/erros';
 import {
   validarNovoAviso, convitesERecusas, aceitarConvite, recusarConvite,
   avisosNaoLidos, criarAviso, dispensarAviso, resolverRevisao,
+  previaDescricao, deveAvisarResponsavel, responsavelDaTarefa, avisarNovoResponsavel,
 } from './notificacoes';
+
+describe('aviso de novo responsável', () => {
+  it('deveAvisarResponsavel: só quando muda para outra pessoa', () => {
+    expect(deveAvisarResponsavel(null, 'b', 'a')).toBe(true);
+    expect(deveAvisarResponsavel('c', 'b', 'a')).toBe(true);
+    expect(deveAvisarResponsavel('b', 'b', 'a')).toBe(false); // não mudou
+    expect(deveAvisarResponsavel(null, 'a', 'a')).toBe(false); // passou para si mesmo
+    expect(deveAvisarResponsavel('b', null, 'a')).toBe(false); // tirou o responsável
+  });
+
+  it('responsavelDaTarefa lê o assignee_id', async () => {
+    expect(await responsavelDaTarefa(dbRoteiro({ todos: [{ data: { assignee_id: 'b' } }] }).db, 7)).toBe('b');
+    expect(await responsavelDaTarefa(dbRoteiro({ todos: [{ data: null }] }).db, 7)).toBeNull();
+  });
+
+  it('avisa a pessoa nova com o nome de quem passou', async () => {
+    const { db, gravacoes } = dbRoteiro({
+      todos: [{ data: { assignee_id: 'b', title: 'Fotos' } }],
+      task_review_notifications: [{}],
+    });
+    await avisarNovoResponsavel(db, { id: 'a', nome: 'Ana' }, 7, null);
+    expect(gravacoes).toHaveLength(1);
+    expect(gravacoes[0].valor).toEqual({
+      user_id: 'b', task_id: 7, task_title: 'Fotos', sender_name: 'Ana', type: 'assigned', note: null,
+    });
+  });
+
+  it('não avisa se o responsável não mudou', async () => {
+    const { db, gravacoes } = dbRoteiro({ todos: [{ data: { assignee_id: 'b', title: 'T' } }] });
+    await avisarNovoResponsavel(db, { id: 'a', nome: 'Ana' }, 7, 'b');
+    expect(gravacoes).toHaveLength(0);
+  });
+
+  it('falha no aviso não derruba quem chamou', async () => {
+    const { db } = dbRoteiro({
+      todos: [{ data: { assignee_id: 'b', title: 'T' } }],
+      task_review_notifications: [{ error: { message: 'rls' } }],
+    });
+    await expect(avisarNovoResponsavel(db, { id: 'a', nome: 'Ana' }, 7, null)).resolves.toBeUndefined();
+  });
+});
+
+describe('previaDescricao', () => {
+  it('junta espaços e corta textos longos', () => {
+    expect(previaDescricao('  fazer\n\n a   tela ')).toBe('fazer a tela');
+    expect(previaDescricao('')).toBeNull();
+    expect(previaDescricao(null)).toBeNull();
+    const longa = previaDescricao('x'.repeat(300))!;
+    expect(longa.length).toBe(140);
+    expect(longa.endsWith('…')).toBe(true);
+  });
+});
+
+describe('avisosNaoLidos com detalhes da tarefa', () => {
+  it('junta projeto, prazo e prévia da descrição', async () => {
+    const { db, from } = dbRoteiro({
+      task_review_notifications: [{ data: [
+        { id: 1, task_id: 7, task_title: 'Fotos', sender_name: 'Ana', type: 'assigned', note: null, created_at: 'd' },
+        { id: 2, task_id: 8, task_title: 'Sumiu', sender_name: 'Ana', type: 'assigned', note: null, created_at: 'd' },
+      ] }],
+      todos: [{ data: [{ id: 7, project_id: 5, due_date: '2026-11-20', description: 'Tirar fotos' }] }],
+      projects: [{ data: [{ id: 5, name: 'Catálogo' }] }],
+    });
+    const avisos = await avisosNaoLidos(db, 'u1');
+    expect(avisos[0]).toMatchObject({ project_name: 'Catálogo', due_date: '2026-11-20', description_preview: 'Tirar fotos' });
+    expect(avisos[1]).toMatchObject({ project_name: null, due_date: null, description_preview: null });
+    expect(from).toHaveBeenCalledTimes(3); // sem N+1
+  });
+});
 
 describe('validarNovoAviso', () => {
   it('normaliza e aplica tipo padrão', () => {

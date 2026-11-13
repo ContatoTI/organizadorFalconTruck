@@ -20,6 +20,12 @@ export async function exigirLogin(): Promise<Sessao | Response> {
 
 export { ErroValidacao };
 
+/** Nome para mostrar em avisos: nome do perfil, senão o e-mail. */
+export function nomeDoUsuario(usuario: User): string {
+  const nome = (usuario.user_metadata as { full_name?: unknown } | undefined)?.full_name;
+  return (typeof nome === 'string' && nome.trim()) ? nome.trim() : (usuario.email || 'Usuário');
+}
+
 /** Executa a ação; erro de validação vira 400, o resto vira 500 com mensagem clara. */
 export async function tratar(acao: string, fn: () => Promise<Response>): Promise<Response> {
   try {

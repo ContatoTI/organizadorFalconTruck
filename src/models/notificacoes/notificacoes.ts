@@ -35,6 +35,10 @@ export interface TaskReviewNotification {
   type: string;
   note: string | null;
   created_at: string;
+  /** Detalhes da tarefa, lidos na hora (null se ela sumiu ou não é visível). */
+  project_name: string | null;
+  due_date: string | null;
+  description_preview: string | null;
 }
 
 export interface NovoAvisoTarefa {
@@ -183,6 +187,22 @@ export async function recusarConvite(db: SupabaseClient, usuarioId: string, conv
 
 // ── Avisos de tarefa ────────────────────────────────────────────────────────
 
+const TAMANHO_PREVIA = 140;
+
+/** Começo da descrição para caber no aviso. */
+export function previaDescricao(texto: string | null | undefined): string | null {
+  const limpo = (texto ?? '').replace(/\s+/g, ' ').trim();
+  if (!limpo) return null;
+  return limpo.length > TAMANHO_PREVIA ? limpo.slice(0, TAMANHO_PREVIA - 1).trimEnd() + '…' : limpo;
+}
+
+type AvisoGravado = Omit<TaskReviewNotification, 'project_name' | 'due_date' | 'description_preview'>;
+
+/**
+ * Avisos não lidos, com projeto, prazo e começo da descrição da tarefa.
+ * Os detalhes vêm da tarefa na hora da leitura (sem coluna nova): 2 consultas
+ * extras no total, não uma por aviso.
+ */
 export async function avisosNaoLidos(db: SupabaseClient, usuarioId: string): Promise<TaskReviewNotification[]> {
   const { data, error } = await db
     .from('task_review_notifications')
@@ -191,7 +211,63 @@ export async function avisosNaoLidos(db: SupabaseClient, usuarioId: string): Pro
     .eq('is_read', false)
     .order('created_at', { ascending: false });
   falhou(error);
-  return (data || []) as TaskReviewNotification[];
+  const avisos = (data || []) as AvisoGravado[];
+  if (avisos.length === 0) return [];
+
+  const tarefaIds = [...new Set(avisos.map(a => a.task_id))];
+  const { data: tarefas } = await db.from('todos').select('id, project_id, due_date, description').in('id', tarefaIds);
+  const porTarefa = new Map(((tarefas || []) as { id: number; project_id: number | null; due_date: string | null; description: string | null }[])
+    .map(t => [t.id, t]));
+
+  const projetoIds = [...new Set([...porTarefa.values()].map(t => t.project_id).filter((id): id is number => !!id))];
+  const nomesProjeto = new Map<number, string>();
+  if (projetoIds.length > 0) {
+    const { data: projetos } = await db.from('projects').select('id, name').in('id', projetoIds);
+    for (const p of (projetos || []) as { id: number; name: string }[]) nomesProjeto.set(p.id, p.name);
+  }
+
+  return avisos.map(a => {
+    const t = porTarefa.get(a.task_id);
+    return {
+      ...a,
+      project_name: t?.project_id ? nomesProjeto.get(t.project_id) ?? null : null,
+      due_date: t?.due_date ?? null,
+      description_preview: previaDescricao(t?.description),
+    };
+  });
+}
+
+/** Avisa só se mudou para alguém, e esse alguém não é quem fez a mudança. */
+export function deveAvisarResponsavel(antes: string | null, depois: string | null, remetenteId: string): boolean {
+  return !!depois && depois !== antes && depois !== remetenteId;
+}
+
+export async function responsavelDaTarefa(db: SupabaseClient, tarefaId: number): Promise<string | null> {
+  const { data } = await db.from('todos').select('assignee_id').eq('id', tarefaId).maybeSingle();
+  return (data as { assignee_id: string | null } | null)?.assignee_id ?? null;
+}
+
+/**
+ * Depois de gravar a tarefa: se o responsável mudou, avisa a pessoa nova.
+ * Lê o responsável já gravado, então pega também o da pasta (gatilho do banco).
+ * Aviso que falha não desfaz a gravação da tarefa.
+ */
+export async function avisarNovoResponsavel(
+  db: SupabaseClient,
+  remetente: { id: string; nome: string },
+  tarefaId: number,
+  responsavelAntes: string | null,
+): Promise<void> {
+  try {
+    const { data } = await db.from('todos').select('assignee_id, title').eq('id', tarefaId).maybeSingle();
+    const t = data as { assignee_id: string | null; title: string } | null;
+    if (!t || !deveAvisarResponsavel(responsavelAntes, t.assignee_id, remetente.id)) return;
+    await criarAviso(db, {
+      userId: t.assignee_id!, taskId: tarefaId, taskTitle: t.title, senderName: remetente.nome, type: 'assigned', note: null,
+    });
+  } catch (e) {
+    console.error('[notificacoes] aviso de nova tarefa não enviado:', e);
+  }
 }
 
 export async function criarAviso(db: SupabaseClient, aviso: NovoAvisoTarefa): Promise<void> {

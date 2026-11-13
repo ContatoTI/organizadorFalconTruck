@@ -1,8 +1,11 @@
 import * as consultas from '@/src/models/tarefas/consultas';
 import * as escrita from '@/src/models/tarefas/escrita';
 import * as mover from '@/src/models/tarefas/mover';
+import * as notificacoes from '@/src/models/notificacoes/notificacoes';
 import { ErroValidacao } from '@/src/lib/erros';
-import { erro, exigirLogin, idNumerico, lerJson, tratar } from '../sessao';
+import { erro, exigirLogin, idNumerico, lerJson, nomeDoUsuario, tratar, type Sessao } from '../sessao';
+
+const remetente = (sessao: Sessao) => ({ id: sessao.usuario.id, nome: nomeDoUsuario(sessao.usuario) });
 
 const sucesso = () => new Response(null, { status: 204 });
 
@@ -55,7 +58,10 @@ export function criarTarefa(request: Request) {
     const sessao = await exigirLogin();
     if (sessao instanceof Response) return sessao;
     const nova = escrita.validarNova(await lerJson(request));
-    return Response.json(await escrita.criar(sessao.db, sessao.usuario.id, nova), { status: 201 });
+    const tarefa = await escrita.criar(sessao.db, sessao.usuario.id, nova);
+    // Responsável pode vir do pedido ou da pasta (gatilho do banco).
+    await notificacoes.avisarNovoResponsavel(sessao.db, remetente(sessao), tarefa.id, null);
+    return Response.json(tarefa, { status: 201 });
   });
 }
 
@@ -64,7 +70,11 @@ export function atualizarTarefa(request: Request, idTxt: string) {
     const id = idNumerico(idTxt);
     const sessao = await exigirLogin();
     if (sessao instanceof Response) return sessao;
-    await escrita.atualizar(sessao.db, id, escrita.validarAlteracao(await lerJson(request)));
+    const alteracao = escrita.validarAlteracao(await lerJson(request));
+    const mudaResponsavel = 'assignee_id' in alteracao;
+    const antes = mudaResponsavel ? await notificacoes.responsavelDaTarefa(sessao.db, id) : null;
+    await escrita.atualizar(sessao.db, id, alteracao);
+    if (mudaResponsavel) await notificacoes.avisarNovoResponsavel(sessao.db, remetente(sessao), id, antes);
     return sucesso();
   });
 }
@@ -117,7 +127,9 @@ export function delegarTarefa(request: Request, idTxt: string) {
     if (sessao instanceof Response) return sessao;
     const { responsavelId } = await lerJson<{ responsavelId: unknown }>(request);
     if (responsavelId !== null && typeof responsavelId !== 'string') return erro(400, 'Responsável inválido.');
+    const antes = await notificacoes.responsavelDaTarefa(sessao.db, id);
     await escrita.delegar(sessao.db, id, responsavelId as string | null);
+    await notificacoes.avisarNovoResponsavel(sessao.db, remetente(sessao), id, antes);
     return sucesso();
   });
 }

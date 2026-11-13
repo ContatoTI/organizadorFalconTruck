@@ -28,7 +28,16 @@ interface TaskReviewNotification {
   sender_name: string;
   type: string;
   note: string | null;
+  project_name?: string | null;
+  due_date?: string | null;
+  description_preview?: string | null;
 }
+
+/** AAAA-MM-DD → DD/MM (sem fuso: a data é só o dia). */
+const diaMes = (iso: string) => {
+  const [, mes, dia] = iso.split('-');
+  return `${dia}/${mes}`;
+};
 
 interface NotificationsPanelProps {
   isOpen: boolean;
@@ -84,7 +93,9 @@ export function NotificationsPanel({
             const isReview = notif.type === 'review';
             const iconBg = isApproved ? 'bg-green-100' : isRejected ? 'bg-red-100' : isAssigned ? 'bg-blue-100' : 'bg-yellow-100';
             const iconColor = isApproved ? 'text-green-600' : isRejected ? 'text-red-600' : isAssigned ? 'text-blue-600' : 'text-yellow-600';
-            const title = isApproved ? 'Tarefa aprovada' : isRejected ? 'Tarefa reprovada' : isAssigned ? 'Nova tarefa atribuída a você' : 'Tarefa enviada para revisão';
+            const title = isApproved ? 'Tarefa aprovada' : isRejected ? 'Tarefa reprovada' : isAssigned ? 'Nova tarefa para você' : 'Tarefa enviada para revisão';
+            const detalhes = [notif.project_name, notif.due_date ? `Prazo ${diaMes(notif.due_date)}` : null]
+              .filter(Boolean).join(' · ');
             return (
             <div key={`review-${notif.id}`} className="p-3">
               <div className="flex items-start gap-3 mb-2">
@@ -97,11 +108,19 @@ export function NotificationsPanel({
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{title}</p>
-                  <p className="text-xs text-muted-foreground truncate">{notif.task_title}</p>
+                  <p className={isAssigned ? 'text-sm text-foreground truncate' : 'text-xs text-muted-foreground truncate'}>{notif.task_title}</p>
+                  {isAssigned && detalhes && (
+                    <p className="text-xs text-muted-foreground truncate">{detalhes}</p>
+                  )}
+                  {isAssigned && notif.description_preview && (
+                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{notif.description_preview}</p>
+                  )}
                   {isRejected && notif.note && (
                     <p className="text-xs text-red-500 mt-0.5 italic">{notif.note}</p>
                   )}
-                  <p className="text-xs text-muted-foreground">Por {notif.sender_name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {isAssigned ? `${notif.sender_name || 'Alguém'} te passou esta tarefa` : `Por ${notif.sender_name}`}
+                  </p>
                 </div>
               </div>
               {isReview && (
