@@ -31,8 +31,9 @@ export function getSoftCardStyle(color?: string | null) {
   }
 
   return {
-    background: `color-mix(in srgb, ${color} 8%, white)`,
-    borderColor: `color-mix(in srgb, ${color} 45%, white)`,
+    // Mistura com a cor do card do tema: branco no claro, escuro no dark.
+    background: `color-mix(in srgb, ${color} 8%, hsl(var(--card)))`,
+    borderColor: `color-mix(in srgb, ${color} 45%, hsl(var(--card)))`,
   };
 }
 

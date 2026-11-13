@@ -151,7 +151,7 @@ function KanbanColumn({ status, label, color, tasks, onSelect, onToggle, onDelet
   onApprove?: (id: number) => void; onReject?: (id: number) => void;
   assigneeCandidates?: { user_id: string; full_name?: string | null; email?: string | null }[];
   onAssigneeChange?: (id: number, a: string | null) => void;
-  onAddTask?: (title: string) => void;
+  onAddTask?: (title: string, description?: string | null) => void;
   projects?: Project[];
   sections?: Section[];
 }) {
@@ -727,7 +727,7 @@ function DashboardContent() {
       toast(`${staleCount} tarefa(s) parada(s) há mais de 1 dia movida(s) para revisão.`, 'info');
       if (viewMode === 'list' && !listShowReview) {
         setListShowReview(true);
-        localStorage.setItem('listShowReview', 'true');
+        localStorage.setItem('listShowReview_v2', 'true');
       }
     }
     setTasks(data);
@@ -1122,11 +1122,11 @@ function DashboardContent() {
     if (viewMode === 'list') {
       if (newStatus === 'EM_ANDAMENTO' && !listShowInProgress) {
         setListShowInProgress(true);
-        localStorage.setItem('listShowInProgress', 'true');
+        localStorage.setItem('listShowInProgress_v2', 'true');
       }
       if (newStatus === 'REVISAO' && !listShowReview) {
         setListShowReview(true);
-        localStorage.setItem('listShowReview', 'true');
+        localStorage.setItem('listShowReview_v2', 'true');
       }
     }
 
@@ -2806,7 +2806,7 @@ function DashboardContent() {
                   onAssigneeChange={handleAssigneeChange}
                   projects={projects}
                   sections={sections}
-                  onAddTask={(title) => {
+                  onAddTask={(title, description) => {
                     if (!user || !selectedProjectId) return;
                     const trimmed = title.trim();
                     if (!trimmed) return;
@@ -2821,14 +2821,14 @@ function DashboardContent() {
                       position: 99999,
                       created_at: new Date().toISOString(),
                       due_date: null,
-                      description: null,
+                      description: description ?? null,
                       priority: null,
                       status: col.key,
                       creator_name: (user as any).user_metadata?.full_name || user.email,
                       isSyncing: true,
                     } as Task;
                     setTasks(prev => [tempTask, ...prev]);
-                    taskAPI.createTask(trimmed, parseInt(selectedProjectId), undefined, undefined, undefined, null, undefined, col.key)
+                    taskAPI.createTask(trimmed, parseInt(selectedProjectId), undefined, undefined, undefined, description ?? null, undefined, col.key)
                       .then(result => {
                         if (result.success && result.data) {
                           setTasks(prev => prev.map(t => t.id === tempTask.id ? { ...result.data as Task, isSyncing: false } : t));
