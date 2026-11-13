@@ -1,59 +1,59 @@
-import { createSign } from 'node:crypto';
 import type { Armazenamento } from '@/src/models/tarefas/anexos';
 
-// Cliente do Google Drive (REST v3) com conta de serviço. Sem regra de negócio.
+// Cliente do Google Drive (REST v3) com OAuth (refresh token de uma conta Google). Sem regra de negócio.
 
 const API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 const TIPO_PASTA = 'application/vnd.google-apps.folder';
-// Compatível com Drive compartilhado (conta de serviço não tem cota no "Meu Drive").
+// Funciona no "Meu Drive" e também em Drive compartilhado.
 const DRIVES = 'supportsAllDrives=true';
 
 export interface ConfigDrive {
-  email: string;
-  chavePrivada: string;
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
   pastaRaizId: string;
 }
 
+const VARIAVEIS = {
+  clientId: 'GOOGLE_OAUTH_CLIENT_ID',
+  clientSecret: 'GOOGLE_OAUTH_CLIENT_SECRET',
+  refreshToken: 'GOOGLE_OAUTH_REFRESH_TOKEN',
+  pastaRaizId: 'GOOGLE_DRIVE_PASTA_RAIZ_ID',
+} as const;
+
 export function lerConfigDoAmbiente(): ConfigDrive {
-  const faltando = ['GOOGLE_SERVICE_ACCOUNT_EMAIL', 'GOOGLE_PRIVATE_KEY', 'GOOGLE_DRIVE_PASTA_RAIZ_ID']
-    .filter((nome) => !process.env[nome]);
+  const faltando = Object.values(VARIAVEIS).filter((nome) => !process.env[nome]?.trim());
   if (faltando.length) throw new Error(`Google Drive não configurado. Falta no .env: ${faltando.join(', ')}`);
+  const ler = (nome: string) => process.env[nome]!.trim();
   return {
-    email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL!,
-    chavePrivada: process.env.GOOGLE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
-    pastaRaizId: process.env.GOOGLE_DRIVE_PASTA_RAIZ_ID!,
+    clientId: ler(VARIAVEIS.clientId),
+    clientSecret: ler(VARIAVEIS.clientSecret),
+    refreshToken: ler(VARIAVEIS.refreshToken),
+    pastaRaizId: ler(VARIAVEIS.pastaRaizId),
   };
 }
 
-const base64url = (dados: string | Buffer) => Buffer.from(dados).toString('base64url');
-
-let tokenEmCache: { valor: string; expiraEm: number; email: string } | null = null;
+let tokenEmCache: { valor: string; expiraEm: number; refreshToken: string } | null = null;
 
 async function obterToken(config: ConfigDrive): Promise<string> {
   const agora = Math.floor(Date.now() / 1000);
-  if (tokenEmCache && tokenEmCache.email === config.email && tokenEmCache.expiraEm - 60 > agora) {
+  if (tokenEmCache && tokenEmCache.refreshToken === config.refreshToken && tokenEmCache.expiraEm - 60 > agora) {
     return tokenEmCache.valor;
   }
-
-  const cabecalho = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const corpo = base64url(JSON.stringify({
-    iss: config.email,
-    scope: 'https://www.googleapis.com/auth/drive',
-    aud: 'https://oauth2.googleapis.com/token',
-    iat: agora,
-    exp: agora + 3600,
-  }));
-  const assinatura = createSign('RSA-SHA256').update(`${cabecalho}.${corpo}`).sign(config.chavePrivada);
-  const jwt = `${cabecalho}.${corpo}.${base64url(assinatura)}`;
 
   const resp = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: jwt }),
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      refresh_token: config.refreshToken,
+    }),
   });
   const json = await lerResposta<{ access_token: string; expires_in: number }>(resp, 'autenticar no Google');
-  tokenEmCache = { valor: json.access_token, expiraEm: agora + json.expires_in, email: config.email };
+  tokenEmCache = { valor: json.access_token, expiraEm: agora + json.expires_in, refreshToken: config.refreshToken };
   return json.access_token;
 }
 

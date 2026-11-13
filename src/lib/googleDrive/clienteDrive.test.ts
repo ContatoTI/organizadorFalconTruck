@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { generateKeyPairSync } from 'node:crypto';
 import { criarArmazenamentoDrive, lerConfigDoAmbiente, type ConfigDrive } from './clienteDrive';
 
-const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const config: ConfigDrive = {
-  email: 'conta@teste.iam.gserviceaccount.com',
-  chavePrivada: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+  clientId: 'cliente',
+  clientSecret: 'segredo',
+  refreshToken: 'refresh-teste',
   pastaRaizId: 'raiz',
 };
 
@@ -28,10 +27,32 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe('lerConfigDoAmbiente', () => {
   it('falha avisando as variáveis que faltam', () => {
-    vi.stubEnv('GOOGLE_SERVICE_ACCOUNT_EMAIL', '');
-    vi.stubEnv('GOOGLE_PRIVATE_KEY', '');
+    vi.stubEnv('GOOGLE_OAUTH_CLIENT_ID', 'id');
+    vi.stubEnv('GOOGLE_OAUTH_CLIENT_SECRET', '');
+    vi.stubEnv('GOOGLE_OAUTH_REFRESH_TOKEN', '  ');
     vi.stubEnv('GOOGLE_DRIVE_PASTA_RAIZ_ID', 'x');
-    expect(() => lerConfigDoAmbiente()).toThrow('GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY');
+    expect(() => lerConfigDoAmbiente()).toThrow('GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN');
+  });
+
+  it('lê as variáveis sem espaços sobrando', () => {
+    vi.stubEnv('GOOGLE_OAUTH_CLIENT_ID', ' id ');
+    vi.stubEnv('GOOGLE_OAUTH_CLIENT_SECRET', 'seg');
+    vi.stubEnv('GOOGLE_OAUTH_REFRESH_TOKEN', 'rt');
+    vi.stubEnv('GOOGLE_DRIVE_PASTA_RAIZ_ID', 'pasta');
+    expect(lerConfigDoAmbiente()).toEqual({ clientId: 'id', clientSecret: 'seg', refreshToken: 'rt', pastaRaizId: 'pasta' });
+  });
+});
+
+describe('autenticação', () => {
+  it('troca o refresh token por um access token', async () => {
+    const fn = fetchFalso(json({ id: 'arq-1' }));
+    await criarArmazenamentoDrive({ ...config, refreshToken: 'outro-refresh' }).enviarParaLixeira('arq-1');
+    const [url, init] = fn.mock.calls.find(([u]) => String(u).includes('oauth2'))!;
+    expect(String(url)).toBe('https://oauth2.googleapis.com/token');
+    const corpo = new URLSearchParams(String(init?.body));
+    expect(Object.fromEntries(corpo)).toEqual({
+      grant_type: 'refresh_token', client_id: 'cliente', client_secret: 'segredo', refresh_token: 'outro-refresh',
+    });
   });
 });
 
