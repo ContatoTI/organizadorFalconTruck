@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { createClient } from '@/src/lib/supabase/Client';
-import { cn, GroupIcon, PROJECT_COLORS } from '@/src/lib/utils';
+import { cn, GroupIcon } from '@/src/lib/utils';
 import { useGroups } from '@/src/views/grupos/GroupsContext';
 import { grupoAPI } from '@/src/views/grupos/clienteGrupos';
 import { projectAPI } from '@/src/views/projetos/clienteProjetos';
@@ -13,6 +13,7 @@ import { taskAPI } from '@/src/views/tarefas/clienteTarefas';
 import { NotificationBell, NotificationsPanel } from '@/src/views/notificacoes/NotificationsPanel';
 import { ProfileDialog } from '@/src/views/autenticacao/ProfileDialog';
 import { ProjectsView } from '@/src/views/projetos/ProjectsView';
+import { NovoProjetoDialog } from '@/src/views/projetos/NovoProjetoDialog';
 import { ProjectSharedIndicator } from '@/src/views/projetos/SharedWithIndicator';
 import { ToastProvider } from '@/src/components/Toast';
 import { GroupStyleEditor } from '@/src/views/grupos/GroupStyleEditor';
@@ -62,9 +63,6 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     blocos: true,
   });
   const [showProjectModal, setShowProjectModal] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectColor, setNewProjectColor] = useState('#6366f1');
-  const [newProjectSections, setNewProjectSections] = useState('');
   const [showProjectsView, setShowProjectsView] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileDialog, setShowProfileDialog] = useState(false);
@@ -451,25 +449,9 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
     togglingVisibilityRef.current.delete(project.id);
   };
 
-  const createProject = async () => {
-    if (!newProjectName.trim() || !user) return;
-
-    // Pastas iniciais (uma por linha) são criadas junto, no servidor.
-    const sectionNames = newProjectSections.split('\n').map(s => s.trim()).filter(Boolean);
-    const result = await projectAPI.createProject(newProjectName, newProjectColor, sectionNames);
-
-    if (!result.success || !result.data) {
-      console.error('Erro ao criar projeto:', result.error);
-      return;
-    }
-
-    setProjects(prev => [...prev, result.data!]);
-
-    setNewProjectName('');
-    setNewProjectColor('#6366f1');
-    setNewProjectSections('');
-    setShowProjectModal(false);
-    window.dispatchEvent(new CustomEvent('projects_updated'));
+  const onProjetoCriado = (projeto: Project) => {
+    setProjects(prev => [...prev, projeto]);
+    setShowProjectsView(false);
   };
 
   const handleLogout = async () => {
@@ -659,64 +641,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* Modal para criar projeto */}
-      {showProjectModal && (
-        <div className="fixed inset-0 bg-foreground/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-card rounded-xl p-6 w-80 shadow-modal border border-border">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Novo Projeto</h3>
-              <button onClick={() => setShowProjectModal(false)} className="p-1 hover:bg-accent rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm text-muted-foreground block mb-1">Nome do projeto</label>
-                <input
-                  type="text"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  placeholder="Ex: Falcontruck"
-                  className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label className="text-sm text-muted-foreground block mb-1">Cor</label>
-                <div className="flex gap-2 flex-wrap">
-                  {PROJECT_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => setNewProjectColor(color)}
-                      className={cn(
-                        'w-8 h-8 rounded-full transition-transform',
-                        newProjectColor === color && 'ring-2 ring-offset-2 ring-primary scale-110'
-                      )}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="text-sm text-muted-foreground block mb-1">Pastas iniciais (opcional, uma por linha)</label>
-                <textarea
-                  value={newProjectSections}
-                  onChange={(e) => setNewProjectSections(e.target.value)}
-                  placeholder="Ex: Estrutura&#10;Elétrica&#10;Hidráulica"
-                  rows={3}
-                  className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-                />
-              </div>
-              <button
-                onClick={createProject}
-                className="w-full py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-              >
-                Criar Projeto
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <NovoProjetoDialog open={showProjectModal} onOpenChange={setShowProjectModal} onCriado={onProjetoCriado} />
 
       <aside
         className={cn(
@@ -1034,9 +959,12 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
                     {loadingProjects ? (
                       <div className="px-2.5 py-1.5 text-[11px] text-muted-foreground/60">Carregando…</div>
                     ) : projects.length === 0 ? (
-                      <div className="px-2.5 text-[11px] text-muted-foreground/50">
-                        Nenhum projeto definido
-                      </div>
+                      <button
+                        onClick={() => setShowProjectModal(true)}
+                        className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-lg border border-dashed border-border px-2.5 py-2 text-[12px] text-muted-foreground hover:border-primary/50 hover:bg-accent/50 hover:text-foreground transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Criar primeiro projeto
+                      </button>
                     ) : (
                       projects.map((project) => {
                         const isOwner = project.owner_id === user?.id;
@@ -1212,6 +1140,7 @@ function DefaultLayoutInner({ children }: { children: React.ReactNode }) {
             userId={user.id}
             onUpdateProjects={setProjects}
             onClose={() => setShowProjectsView(false)}
+            onNovoProjeto={() => setShowProjectModal(true)}
           />
         ) : (
           children

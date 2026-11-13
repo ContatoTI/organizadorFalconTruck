@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, Suspense, Fragment } from 'react';
 import { createClient } from '@/src/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search, Eye, EyeOff, Settings, GripVertical } from 'lucide-react';
+import { Check, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search, Eye, EyeOff, Settings, GripVertical, MoreHorizontal } from 'lucide-react';
 import { cn, getSoftCardStyle, PROJECT_COLORS } from '@/src/lib/utils';
 import { taskAPI } from '@/src/views/tarefas/clienteTarefas';
 import { projectAPI, sectionAPI } from '@/src/views/projetos/clienteProjetos';
@@ -19,6 +19,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { ExcluirProjetoDialog } from '@/src/views/projetos/ExcluirProjetoDialog';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -239,9 +241,11 @@ function DashboardContent() {
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [onlyToday, setOnlyToday] = useState(false);
   // ponytail: filtros de status exclusivos da visão em lista de um projeto (não afetam o Kanban).
-  // Por padrão só "A Fazer" aparece; o usuário liga cada um para revelar Em Andamento/Revisão/Concluído.
-  const [listShowInProgress, setListShowInProgress] = useState(false);
-  const [listShowReview, setListShowReview] = useState(false);
+  // Por padrão aparece tudo que não foi concluído (A Fazer, Em Andamento, Revisão); Concluídas ficam ocultas.
+  // Chaves '_v2' no localStorage: a escolha antiga (só A Fazer) não vale mais, todos começam no padrão novo.
+  const [listShowInProgress, setListShowInProgress] = useState(true);
+  const [listShowReview, setListShowReview] = useState(true);
+  const [excluirProjetoAberto, setExcluirProjetoAberto] = useState(false);
   const [listShowCompleted, setListShowCompleted] = useState(false);
   const [now, setNow] = useState(new Date());
   const [expandedSections, setExpandedSections] = useState<Record<number, boolean>>({});
@@ -309,9 +313,9 @@ function DashboardContent() {
   useEffect(() => {
     const stored = localStorage.getItem('showCompleted');
     if (stored !== null) setShowCompleted(stored !== 'false');
-    const storedListInProgress = localStorage.getItem('listShowInProgress');
+    const storedListInProgress = localStorage.getItem('listShowInProgress_v2');
     if (storedListInProgress !== null) setListShowInProgress(storedListInProgress === 'true');
-    const storedListReview = localStorage.getItem('listShowReview');
+    const storedListReview = localStorage.getItem('listShowReview_v2');
     if (storedListReview !== null) setListShowReview(storedListReview === 'true');
     const storedListCompleted = localStorage.getItem('listShowCompleted');
     if (storedListCompleted !== null) setListShowCompleted(storedListCompleted === 'true');
@@ -1282,7 +1286,7 @@ function DashboardContent() {
 
   const deleteProject = async () => {
     if (!selectedProject || !user || selectedProject.owner_id !== user.id) return;
-    if (!confirm(`Excluir "${selectedProject.name}"? As tarefas associadas voltarão para a Caixa de Entrada.`)) return;
+    // Confirmação (digitar o nome) acontece antes, no ExcluirProjetoDialog.
     
     // OPTIMISTIC UPDATE — tela e sidebar imediatamente, antes dos awaits.
     const projectId = selectedProject.id;
@@ -2362,6 +2366,15 @@ function DashboardContent() {
         />
       )}
 
+      {selectedProject && (
+        <ExcluirProjetoDialog
+          open={excluirProjetoAberto}
+          onOpenChange={setExcluirProjetoAberto}
+          nomeProjeto={selectedProject.name}
+          onConfirmar={deleteProject}
+        />
+      )}
+
       {/* Modal de criação de nova pasta */}
       <Dialog open={newSectionModalOpen} onOpenChange={(open) => { if (!open) setNewSectionModalOpen(false); }}>
         <DialogContent className="sm:max-w-sm" finalFocus={false}>
@@ -2696,9 +2709,19 @@ function DashboardContent() {
                 <Button variant="outline" size="sm" onClick={openShareModal} className="rounded-full h-7 text-xs gap-1">
                   <Share className="w-3 h-3" /> Compartilhar
                 </Button>
-                <Button variant="destructive" size="sm" onClick={deleteProject} className="rounded-full h-7 text-xs gap-1">
-                  <Trash2 className="w-3 h-3" /> Excluir
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger aria-label="Mais ações do projeto" className="grid place-items-center h-7 w-7 rounded-full border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+                    <MoreHorizontal className="w-4 h-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={() => { setEditingProjectName(true); setEditingProjectNameDraft(selectedProject.name); }}>
+                      <Edit2 /> Renomear
+                    </DropdownMenuItem>
+                    <DropdownMenuItem variant="destructive" onClick={() => setExcluirProjetoAberto(true)}>
+                      <Trash2 /> Excluir projeto
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </>
             )}
             {!selectedProject && (
@@ -2722,8 +2745,8 @@ function DashboardContent() {
                   { key: 'my-tasks', label: 'Minhas tarefas', checked: preferences.show_my_tasks_only, onChange: (v: boolean) => setPreference('show_my_tasks_only', v), title: 'Mostrar só tarefas criadas por você' },
                 ] : []),
                 ...(selectedProject && viewMode === 'list' ? [
-                  { key: 'list-in-progress', label: 'Em andamento', checked: listShowInProgress, onChange: (v: boolean) => { setListShowInProgress(v); localStorage.setItem('listShowInProgress', String(v)); }, title: 'Mostrar tarefas em andamento na lista' },
-                  { key: 'list-review', label: 'Revisão', checked: listShowReview, onChange: (v: boolean) => { setListShowReview(v); localStorage.setItem('listShowReview', String(v)); }, title: 'Mostrar tarefas em revisão na lista' },
+                  { key: 'list-in-progress', label: 'Em andamento', checked: listShowInProgress, onChange: (v: boolean) => { setListShowInProgress(v); localStorage.setItem('listShowInProgress_v2', String(v)); }, title: 'Mostrar tarefas em andamento na lista' },
+                  { key: 'list-review', label: 'Revisão', checked: listShowReview, onChange: (v: boolean) => { setListShowReview(v); localStorage.setItem('listShowReview_v2', String(v)); }, title: 'Mostrar tarefas em revisão na lista' },
                   { key: 'list-completed', label: 'Concluídas', checked: listShowCompleted, onChange: (v: boolean) => { setListShowCompleted(v); localStorage.setItem('listShowCompleted', String(v)); }, title: 'Mostrar tarefas concluídas na lista' },
                 ] : [
                   { key: 'completed', label: 'Concluídas', checked: showCompleted, onChange: (v: boolean) => { setShowCompleted(v); localStorage.setItem('showCompleted', String(v)); }, title: 'Incluir tarefas concluídas' },

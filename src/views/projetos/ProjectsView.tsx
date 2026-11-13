@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Edit2, X, FolderKanban } from 'lucide-react';
+import { Edit2, X, FolderKanban, Plus } from 'lucide-react';
 import { cn, PROJECT_COLORS } from '@/src/lib/utils';
 import { projectAPI } from '@/src/views/projetos/clienteProjetos';
 import type { Project } from '@/types/index';
@@ -12,9 +12,10 @@ interface ProjectsViewProps {
   userId: string;
   onUpdateProjects: (projects: Project[]) => void;
   onClose: () => void;
+  onNovoProjeto: () => void;
 }
 
-export function ProjectsView({ projects, userId, onUpdateProjects, onClose }: ProjectsViewProps) {
+export function ProjectsView({ projects, userId, onUpdateProjects, onClose, onNovoProjeto }: ProjectsViewProps) {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState('#6366f1');
@@ -59,19 +60,33 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose }: Pr
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold">Projetos</h2>
+          <div className="flex items-center gap-2">
+          <button
+            onClick={onNovoProjeto}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> Novo projeto
+          </button>
           <button
             onClick={onClose}
             className="p-2 hover:bg-accent rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
+          </div>
         </div>
 
         {projects.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground">
             <FolderKanban className="w-12 h-12 mx-auto mb-4 opacity-50" />
             <p className="text-lg">Nenhum projeto definido</p>
-            <p className="text-sm">Crie um projeto na sidebar para começar</p>
+            <p className="text-sm mb-4">Um projeto junta tarefas de um mesmo objetivo, separadas em pastas.</p>
+            <button
+              onClick={onNovoProjeto}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="w-4 h-4" /> Criar primeiro projeto
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
