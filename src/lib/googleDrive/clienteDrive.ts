@@ -116,10 +116,14 @@ export function criarArmazenamentoDrive(config: ConfigDrive = lerConfigDoAmbient
       return criado.id;
     },
 
-    async baixar(arquivoId) {
-      const resp = await chamar(`${API}/${encodeURIComponent(arquivoId)}?alt=media&${DRIVES}`);
+    async baixar(arquivoId, faixa) {
+      const resp = await chamar(`${API}/${encodeURIComponent(arquivoId)}?alt=media&${DRIVES}`,
+        faixa ? { headers: { Range: faixa } } : {});
       if (!resp.ok) throw new Error(`Drive: falha ao baixar arquivo (${resp.status})`);
-      return new Uint8Array(await resp.arrayBuffer());
+      return {
+        dados: new Uint8Array(await resp.arrayBuffer()),
+        trecho: resp.status === 206 ? resp.headers.get('Content-Range') : null,
+      };
     },
 
     async enviarParaLixeira(arquivoId) {

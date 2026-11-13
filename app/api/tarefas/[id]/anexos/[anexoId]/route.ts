@@ -2,9 +2,9 @@ import { verAnexo, excluirAnexo } from '@/src/controllers/tarefas/anexos';
 
 type Contexto = { params: Promise<{ id: string; anexoId: string }> };
 
-export const GET = async (_req: Request, { params }: Contexto) => {
+export const GET = async (req: Request, { params }: Contexto) => {
   const { id, anexoId } = await params;
-  return verAnexo(id, anexoId);
+  return verAnexo(req, id, anexoId);
 };
 
 export const DELETE = async (_req: Request, { params }: Contexto) => {

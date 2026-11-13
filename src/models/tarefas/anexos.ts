@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ErroValidacao } from '@/src/lib/erros';
-import { CONFIG_ANEXOS } from './configAnexos';
+import { CONFIG_ANEXOS, ehVideo } from './configAnexos';
 
 export { ErroValidacao };
 
@@ -21,11 +21,18 @@ export interface ArquivoRecebido {
   tamanho: number;
 }
 
+/** Arquivo baixado. `trecho` = Content-Range quando foi pedido só um pedaço (vídeo). */
+export interface ArquivoBaixado {
+  dados: Uint8Array;
+  trecho: string | null;
+}
+
 /** Onde os arquivos ficam guardados (Google Drive em produção). */
 export interface Armazenamento {
   garantirPasta(caminho: string[]): Promise<string>;
   enviar(pastaId: string, nome: string, mime: string, dados: Uint8Array): Promise<string>;
-  baixar(arquivoId: string): Promise<Uint8Array>;
+  /** `faixa` = cabeçalho Range do navegador (ex.: "bytes=0-1023"); o player de vídeo precisa disso. */
+  baixar(arquivoId: string, faixa?: string | null): Promise<ArquivoBaixado>;
   enviarParaLixeira(arquivoId: string): Promise<void>;
 }
 
@@ -34,6 +41,9 @@ const EXTENSAO_POR_MIME: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
   'image/gif': 'gif',
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
 };
 
 const COLUNAS = 'id, tarefa_id, drive_file_id, nome, mime, tamanho, criado_por, criado_em';
@@ -41,13 +51,14 @@ const COLUNAS = 'id, tarefa_id, drive_file_id, nome, mime, tamanho, criado_por, 
 /** Retorna a mensagem de erro, ou null se o arquivo é aceito. */
 export function validarArquivo(arquivo: ArquivoRecebido): string | null {
   if (!(CONFIG_ANEXOS.tiposAceitos as readonly string[]).includes(arquivo.mime)) {
-    return `"${arquivo.nome}": tipo não aceito. Use PNG, JPG, WEBP ou GIF.`;
+    return `"${arquivo.nome}": tipo não aceito. Use imagem (PNG, JPG, WEBP, GIF) ou vídeo (MP4, MOV, WEBM).`;
   }
   if (arquivo.tamanho <= 0) {
     return `"${arquivo.nome}": arquivo vazio.`;
   }
-  if (arquivo.tamanho > CONFIG_ANEXOS.tamanhoMaxMb * 1024 * 1024) {
-    return `"${arquivo.nome}": maior que ${CONFIG_ANEXOS.tamanhoMaxMb} MB.`;
+  const limiteMb = ehVideo(arquivo.mime) ? CONFIG_ANEXOS.tamanhoMaxMbVideo : CONFIG_ANEXOS.tamanhoMaxMbImagem;
+  if (arquivo.tamanho > limiteMb * 1024 * 1024) {
+    return `"${arquivo.nome}": maior que ${limiteMb} MB.`;
   }
   return null;
 }

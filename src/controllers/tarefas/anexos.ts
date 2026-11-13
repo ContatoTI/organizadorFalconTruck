@@ -54,8 +54,11 @@ export function excluirAnexo(tarefaIdTxt: string, anexoId: string) {
   });
 }
 
-/** Proxy da imagem: o arquivo no Drive nunca fica público. */
-export function verAnexo(tarefaIdTxt: string, anexoId: string) {
+/**
+ * Proxy do arquivo: o arquivo no Drive nunca fica público.
+ * Repassa o Range do navegador ao Drive — sem isso o vídeo não avança/volta e não toca no iPhone.
+ */
+export function verAnexo(request: Request, tarefaIdTxt: string, anexoId: string) {
   return tratar('abrir o anexo', async () => {
     const acesso = await prepararAcesso(tarefaIdTxt);
     if (acesso instanceof Response) return acesso;
@@ -63,14 +66,15 @@ export function verAnexo(tarefaIdTxt: string, anexoId: string) {
     const anexo = await anexos.buscar(acesso.db, acesso.tarefaId, anexoId);
     if (!anexo) return erro(404, 'Anexo não encontrado.');
 
-    const dados = await criarArmazenamentoDrive().baixar(anexo.drive_file_id);
-    return new Response(dados as BodyInit, {
-      headers: {
-        'Content-Type': anexo.mime,
-        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(anexo.nome)}`,
-        'Cache-Control': 'private, max-age=3600',
-        'X-Content-Type-Options': 'nosniff',
-      },
-    });
+    const { dados, trecho } = await criarArmazenamentoDrive().baixar(anexo.drive_file_id, request.headers.get('range'));
+    const cabecalhos: Record<string, string> = {
+      'Content-Type': anexo.mime,
+      'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(anexo.nome)}`,
+      'Cache-Control': 'private, max-age=3600',
+      'X-Content-Type-Options': 'nosniff',
+      'Accept-Ranges': 'bytes',
+    };
+    if (trecho) cabecalhos['Content-Range'] = trecho;
+    return new Response(dados as BodyInit, { status: trecho ? 206 : 200, headers: cabecalhos });
   });
 }

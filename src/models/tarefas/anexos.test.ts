@@ -11,7 +11,7 @@ function armazenamentoFalso(): Armazenamento {
   return {
     garantirPasta: vi.fn(async () => 'pasta-1'),
     enviar: vi.fn(async () => 'arquivo-1'),
-    baixar: vi.fn(async () => new Uint8Array()),
+    baixar: vi.fn(async () => ({ dados: new Uint8Array(), trecho: null })),
     enviarParaLixeira: vi.fn(async () => {}),
   };
 }
@@ -30,6 +30,20 @@ describe('validarArquivo', () => {
   });
   it('recusa arquivo vazio', () => {
     expect(validarArquivo({ nome: 'a.png', mime: 'image/png', tamanho: 0 })).toMatch(/vazio/);
+  });
+  it('aceita vídeo MP4, MOV e WEBM até 50 MB', () => {
+    for (const mime of ['video/mp4', 'video/quicktime', 'video/webm']) {
+      expect(validarArquivo({ nome: 'v', mime, tamanho: 50 * MB })).toBeNull();
+    }
+  });
+  it('recusa vídeo acima de 50 MB', () => {
+    expect(validarArquivo({ nome: 'v.mp4', mime: 'video/mp4', tamanho: 50 * MB + 1 })).toMatch(/50 MB/);
+  });
+  it('imagem continua limitada a 10 MB', () => {
+    expect(validarArquivo({ nome: 'a.png', mime: 'image/png', tamanho: 20 * MB })).toMatch(/10 MB/);
+  });
+  it('recusa outros vídeos (ex.: AVI)', () => {
+    expect(validarArquivo({ nome: 'v.avi', mime: 'video/x-msvideo', tamanho: 10 })).toMatch(/tipo não aceito/);
   });
 });
 

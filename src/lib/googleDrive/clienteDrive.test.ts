@@ -84,6 +84,20 @@ describe('arquivos', () => {
     expect(JSON.parse(String(init?.body))).toEqual({ trashed: true });
   });
 
+  it('baixa o arquivo inteiro sem Range', async () => {
+    const fn = fetchFalso(new Response(new Uint8Array([1, 2, 3]), { status: 200 }));
+    const r = await criarArmazenamentoDrive(config).baixar('arq-1');
+    expect(r).toEqual({ dados: new Uint8Array([1, 2, 3]), trecho: null });
+    expect((chamadasDrive(fn)[0][1]?.headers as Record<string, string>).Range).toBeUndefined();
+  });
+
+  it('baixa só um pedaço quando o navegador pede Range (vídeo)', async () => {
+    const fn = fetchFalso(new Response(new Uint8Array([9]), { status: 206, headers: { 'Content-Range': 'bytes 0-0/100' } }));
+    const r = await criarArmazenamentoDrive(config).baixar('arq-1', 'bytes=0-0');
+    expect(r).toEqual({ dados: new Uint8Array([9]), trecho: 'bytes 0-0/100' });
+    expect((chamadasDrive(fn)[0][1]?.headers as Record<string, string>).Range).toBe('bytes=0-0');
+  });
+
   it('erro do Drive vira exceção clara', async () => {
     fetchFalso(new Response('sem permissão', { status: 403 }));
     await expect(criarArmazenamentoDrive(config).enviar('p', 'a.png', 'image/png', new Uint8Array([1])))

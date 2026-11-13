@@ -1,14 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ImagePlus, Trash2, Upload, AlertCircle } from 'lucide-react';
+import { ImagePlus, Trash2, Upload, AlertCircle, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/src/components/Toast';
 import { cn } from '@/src/lib/utils';
 import { useColarArrastarArquivos, type OrigemArquivos } from '@/src/hooks/useColarArrastarArquivos';
-import { CONFIG_ANEXOS } from '@/src/models/tarefas/configAnexos';
+import { CONFIG_ANEXOS, ehVideo } from '@/src/models/tarefas/configAnexos';
 import { validarArquivo, nomeColado, type Anexo } from '@/src/models/tarefas/anexos';
 
 interface Envio {
@@ -116,7 +116,10 @@ export function AnexosTarefa({ tarefaId, children }: AnexosTarefaProps) {
       </div>
 
       {anexos.length === 0 && envios.length === 0 && (
-        <p className="text-xs text-muted-foreground">Cole um print (Ctrl+V), arraste imagens ou use o botão Anexar.</p>
+        <p className="text-xs text-muted-foreground">
+          Cole um print (Ctrl+V), arraste imagens ou vídeos, ou use o botão Anexar.
+          Imagem até {CONFIG_ANEXOS.tamanhoMaxMbImagem} MB · vídeo até {CONFIG_ANEXOS.tamanhoMaxMbVideo} MB.
+        </p>
       )}
 
       {envios.length > 0 && (
@@ -146,10 +149,22 @@ export function AnexosTarefa({ tarefaId, children }: AnexosTarefaProps) {
               type="button"
               title={a.nome}
               onClick={() => setAberto(a)}
-              className="aspect-square overflow-hidden rounded-lg border border-input bg-muted"
+              className="relative aspect-square overflow-hidden rounded-lg border border-input bg-muted"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element -- imagem vem do nosso proxy autenticado */}
-              <img src={`${urlAnexos(tarefaId)}/${a.id}`} alt={a.nome} loading="lazy" className="size-full object-cover" />
+              {ehVideo(a.mime) ? (
+                <>
+                  {/* #t=0.1 mostra o primeiro quadro como capa; só baixa o começo do vídeo. */}
+                  <video src={`${urlAnexos(tarefaId)}/${a.id}#t=0.1`} preload="metadata" muted playsInline className="size-full object-cover" />
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/30">
+                    <Play className="size-6 fill-white text-white" />
+                  </span>
+                </>
+              ) : (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- imagem vem do nosso proxy autenticado */}
+                  <img src={`${urlAnexos(tarefaId)}/${a.id}`} alt={a.nome} loading="lazy" className="size-full object-cover" />
+                </>
+              )}
             </button>
           ))}
         </div>
@@ -166,8 +181,14 @@ export function AnexosTarefa({ tarefaId, children }: AnexosTarefaProps) {
           {aberto && (
             <>
               <DialogTitle className="truncate pr-8">{aberto.nome}</DialogTitle>
-              {/* eslint-disable-next-line @next/next/no-img-element -- imagem vem do nosso proxy autenticado */}
-              <img src={`${urlAnexos(tarefaId)}/${aberto.id}`} alt={aberto.nome} className="max-h-[75vh] w-full object-contain" />
+              {ehVideo(aberto.mime) ? (
+                <video src={`${urlAnexos(tarefaId)}/${aberto.id}`} controls autoPlay playsInline className="max-h-[75vh] w-full bg-black" />
+              ) : (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- imagem vem do nosso proxy autenticado */}
+                  <img src={`${urlAnexos(tarefaId)}/${aberto.id}`} alt={aberto.nome} className="max-h-[75vh] w-full object-contain" />
+                </>
+              )}
               <div className="flex justify-end">
                 <Button type="button" variant="destructive" size="sm" onClick={() => excluir(aberto)}>
                   <Trash2 /> Excluir

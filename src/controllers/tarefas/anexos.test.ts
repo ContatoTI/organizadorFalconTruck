@@ -5,7 +5,10 @@ vi.mock('@/src/lib/supabase/Server', () => ({
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: usuario.current } }) } }),
 }));
 
-const drive = { baixar: vi.fn(async () => new Uint8Array([7, 7])) };
+const drive = {
+  baixar: vi.fn(async (_id: string, _faixa?: string | null) =>
+    ({ dados: new Uint8Array([7, 7]), trecho: null as string | null })),
+};
 vi.mock('@/src/lib/googleDrive/clienteDrive', () => ({ criarArmazenamentoDrive: () => drive }));
 
 vi.mock('@/src/models/tarefas/anexos', async (original) => {
@@ -97,9 +100,18 @@ describe('excluir e ver', () => {
     expect(model.excluir).not.toHaveBeenCalled();
   });
   it('devolve a imagem com o tipo certo', async () => {
-    const resp = await verAnexo('1', 'a1');
+    const resp = await verAnexo(new Request('http://x'), '1', 'a1');
     expect(resp.status).toBe(200);
     expect(resp.headers.get('Content-Type')).toBe('image/png');
+    expect(resp.headers.get('Accept-Ranges')).toBe('bytes');
     expect(new Uint8Array(await resp.arrayBuffer())).toEqual(new Uint8Array([7, 7]));
+  });
+  it('vídeo: repassa o Range ao Drive e responde 206 com o pedaço', async () => {
+    drive.baixar.mockResolvedValueOnce({ dados: new Uint8Array([1]), trecho: 'bytes 0-0/5000' });
+    const req = new Request('http://x', { headers: { Range: 'bytes=0-0' } });
+    const resp = await verAnexo(req, '1', 'a1');
+    expect(drive.baixar).toHaveBeenCalledWith('f1', 'bytes=0-0');
+    expect(resp.status).toBe(206);
+    expect(resp.headers.get('Content-Range')).toBe('bytes 0-0/5000');
   });
 });
