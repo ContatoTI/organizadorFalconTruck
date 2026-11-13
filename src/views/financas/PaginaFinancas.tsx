@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@/src/lib/supabase/Client';
+import { clienteAuth } from '@/src/views/autenticacao/clienteAuth';
+import { ouvirMudancas } from '@/src/views/realtime/clienteRealtime';
 import { useRouter } from 'next/navigation';
 import { Plus, Edit2, Trash2, Wallet, TrendingUp, TrendingDown } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
@@ -40,17 +41,16 @@ export function PaginaFinancas() {
   const [formData, setFormData] = useState(formularioVazio);
   const router = useRouter();
   const { toast } = useToast();
-  const [client] = useState(createClient);
 
   useEffect(() => {
-    client.auth.getUser().then(({ data: { user } }) => {
+    clienteAuth.usuarioAtual().then((user) => {
       if (!user) {
         router.push('/login');
         return;
       }
       setUser(user);
     });
-  }, [client, router]);
+  }, [router]);
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
@@ -70,16 +70,10 @@ export function PaginaFinancas() {
   // ponytail: realtime em finance_transactions — reflete mudanças de outras abas/dispositivos sem refresh.
   useEffect(() => {
     if (!user) return;
-    const channel = client
-      .channel('finances-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'finance_transactions', filter: `user_id=eq.${user.id}` },
-        () => fetchTransactions()
-      )
-      .subscribe();
-    return () => { client.removeChannel(channel); };
-  }, [user, client, fetchTransactions]);
+    return ouvirMudancas('finances-realtime',
+      [{ tabela: 'finance_transactions', filtro: `user_id=eq.${user.id}` }],
+      () => fetchTransactions());
+  }, [user, fetchTransactions]);
 
   const resetForm = () => {
     setShowForm(false);

@@ -6,7 +6,8 @@ import {
   DndContext, DragOverlay, PointerSensor, useSensor, useSensors, pointerWithin,
   type DragStartEvent, type DragEndEvent,
 } from '@dnd-kit/core';
-import { createClient } from '@/src/lib/supabase/Client';
+import { clienteAuth } from '@/src/views/autenticacao/clienteAuth';
+import { ouvirMudancas } from '@/src/views/realtime/clienteRealtime';
 import { taskAPI } from '@/src/views/tarefas/clienteTarefas';
 import { projectAPI } from '@/src/views/projetos/clienteProjetos';
 import { fetchPreferences, savePreferences } from '@/src/views/preferencias/clientePreferencias';
@@ -56,7 +57,6 @@ function waitingLabel(task: Task): string {
 
 export function HomeDashboard() {
   const router = useRouter();
-  const client = useMemo(() => createClient(), []);
   const { toast } = useToast();
   const { groups } = useGroups();
 
@@ -93,7 +93,7 @@ export function HomeDashboard() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { data: { user: authUser } } = await client.auth.getUser();
+      const authUser = await clienteAuth.usuarioAtual();
       if (!authUser) { router.push('/login'); return; }
       if (!alive) return;
       setUser(authUser as AppUser);
@@ -132,7 +132,7 @@ export function HomeDashboard() {
       );
     })();
     return () => { alive = false; };
-  }, [client, router]);
+  }, [router]);
 
   const refetch = useCallback(async () => {
     if (!user) return;
@@ -143,21 +143,18 @@ export function HomeDashboard() {
   // ── Realtime + relógio ───────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
-    const channel = client
-      .channel('home-todos')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'todos', filter: `user_id=eq.${user.id}` },
-        () => { if (!shouldSkipRealtimeFetch()) refetch(); })
+    const pararRealtime = ouvirMudancas('home-todos', [
+      { tabela: 'todos', filtro: `user_id=eq.${user.id}` },
       // Vínculos de dupla vinculação (task_view_groups) mudam sem tocar em
       // `todos` — sem isto, um link criado no quadro de projetos não
       // apareceria aqui até um F5.
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_view_groups' },
-        () => { if (!shouldSkipRealtimeFetch()) refetch(); })
-      .subscribe();
+      { tabela: 'task_view_groups' },
+    ], () => { if (!shouldSkipRealtimeFetch()) refetch(); });
 
     const onExternal = () => refetch();
     window.addEventListener('tasks-updated', onExternal);
-    return () => { client.removeChannel(channel); window.removeEventListener('tasks-updated', onExternal); };
-  }, [user, client, refetch]);
+    return () => { pararRealtime(); window.removeEventListener('tasks-updated', onExternal); };
+  }, [user, refetch]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30_000);

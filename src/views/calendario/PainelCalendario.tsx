@@ -9,7 +9,8 @@ import interactionPlugin, { Draggable } from '@fullcalendar/interaction';
 import type { EventInput, EventDropArg, DateSelectArg, EventClickArg } from '@fullcalendar/core';
 import type { EventResizeDoneArg, DropArg } from '@fullcalendar/interaction';
 
-import { createClient } from '@/src/lib/supabase/Client';
+import { clienteAuth } from '@/src/views/autenticacao/clienteAuth';
+import { ouvirMudancas } from '@/src/views/realtime/clienteRealtime';
 import { taskAPI } from '@/src/views/tarefas/clienteTarefas';
 import { agendaAPI } from './clienteAgenda';
 import { useGroups } from '@/src/views/grupos/GroupsContext';
@@ -59,7 +60,6 @@ function colorFor(task: Task, groupColors: Map<number, string>): string {
 
 export function PainelCalendario() {
   const router = useRouter();
-  const client = useMemo(() => createClient(), []);
   const { toast } = useToast();
   const { groups } = useGroups();
 
@@ -96,7 +96,7 @@ export function PainelCalendario() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { data: { user: authUser } } = await client.auth.getUser();
+      const authUser = await clienteAuth.usuarioAtual();
       if (!authUser) { router.push('/login'); return; }
       if (!alive) return;
       setUser(authUser as AppUser);
@@ -110,7 +110,7 @@ export function PainelCalendario() {
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [client, router]);
+  }, [router]);
 
   const refetch = useCallback(async () => {
     if (!user) return;
@@ -119,15 +119,13 @@ export function PainelCalendario() {
 
   useEffect(() => {
     if (!user) return;
-    const channel = client
-      .channel('calendar-todos')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'todos', filter: `user_id=eq.${user.id}` },
-        () => { if (!shouldSkipRealtimeFetch()) refetch(); })
-      .subscribe();
+    const pararRealtime = ouvirMudancas('calendar-todos',
+      [{ tabela: 'todos', filtro: `user_id=eq.${user.id}` }],
+      () => { if (!shouldSkipRealtimeFetch()) refetch(); });
     const onExternal = () => refetch();
     window.addEventListener('tasks-updated', onExternal);
-    return () => { client.removeChannel(channel); window.removeEventListener('tasks-updated', onExternal); };
-  }, [user, client, refetch]);
+    return () => { pararRealtime(); window.removeEventListener('tasks-updated', onExternal); };
+  }, [user, refetch]);
 
   // Estado das ocorrências (concluída/pulada) só do período visível.
   useEffect(() => {

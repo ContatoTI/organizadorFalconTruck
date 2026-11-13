@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { createClient } from '@/src/lib/supabase/Client';
+import { clienteAuth } from '@/src/views/autenticacao/clienteAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useGroups } from '@/src/views/grupos/GroupsContext';
 import { Plus, X, Edit2, Trash2, Clock, List, Eye, EyeOff, Check, Smile } from 'lucide-react';
@@ -63,7 +63,6 @@ function ConteudoGrupos() {
   });
   const router = useRouter();
   const searchParams = useSearchParams();
-  const client = createClient();
   
   // Refs para evitar closure
   const userRef = useRef(user);
@@ -98,7 +97,7 @@ function ConteudoGrupos() {
 
   useEffect(() => {
     const getUser = async () => {
-      const { data: { user } } = await client.auth.getUser();
+      const user = await clienteAuth.usuarioAtual();
       if (!user) {
         router.push('/login');
         return;
@@ -153,7 +152,7 @@ function ConteudoGrupos() {
     
     // Go back to groups list
     router.push('/groups');
-  }, [client, router, addGroup, updateGroup]);
+  }, [router, addGroup, updateGroup]);
 
   const deleteGroup = async (groupId: number) => {
     if (!confirm('Excluir este grupo? As tarefas associadas voltarão para a Caixa de Entrada.')) return;

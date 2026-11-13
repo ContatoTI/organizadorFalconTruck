@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/src/lib/supabase/Client';
+import { clienteAuth } from '@/src/views/autenticacao/clienteAuth';
+import { ouvirMudancas } from '@/src/views/realtime/clienteRealtime';
 import { useRouter } from 'next/navigation';
 import { X, Edit, Trash2, XCircle, CheckSquare } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
@@ -33,7 +34,6 @@ export function PaginaTodos() {
   const [editingTask, setEditingTask] = useState<Partial<Task> | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const router = useRouter();
-  const client = createClient();
   const { toast } = useToast();
   const undoableDeleteTask = useUndoableDelete<Task>({
     deleteFn: (task) => taskAPI.deleteTask(task.id),
@@ -45,7 +45,7 @@ export function PaginaTodos() {
 
   useEffect(() => {
     const getUser = async () => {
-      const { data: { user } } = await client.auth.getUser();
+      const user = await clienteAuth.usuarioAtual();
       if (!user) {
         router.push('/login');
         return;
@@ -67,17 +67,10 @@ export function PaginaTodos() {
 
       // Realtime subscription — sem filtro de user_id para capturar
       // alterações em tasks de projetos feitas por outros membros
-      const channel = client
-        .channel('todos-changes')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'todos' },
-          () => {
-            if (shouldSkipRealtimeFetch()) return;
-            fetchTasks(false);
-          }
-        )
-        .subscribe();
+      const pararRealtime = ouvirMudancas('todos-changes', [{ tabela: 'todos' }], () => {
+        if (shouldSkipRealtimeFetch()) return;
+        fetchTasks(false);
+      });
 
       const handleTasksUpdated = () => {
         fetchTasks(false);
@@ -97,7 +90,7 @@ export function PaginaTodos() {
       const offMoveError = onTaskMoveError(handleTaskMoveError);
 
       return () => {
-        client.removeChannel(channel);
+        pararRealtime();
         window.removeEventListener('tasks-updated', handleTasksUpdated);
         offMoved();
         offMoveError();
@@ -106,7 +99,7 @@ export function PaginaTodos() {
   }, [user]);
 
   const fetchGroups = async () => {
-    const { data: { user } } = await client.auth.getUser();
+    const user = await clienteAuth.usuarioAtual();
     if (!user) return;
 
     const data = await grupoAPI.list('title').catch(() => null);

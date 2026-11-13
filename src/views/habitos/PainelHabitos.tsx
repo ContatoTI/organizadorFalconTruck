@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/src/lib/supabase/Client';
+import { clienteAuth } from '@/src/views/autenticacao/clienteAuth';
 import {
   indexLogs, habitAppliesOn, currentStreak, completionRate,
 } from '@/src/models/habitos/regras';
@@ -41,7 +41,6 @@ const GRID_DAYS = 84;
  */
 export function PainelHabitos() {
   const router = useRouter();
-  const client = useMemo(() => createClient(), []);
   const { toast } = useToast();
 
   const [user, setUser] = useState<AppUser | null>(null);
@@ -65,7 +64,7 @@ export function PainelHabitos() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { data: { user: authUser } } = await client.auth.getUser();
+      const authUser = await clienteAuth.usuarioAtual();
       if (!authUser) { router.push('/login'); return; }
       if (!alive) return;
       setUser(authUser as AppUser);
@@ -82,7 +81,7 @@ export function PainelHabitos() {
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [client, router]);
+  }, [router]);
 
   const logsByHabit = useMemo(() => indexLogs(logs), [logs]);
 

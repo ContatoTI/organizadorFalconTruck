@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/src/lib/supabase/Client';
+import { clienteAuth } from '@/src/views/autenticacao/clienteAuth';
 import { taskAPI } from '@/src/views/tarefas/clienteTarefas';
 import {
   buildGoalTree, flattenTree, goalProgress, collectSubtreeIds,
@@ -39,7 +39,6 @@ type AppUser = { id: string; email?: string };
  */
 export function PainelMetas() {
   const router = useRouter();
-  const client = useMemo(() => createClient(), []);
   const { toast } = useToast();
 
   const [user, setUser] = useState<AppUser | null>(null);
@@ -62,7 +61,7 @@ export function PainelMetas() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { data: { user: authUser } } = await client.auth.getUser();
+      const authUser = await clienteAuth.usuarioAtual();
       if (!authUser) { router.push('/login'); return; }
       if (!alive) return;
       setUser(authUser as AppUser);
@@ -78,7 +77,7 @@ export function PainelMetas() {
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [client, router]);
+  }, [router]);
 
   const reloadTasks = useCallback(async (goalList: Goal[]) => {
     const goalTasks = await goalAPI.tasksForGoals(goalList.map(g => g.id));

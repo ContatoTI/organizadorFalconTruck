@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/src/lib/supabase/Client';
+import { clienteAuth } from '@/src/views/autenticacao/clienteAuth';
 import { Share2, Users, Folder, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { shareAPI } from './clienteCompartilhamentos';
@@ -22,8 +22,7 @@ export function PaginaCompartilhamentos() {
 
   useEffect(() => {
     const load = async () => {
-      const client = createClient();
-      const { data: { user: u } } = await client.auth.getUser();
+      const u = await clienteAuth.usuarioAtual();
       if (!u) return;
       setUser(u);
 

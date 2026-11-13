@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/src/lib/supabase/Client';
+import { clienteAuth } from '@/src/views/autenticacao/clienteAuth';
 import { useRouter } from 'next/navigation';
 import { RotateCcw, X, Trash2 } from 'lucide-react';
 import { PageShell, PageHeader, EmptyState, ListCard, ListRow, RowAction, PageSkeleton } from '@/src/components/ui/Page';
@@ -27,12 +27,11 @@ export function PaginaLixeira() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const client = createClient();
   const { toast } = useToast();
 
   useEffect(() => {
     const getUser = async () => {
-      const { data: { user } } = await client.auth.getUser();
+      const user = await clienteAuth.usuarioAtual();
       if (!user) {
         router.push('/login');
         return;
