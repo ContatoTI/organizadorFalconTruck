@@ -21,6 +21,11 @@ describe('chamarApi', () => {
     await expect(chamarApi('/api/x', { method: 'DELETE' })).resolves.toBeUndefined();
   });
 
+  it('201 sem corpo devolve undefined (ex.: convite criado)', async () => {
+    vi.stubGlobal('fetch', async () => resposta(null, 201));
+    await expect(chamarApi('/api/x', { method: 'PUT' })).resolves.toBeUndefined();
+  });
+
   it('erro vira exceção com a mensagem do servidor', async () => {
     vi.stubGlobal('fetch', async () => resposta({ erro: 'Informe a descrição.' }, 400));
     await expect(chamarApi('/api/x')).rejects.toThrow('Informe a descrição.');

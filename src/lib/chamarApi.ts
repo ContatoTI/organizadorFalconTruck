@@ -10,7 +10,9 @@ export async function chamarApi<T = void>(url: string, init: RequestInit & { jso
     const corpo = await resp.json().catch(() => null);
     throw new Error(corpo?.erro ?? `Erro ${resp.status}`);
   }
-  return (resp.status === 204 ? undefined : await resp.json()) as T;
+  // Resposta sem corpo (204, ou 201 de "criado") é sucesso sem dados.
+  const texto = await resp.text();
+  return (texto ? JSON.parse(texto) : undefined) as T;
 }
 
 export type Resultado = { success: boolean; error?: string };
