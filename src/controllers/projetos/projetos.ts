@@ -43,7 +43,7 @@ export function excluirProjeto(idTxt: string) {
     const id = idNumerico(idTxt);
     const sessao = await exigirLogin();
     if (sessao instanceof Response) return sessao;
-    return (await projetos.excluir(sessao.db, id))
+    return (await projetos.excluir(sessao.db, sessao.usuario.id, id))
       ? new Response(null, { status: 204 })
       : erro(403, 'Você não tem permissão para excluir este projeto.');
   });

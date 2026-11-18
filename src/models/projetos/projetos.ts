@@ -166,11 +166,17 @@ export async function atualizar(db: SupabaseClient, projetoId: number, alteracao
 /**
  * Exclui o projeto. As tarefas voltam para a Caixa de Entrada (sem projeto e
  * sem pasta) antes de apagar — o banco também solta, mas fica explícito.
+ * Só o dono exclui: confere antes de mexer nas tarefas, para quem não é dono
+ * não esvaziar o projeto. Devolve false se não for o dono (ou não existir).
  */
-export async function excluir(db: SupabaseClient, projetoId: number): Promise<boolean> {
+export async function excluir(db: SupabaseClient, usuarioId: string, projetoId: number): Promise<boolean> {
+  const busca = await db.from('projects').select('owner_id').eq('id', projetoId).maybeSingle();
+  falhou(busca.error);
+  if ((busca.data as { owner_id: string } | null)?.owner_id !== usuarioId) return false;
+
   const soltar = await db.from('todos').update({ project_id: null, section_id: null }).eq('project_id', projetoId);
   falhou(soltar.error);
-  const { data, error } = await db.from('projects').delete().eq('id', projetoId).select('id');
+  const { data, error } = await db.from('projects').delete().eq('id', projetoId).eq('owner_id', usuarioId).select('id');
   falhou(error);
   return (data ?? []).length > 0;
 }

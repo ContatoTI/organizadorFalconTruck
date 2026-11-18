@@ -72,13 +72,28 @@ describe('escrita', () => {
     expect(await atualizar(dbRoteiro({ projects: [{ data: [] }] }).db, 1, { name: 'X' })).toBe(false);
   });
 
-  it('excluir solta as tarefas antes de apagar', async () => {
-    const { db, gravacoes } = dbRoteiro({ todos: [{}], projects: [{ data: [{ id: 4 }] }] });
-    expect(await excluir(db, 4)).toBe(true);
+  it('excluir (dono) solta as tarefas antes de apagar', async () => {
+    const { db, gravacoes } = dbRoteiro({
+      todos: [{}],
+      projects: [{ data: { owner_id: 'u1' } }, { data: [{ id: 4 }] }],
+    });
+    expect(await excluir(db, 'u1', 4)).toBe(true);
     expect(gravacoes.map(g => [g.tabela, g.op, g.valor])).toEqual([
       ['todos', 'update', { project_id: null, section_id: null }],
       ['projects', 'delete', undefined],
     ]);
+  });
+
+  it('excluir (não dono) não mexe nas tarefas nem apaga', async () => {
+    const { db, gravacoes } = dbRoteiro({ todos: [{}], projects: [{ data: { owner_id: 'outro' } }] });
+    expect(await excluir(db, 'u1', 4)).toBe(false);
+    expect(gravacoes).toEqual([]);
+  });
+
+  it('excluir projeto inexistente: false, sem gravar nada', async () => {
+    const { db, gravacoes } = dbRoteiro({ projects: [{ data: null }] });
+    expect(await excluir(db, 'u1', 99)).toBe(false);
+    expect(gravacoes).toEqual([]);
   });
 });
 
