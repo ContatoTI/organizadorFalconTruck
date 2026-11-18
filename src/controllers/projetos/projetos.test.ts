@@ -45,8 +45,8 @@ describe('projetos', () => {
   });
 
   it('cria com pastas iniciais', async () => {
-    expect((await criarProjeto(req({ nome: 'Obra', cor: '#1', pastas: ['A'] }))).status).toBe(201);
-    expect(model.criar).toHaveBeenCalledWith(expect.anything(), 'u1', { nome: 'Obra', cor: '#1', pastas: ['A'] });
+    expect((await criarProjeto(req({ nome: 'Obra', cor: '#111', pastas: ['A'] }))).status).toBe(201);
+    expect(model.criar).toHaveBeenCalledWith(expect.anything(), 'u1', { nome: 'Obra', cor: '#111', pastas: ['A'] });
     expect((await criarProjeto(req({ nome: '' }))).status).toBe(400);
   });
 

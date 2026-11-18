@@ -21,6 +21,22 @@ describe('validação', () => {
     expect(() => validarAlteracao({ owner_id: 'x' })).toThrow(/Nada/);
     expect(() => validarAlteracao({ show_on_dashboard: 'sim' })).toThrow(/Visibilidade/);
   });
+  it('cor: aceita hexadecimal, sem cor usa a padrão, recusa o resto', () => {
+    expect(validarNovo({ nome: 'X', cor: '#AbCdEf' }).cor).toBe('#AbCdEf');
+    expect(validarNovo({ nome: 'X', cor: '' }).cor).toBe('#6366f1');
+    expect(() => validarNovo({ nome: 'X', cor: 'red' })).toThrow(/Cor/);
+    expect(() => validarNovo({ nome: 'X', cor: 123 })).toThrow(/Cor/);
+    expect(validarAlteracao({ color: '#fff' })).toEqual({ color: '#fff' });
+    expect(() => validarAlteracao({ color: 'javascript:alert(1)' })).toThrow(/Cor/);
+    expect(() => validarAlteracao({ color: null })).toThrow(/Cor/);
+  });
+  it('descrição: limpa espaços, vazio vira null, recusa tipo errado e texto enorme', () => {
+    expect(validarAlteracao({ description: '  Obra nova  ' })).toEqual({ description: 'Obra nova' });
+    expect(validarAlteracao({ description: '   ' })).toEqual({ description: null });
+    expect(validarAlteracao({ description: null })).toEqual({ description: null });
+    expect(() => validarAlteracao({ description: 42 })).toThrow(/Descrição/);
+    expect(() => validarAlteracao({ description: 'a'.repeat(2001) })).toThrow(/longa/);
+  });
 });
 
 describe('listagens', () => {
@@ -41,18 +57,18 @@ describe('listagens', () => {
       todos: [{ data: [{ project_id: 30 }] }, { data: [{ project_id: 1 }] }],
       sections: [{ data: [{ project_id: 20 }] }],
     });
-    expect((await listarTodos(db, 'u1', 0)).map(p => p.id)).toEqual([1, 10, 20, 30]);
+    expect((await listarTodos(db, 'u1')).map(p => p.id)).toEqual([1, 10, 20, 30]);
   });
 
-  it('todos: projeto que a RLS ainda não mostra entra pela última tentativa', async () => {
+  it('todos: projeto que o filtro por id não trouxe entra pela busca geral, sem esperas', async () => {
     const { db } = dbRoteiro({
-      projects: [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [{ id: 10 }, { id: 99 }] }],
+      projects: [{ data: [] }, { data: [] }, { data: [{ id: 10 }, { id: 99 }] }],
       project_members: [{ data: [{ project_id: 10 }] }],
       section_shares: [{ data: [] }],
       task_shares: [{ data: [] }],
       todos: [{ data: [] }],
     });
-    expect((await listarTodos(db, 'u1', 0)).map(p => p.id)).toEqual([10]);
+    expect((await listarTodos(db, 'u1')).map(p => p.id)).toEqual([10]);
   });
 });
 

@@ -13,6 +13,23 @@ const CAMPOS_ALTERAVEIS = ['name', 'color', 'description', 'show_on_dashboard'] 
 const COLUNAS_BASICAS = 'id, owner_id, name, color, show_on_dashboard, created_at';
 const COR_PADRAO = '#6366f1';
 const MAX_PASTAS_INICIAIS = 50;
+const MAX_DESCRICAO = 2000;
+/** Cor em hexadecimal: #abc ou #aabbcc. */
+const COR_VALIDA = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+function validarCor(cor: unknown): string {
+  if (typeof cor !== 'string' || !COR_VALIDA.test(cor)) throw new ErroValidacao('Cor inválida.');
+  return cor;
+}
+
+/** Descrição: texto (vazio vira null) ou null, com limite de tamanho. */
+function validarDescricao(descricao: unknown): string | null {
+  if (descricao === null) return null;
+  if (typeof descricao !== 'string') throw new ErroValidacao('Descrição inválida.');
+  const texto = descricao.trim();
+  if (texto.length > MAX_DESCRICAO) throw new ErroValidacao(`Descrição muito longa (máximo ${MAX_DESCRICAO} caracteres).`);
+  return texto || null;
+}
 
 function falhou(error: { message: string } | null) {
   if (error) throw new Error(error.message);
@@ -25,7 +42,7 @@ const unicos = <T extends { id: number }>(lista: T[]) => Array.from(new Map(list
 export function validarNovo(entrada: Record<string, unknown>): { nome: string; cor: string; pastas: string[] } {
   const nome = typeof entrada.nome === 'string' ? entrada.nome.trim() : '';
   if (!nome) throw new ErroValidacao('Título não pode estar vazio');
-  const cor = typeof entrada.cor === 'string' && entrada.cor ? entrada.cor : COR_PADRAO;
+  const cor = entrada.cor === undefined || entrada.cor === null || entrada.cor === '' ? COR_PADRAO : validarCor(entrada.cor);
   const pastas = Array.isArray(entrada.pastas)
     ? entrada.pastas.filter((t): t is string => typeof t === 'string').map(t => t.trim()).filter(Boolean)
     : [];
@@ -43,6 +60,8 @@ export function validarAlteracao(entrada: Record<string, unknown>): AlteracaoPro
     if (!nome) throw new ErroValidacao('Título não pode estar vazio');
     saida.name = nome;
   }
+  if ('color' in saida) saida.color = validarCor(saida.color);
+  if ('description' in saida) saida.description = validarDescricao(saida.description);
   if ('show_on_dashboard' in saida && typeof saida.show_on_dashboard !== 'boolean') {
     throw new ErroValidacao('Visibilidade inválida.');
   }
@@ -99,23 +118,21 @@ async function idsSoPorCompartilhamento(db: SupabaseClient, usuarioId: string): 
 }
 
 /**
- * Busca projetos por id. Projeto recém-compartilhado pode demorar a aparecer
- * por causa da RLS; por isso tenta de novo algumas vezes antes de desistir.
+ * Busca projetos por id. Se faltar algum (a RLS às vezes não devolve pelo
+ * filtro de ids), tenta uma vez só com tudo o que a RLS deixa ver — sem
+ * esperas, para a lista não travar quando um projeto realmente não é visível.
  */
-async function buscarPorIds(db: SupabaseClient, ids: number[], tentativas = 3, esperaMs = 200): Promise<Project[]> {
-  for (let i = 0; i <= tentativas; i++) {
-    const { data, error } = await db.from('projects').select('*').in('id', ids);
-    if (!error && data && data.length === ids.length) return data as Project[];
-    if (i < tentativas) await new Promise(r => setTimeout(r, esperaMs * (i + 1)));
-  }
-  // Última tentativa: tudo o que a RLS deixa ver, filtrado pelos ids.
+async function buscarPorIds(db: SupabaseClient, ids: number[]): Promise<Project[]> {
+  const primeira = await db.from('projects').select('*').in('id', ids);
+  if (!primeira.error && primeira.data && primeira.data.length === ids.length) return primeira.data as Project[];
+
   const { data } = await db.from('projects').select('*');
   const procurados = new Set(ids);
   return ((data || []) as Project[]).filter(p => procurados.has(p.id));
 }
 
 /** Todos os projetos que aparecem para você: dono, membro, ou por pasta/tarefa compartilhada. */
-export async function listarTodos(db: SupabaseClient, usuarioId: string, esperaMs = 200): Promise<Project[]> {
+export async function listarTodos(db: SupabaseClient, usuarioId: string): Promise<Project[]> {
   const [proprios, membro, soCompartilhados] = await Promise.all([
     db.from('projects').select('*').eq('owner_id', usuarioId),
     db.from('project_members').select('project_id').eq('user_id', usuarioId),
@@ -131,7 +148,7 @@ export async function listarTodos(db: SupabaseClient, usuarioId: string, esperaM
     ...soCompartilhados,
   ])].filter(id => !meusIds.has(id));
 
-  const outros = outrosIds.length > 0 ? await buscarPorIds(db, outrosIds, 3, esperaMs) : [];
+  const outros = outrosIds.length > 0 ? await buscarPorIds(db, outrosIds) : [];
   return unicos([...meus, ...outros]);
 }
 

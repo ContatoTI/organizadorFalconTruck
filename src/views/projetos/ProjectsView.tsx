@@ -3,9 +3,8 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { Edit2, X, FolderKanban, Plus } from 'lucide-react';
-import { cn, PROJECT_COLORS } from '@/src/lib/utils';
-import { projectAPI } from '@/src/views/projetos/clienteProjetos';
 import { podeEditarProjeto } from '@/src/views/projetos/regrasProjeto';
+import { EditarProjetoDialog } from '@/src/views/projetos/EditarProjetoDialog';
 import type { Project } from '@/types/index';
 
 interface ProjectsViewProps {
@@ -18,47 +17,10 @@ interface ProjectsViewProps {
 
 export function ProjectsView({ projects, userId, onUpdateProjects, onClose, onNovoProjeto }: ProjectsViewProps) {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editColor, setEditColor] = useState('#6366f1');
-  const [editDescription, setEditDescription] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const openEdit = (project: Project, e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setSaveError(null);
-    setEditingProject(project);
-    setEditName(project.name);
-    setEditColor(project.color);
-    setEditDescription(project.description ?? '');
-  };
-
-  const saveEdit = async () => {
-    if (!editingProject || !editName.trim() || saving) return;
-    setSaving(true);
-    setSaveError(null);
-
-    const { success, error } = await projectAPI.updateProject(editingProject.id, {
-      name: editName.trim(),
-      color: editColor,
-      description: editDescription.trim() || null,
-    });
-
-    if (success) {
-      onUpdateProjects(
-        projects.map(p =>
-          p.id === editingProject.id
-            ? { ...p, name: editName.trim(), color: editColor, description: editDescription.trim() || null }
-            : p
-        )
-      );
-      setEditingProject(null);
-      window.dispatchEvent(new CustomEvent('projects_updated'));
-    } else {
-      setSaveError(error ?? 'Não foi possível salvar o projeto. Tente de novo.');
-    }
-    setSaving(false);
+  const aoSalvar = (salvo: Project) => {
+    onUpdateProjects(projects.map(p => (p.id === salvo.id ? salvo : p)));
+    setEditingProject(null);
   };
 
   return (
@@ -67,18 +29,19 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose, onNo
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold">Projetos</h2>
           <div className="flex items-center gap-2">
-          <button
-            onClick={onNovoProjeto}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="w-4 h-4" /> Novo projeto
-          </button>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-accent rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+            <button
+              onClick={onNovoProjeto}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="w-4 h-4" /> Novo projeto
+            </button>
+            <button
+              onClick={onClose}
+              aria-label="Fechar"
+              className="p-2 hover:bg-accent rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
         </div>
 
@@ -99,111 +62,50 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose, onNo
             {projects.map((project) => {
               const isOwner = podeEditarProjeto(project, userId);
               return (
-                <Link
-                  key={project.id}
-                  href={`/?project=${project.id}`}
-                  onClick={onClose}
-                  className="group relative bg-card rounded-xl p-5 border border-border shadow-card hover:shadow-card-hover hover:border-primary/30 transition-all"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
+                // O lápis fica fora do link: clicar nele nunca abre o projeto por engano.
+                <div key={project.id} className="relative">
+                  <Link
+                    href={`/?project=${project.id}`}
+                    onClick={onClose}
+                    className="block h-full bg-card rounded-xl p-5 border border-border shadow-card hover:shadow-card-hover hover:border-primary/30 transition-all"
+                  >
+                    <div className="flex items-center gap-3 pr-8">
                       <div
                         className="w-4 h-4 rounded-full flex-shrink-0"
                         style={{ backgroundColor: project.color }}
                       />
                       <h3 className="font-medium text-base truncate">{project.name}</h3>
                     </div>
-                    {isOwner && (
-                      <button
-                        onClick={(e) => openEdit(project, e)}
-                        aria-label="Editar projeto"
-                        className="p-1.5 hover:bg-accent rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <Edit2 className="w-4 h-4 text-muted-foreground" />
-                      </button>
+                    {project.description && (
+                      <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{project.description}</p>
                     )}
-                  </div>
-                  {project.description && (
-                    <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{project.description}</p>
+                    {!isOwner && (
+                      <span className="text-xs text-muted-foreground mt-2 block">Compartilhado</span>
+                    )}
+                  </Link>
+                  {isOwner && (
+                    // Sempre visível (celular/tablet não têm "passar o mouse").
+                    <button
+                      onClick={() => setEditingProject(project)}
+                      aria-label={`Editar projeto ${project.name}`}
+                      title="Editar projeto"
+                      className="absolute top-4 right-4 p-1.5 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-accent focus-visible:text-foreground transition-colors"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
                   )}
-                  {!isOwner && (
-                    <span className="text-xs text-muted-foreground mt-2 block">Compartilhado</span>
-                  )}
-                </Link>
+                </div>
               );
             })}
           </div>
         )}
       </div>
 
-      {editingProject && (
-        <div
-          className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center z-50"
-          onClick={() => setEditingProject(null)}
-        >
-          <div
-            className="bg-card rounded-xl p-6 w-80 shadow-modal border border-border"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Editar Projeto</h3>
-              <button
-                onClick={() => setEditingProject(null)}
-                className="p-1 hover:bg-accent rounded"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm text-muted-foreground block mb-1">Nome do projeto</label>
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  placeholder="Nome do projeto"
-                  className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label className="text-sm text-muted-foreground block mb-1">Cor</label>
-                <div className="flex gap-2 flex-wrap">
-                  {PROJECT_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => setEditColor(color)}
-                      className={cn(
-                        'w-8 h-8 rounded-full transition-transform',
-                        editColor === color && 'ring-2 ring-offset-2 ring-primary scale-110'
-                      )}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="text-sm text-muted-foreground block mb-1">Descrição</label>
-                <textarea
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  placeholder="Descrição do projeto"
-                  rows={3}
-                  className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-                />
-              </div>
-              {saveError && <p className="text-sm text-destructive">{saveError}</p>}
-              <button
-                onClick={saveEdit}
-                disabled={saving || !editName.trim()}
-                className="w-full py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-              >
-                {saving ? 'Salvando...' : 'Salvar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <EditarProjetoDialog
+        projeto={editingProject}
+        onFechar={() => setEditingProject(null)}
+        onSalvo={aoSalvar}
+      />
     </>
   );
 }

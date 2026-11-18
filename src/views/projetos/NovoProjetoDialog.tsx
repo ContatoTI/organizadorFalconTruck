@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { cn, PROJECT_COLORS } from '@/src/lib/utils';
+import { SeletorCor } from '@/src/views/projetos/SeletorCor';
 import { projectAPI } from '@/src/views/projetos/clienteProjetos';
 import { useToast } from '@/src/components/Toast';
 import { MODELOS_PASTAS, pastasDoTexto, erroNomeProjeto } from '@/src/views/projetos/regrasProjeto';
@@ -77,18 +77,7 @@ export function NovoProjetoDialog({ open, onOpenChange, onCriado }: Props) {
 
           <div>
             <label className="text-sm text-muted-foreground block mb-1">Cor</label>
-            <div className="flex gap-2 flex-wrap">
-              {PROJECT_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-label={`Cor ${c}`}
-                  onClick={() => setCor(c)}
-                  className={cn('w-7 h-7 rounded-full transition-transform', cor === c && 'ring-2 ring-offset-2 ring-primary scale-110')}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
+            <SeletorCor valor={cor} onChange={setCor} disabled={salvando} />
           </div>
 
           <div>
