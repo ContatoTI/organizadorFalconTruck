@@ -1,9 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { dbRoteiro } from '@/src/lib/testes/dbRoteiro';
 import { ErroValidacao } from '@/src/lib/erros';
 import {
   validarNovo, validarAlteracao, listarProprioseMembro, listarTodos, criar, atualizar, excluir,
-  acesso, projetosQueCompartilhei, projetosQueParticipo,
+  acesso, projetosQueCompartilhei, projetosQueParticipo, AVISO_PASTAS_NAO_CRIADAS,
 } from './projetos';
 
 describe('validação', () => {
@@ -59,12 +59,19 @@ describe('listagens', () => {
 describe('escrita', () => {
   it('cria o projeto com as pastas iniciais em ordem', async () => {
     const { db, gravacoes } = dbRoteiro({ projects: [{ data: { id: 9 } }], sections: [{}] });
-    await criar(db, 'u1', { nome: 'Obra', cor: '#111', pastas: ['A', 'B'] });
+    expect(await criar(db, 'u1', { nome: 'Obra', cor: '#111', pastas: ['A', 'B'] })).toEqual({ projeto: { id: 9 } });
     expect(gravacoes[0].valor).toEqual({ owner_id: 'u1', name: 'Obra', color: '#111' });
     expect(gravacoes[1].valor).toEqual([
       { user_id: 'u1', project_id: 9, title: 'A', order: 0 },
       { user_id: 'u1', project_id: 9, title: 'B', order: 1 },
     ]);
+  });
+
+  it('pastas iniciais falham: projeto fica criado e volta aviso', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { db } = dbRoteiro({ projects: [{ data: { id: 9 } }], sections: [{ error: { message: 'falhou' } }] });
+    expect(await criar(db, 'u1', { nome: 'Obra', cor: '#111', pastas: ['A'] }))
+      .toEqual({ projeto: { id: 9 }, aviso: AVISO_PASTAS_NAO_CRIADAS });
   });
 
   it('alterar devolve false sem permissão', async () => {

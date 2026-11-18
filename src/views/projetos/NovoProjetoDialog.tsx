@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn, PROJECT_COLORS } from '@/src/lib/utils';
 import { projectAPI } from '@/src/views/projetos/clienteProjetos';
+import { useToast } from '@/src/components/Toast';
 import { MODELOS_PASTAS, pastasDoTexto, erroNomeProjeto } from '@/src/views/projetos/regrasProjeto';
 import type { Project } from '@/types/index';
 
@@ -22,6 +23,7 @@ const COR_PADRAO = '#6366f1';
 /** Janela "Novo projeto": Enter cria, mostra erro na tela e já abre o projeto criado. */
 export function NovoProjetoDialog({ open, onOpenChange, onCriado }: Props) {
   const router = useRouter();
+  const { toast } = useToast();
   const [nome, setNome] = useState('');
   const [cor, setCor] = useState(COR_PADRAO);
   const [pastas, setPastas] = useState('');
@@ -48,6 +50,7 @@ export function NovoProjetoDialog({ open, onOpenChange, onCriado }: Props) {
       return;
     }
     onCriado(resultado.data);
+    if (resultado.aviso) toast(resultado.aviso, 'error', { duration: 8000 });
     window.dispatchEvent(new CustomEvent('projects_updated'));
     limpar();
     onOpenChange(false);

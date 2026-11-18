@@ -11,7 +11,7 @@ vi.mock('@/src/models/projetos/projetos', async (original) => {
     ...real,
     listarTodos: vi.fn(async () => [{ id: 1 }]),
     listarProprioseMembro: vi.fn(async () => [{ id: 2 }]),
-    criar: vi.fn(async () => ({ id: 3 })),
+    criar: vi.fn(async () => ({ projeto: { id: 3 } })),
     atualizar: vi.fn(async () => true),
     excluir: vi.fn(async () => true),
     acesso: vi.fn(async () => ({ dono: true, membro: true })),
@@ -48,6 +48,14 @@ describe('projetos', () => {
     expect((await criarProjeto(req({ nome: 'Obra', cor: '#1', pastas: ['A'] }))).status).toBe(201);
     expect(model.criar).toHaveBeenCalledWith(expect.anything(), 'u1', { nome: 'Obra', cor: '#1', pastas: ['A'] });
     expect((await criarProjeto(req({ nome: '' }))).status).toBe(400);
+  });
+
+  it('criar: devolve o projeto e, se as pastas falharem, o aviso junto', async () => {
+    expect(await (await criarProjeto(req({ nome: 'Obra' }))).json()).toEqual({ id: 3 });
+    vi.mocked(model.criar).mockResolvedValueOnce({ projeto: { id: 4 } as never, aviso: 'sem pastas' });
+    const resp = await criarProjeto(req({ nome: 'Obra', pastas: ['A'] }));
+    expect(resp.status).toBe(201);
+    expect(await resp.json()).toEqual({ id: 4, aviso: 'sem pastas' });
   });
 
   it('alterar/excluir sem permissão: 403', async () => {

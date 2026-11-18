@@ -18,6 +18,12 @@ describe('projectAPI (tela)', () => {
     expect(JSON.parse(String(fetchFalso.mock.calls[0][1].body))).toEqual({ nome: 'Obra', cor: '#111', pastas: ['A'] });
   });
 
+  it('criou sem as pastas: separa o aviso do projeto', async () => {
+    fetchFalso.mockImplementationOnce(async () => resposta({ id: 9, aviso: 'sem pastas' }, 201));
+    expect(await projectAPI.createProject('Obra', '#111', ['A']))
+      .toEqual({ success: true, data: { id: 9 }, aviso: 'sem pastas' });
+  });
+
   it('sem permissão vira success false com a mensagem', async () => {
     fetchFalso.mockImplementationOnce(async () => resposta({ erro: 'Você não tem permissão para editar este projeto.' }, 403));
     expect(await projectAPI.updateProject(1, { name: 'X' }))

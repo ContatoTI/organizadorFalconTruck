@@ -137,8 +137,17 @@ export async function listarTodos(db: SupabaseClient, usuarioId: string, esperaM
 
 // ── Escrita ─────────────────────────────────────────────────────────────────
 
-/** Cria o projeto e, se vierem, as pastas iniciais (na ordem dada). */
-export async function criar(db: SupabaseClient, usuarioId: string, novo: { nome: string; cor: string; pastas: string[] }): Promise<Project> {
+export const AVISO_PASTAS_NAO_CRIADAS = 'Projeto criado, mas as pastas não foram criadas. Crie-as manualmente.';
+
+/**
+ * Cria o projeto e, se vierem, as pastas iniciais (na ordem dada).
+ * Se só as pastas falharem, o projeto fica criado e volta um aviso para a tela.
+ */
+export async function criar(
+  db: SupabaseClient,
+  usuarioId: string,
+  novo: { nome: string; cor: string; pastas: string[] },
+): Promise<{ projeto: Project; aviso?: string }> {
   const { data, error } = await db
     .from('projects')
     .insert({ owner_id: usuarioId, name: novo.nome, color: novo.cor })
@@ -151,9 +160,12 @@ export async function criar(db: SupabaseClient, usuarioId: string, novo: { nome:
     const { error: erroPastas } = await db.from('sections').insert(
       novo.pastas.map((title, order) => ({ user_id: usuarioId, project_id: projeto.id, title, order })),
     );
-    if (erroPastas) console.error('[projetos] pastas iniciais não criadas:', erroPastas.message);
+    if (erroPastas) {
+      console.error('[projetos] pastas iniciais não criadas:', erroPastas.message);
+      return { projeto, aviso: AVISO_PASTAS_NAO_CRIADAS };
+    }
   }
-  return projeto;
+  return { projeto };
 }
 
 /** Devolve false quando a RLS não deixou alterar (você não tem permissão). */

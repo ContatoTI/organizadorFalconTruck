@@ -25,9 +25,14 @@ export const projectAPI = {
   /** Só dono/membro, colunas resumidas (tela inicial e calendário). */
   getOwnAndMemberProjects: () => ouVazio('getOwnAndMemberProjects', () => chamarApi<Project[]>(`${API}?escopo=basico`)),
 
-  async createProject(title: string, color: string, sectionTitles: string[] = []): Promise<Resultado & { data?: Project }> {
+  /** `aviso` vem quando o projeto foi criado mas as pastas iniciais não. */
+  async createProject(title: string, color: string, sectionTitles: string[] = []): Promise<Resultado & { data?: Project; aviso?: string }> {
     try {
-      return { success: true, data: await chamarApi<Project>(API, { method: 'POST', json: { nome: title, cor: color, pastas: sectionTitles } }) };
+      const { aviso, ...data } = await chamarApi<Project & { aviso?: string }>(API, {
+        method: 'POST',
+        json: { nome: title, cor: color, pastas: sectionTitles },
+      });
+      return aviso ? { success: true, data, aviso } : { success: true, data };
     } catch (e) {
       return { success: false, error: (e as Error).message };
     }

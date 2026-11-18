@@ -22,7 +22,9 @@ export function criarProjeto(request: Request) {
     const sessao = await exigirLogin();
     if (sessao instanceof Response) return sessao;
     const novo = projetos.validarNovo(await lerJson(request));
-    return Response.json(await projetos.criar(sessao.db, sessao.usuario.id, novo), { status: 201 });
+    const { projeto, aviso } = await projetos.criar(sessao.db, sessao.usuario.id, novo);
+    // Resposta = o projeto; "aviso" só vem quando as pastas iniciais falharam.
+    return Response.json(aviso ? { ...projeto, aviso } : projeto, { status: 201 });
   });
 }
 
