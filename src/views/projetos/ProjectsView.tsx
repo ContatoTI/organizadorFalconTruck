@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Edit2, X, FolderKanban, Plus } from 'lucide-react';
 import { cn, PROJECT_COLORS } from '@/src/lib/utils';
 import { projectAPI } from '@/src/views/projetos/clienteProjetos';
+import { podeEditarProjeto } from '@/src/views/projetos/regrasProjeto';
 import type { Project } from '@/types/index';
 
 interface ProjectsViewProps {
@@ -21,10 +22,12 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose, onNo
   const [editColor, setEditColor] = useState('#6366f1');
   const [editDescription, setEditDescription] = useState('');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const openEdit = (project: Project, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
+    setSaveError(null);
     setEditingProject(project);
     setEditName(project.name);
     setEditColor(project.color);
@@ -34,8 +37,9 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose, onNo
   const saveEdit = async () => {
     if (!editingProject || !editName.trim() || saving) return;
     setSaving(true);
+    setSaveError(null);
 
-    const { success } = await projectAPI.updateProject(editingProject.id, {
+    const { success, error } = await projectAPI.updateProject(editingProject.id, {
       name: editName.trim(),
       color: editColor,
       description: editDescription.trim() || null,
@@ -51,6 +55,8 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose, onNo
       );
       setEditingProject(null);
       window.dispatchEvent(new CustomEvent('projects_updated'));
+    } else {
+      setSaveError(error ?? 'Não foi possível salvar o projeto. Tente de novo.');
     }
     setSaving(false);
   };
@@ -91,7 +97,7 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose, onNo
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {projects.map((project) => {
-              const isOwner = project.owner_id === userId;
+              const isOwner = podeEditarProjeto(project, userId);
               return (
                 <Link
                   key={project.id}
@@ -107,12 +113,15 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose, onNo
                       />
                       <h3 className="font-medium text-base truncate">{project.name}</h3>
                     </div>
-                    <button
-                      onClick={(e) => openEdit(project, e)}
-                      className="p-1.5 hover:bg-accent rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Edit2 className="w-4 h-4 text-muted-foreground" />
-                    </button>
+                    {isOwner && (
+                      <button
+                        onClick={(e) => openEdit(project, e)}
+                        aria-label="Editar projeto"
+                        className="p-1.5 hover:bg-accent rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Edit2 className="w-4 h-4 text-muted-foreground" />
+                      </button>
+                    )}
                   </div>
                   {project.description && (
                     <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{project.description}</p>
@@ -183,6 +192,7 @@ export function ProjectsView({ projects, userId, onUpdateProjects, onClose, onNo
                   className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                 />
               </div>
+              {saveError && <p className="text-sm text-destructive">{saveError}</p>}
               <button
                 onClick={saveEdit}
                 disabled={saving || !editName.trim()}

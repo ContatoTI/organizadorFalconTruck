@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { pastasDoTexto, erroNomeProjeto, confirmaExclusao, MODELOS_PASTAS } from './regrasProjeto';
+import { pastasDoTexto, erroNomeProjeto, confirmaExclusao, podeEditarProjeto, MODELOS_PASTAS } from './regrasProjeto';
+
+describe('podeEditarProjeto', () => {
+  it('dono pode editar', () => {
+    expect(podeEditarProjeto({ owner_id: 'u1' }, 'u1')).toBe(true);
+  });
+
+  it('membro/compartilhado não pode; sem usuário também não', () => {
+    expect(podeEditarProjeto({ owner_id: 'outro' }, 'u1')).toBe(false);
+    expect(podeEditarProjeto({ owner_id: '' }, '')).toBe(false);
+  });
+});
 
 describe('pastasDoTexto', () => {
   it('separa por linha, tira espaços, vazios e repetidos', () => {

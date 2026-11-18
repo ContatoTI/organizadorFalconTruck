@@ -33,6 +33,11 @@ export function erroNomeProjeto(nome: string): string | null {
   return nome.trim() ? null : 'Dê um nome ao projeto.';
 }
 
+/** Só o dono edita o projeto (o servidor também recusa para os demais). */
+export function podeEditarProjeto(projeto: { owner_id: string }, usuarioId: string): boolean {
+  return !!usuarioId && projeto.owner_id === usuarioId;
+}
+
 /** Confirmação de exclusão: o usuário precisa digitar o nome do projeto (ignora maiúsculas e espaços nas pontas). */
 export function confirmaExclusao(nomeProjeto: string, digitado: string): boolean {
   return digitado.trim().toLowerCase() === nomeProjeto.trim().toLowerCase() && digitado.trim() !== '';
