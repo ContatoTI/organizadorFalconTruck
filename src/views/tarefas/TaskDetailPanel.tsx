@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { AnexosTarefa } from '@/src/views/tarefas/AnexosTarefa';
+import { ResponsaveisExtras } from '@/src/views/tarefas/ResponsaveisExtras';
 import { perfilAPI } from '@/src/views/perfis/clientePerfis';
 
 const STATUS_OPTIONS = [
@@ -496,6 +497,15 @@ export function TaskDetailPanel({ task, groups, currentUserId, projectOwnerId, o
                   </div>
                 )}
               </div>
+            )}
+
+            {task.project_id && (
+              <ResponsaveisExtras
+                tarefaId={task.id}
+                principalId={task.assignee_id ?? null}
+                podeEditar={isProjectOwner}
+                candidatos={assigneeCandidates}
+              />
             )}
           </div>
 
