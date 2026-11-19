@@ -9,6 +9,7 @@ vi.mock('@/src/models/projetos/membros', () => ({
   listarMembros: vi.fn(async () => [{ id: 1 }]),
   convitesPendentes: vi.fn(async () => ['p2']),
   removerMembro: vi.fn(async () => {}),
+  sairDoProjeto: vi.fn(async () => {}),
   convidar: vi.fn(async () => {}),
   cancelarConvitePendente: vi.fn(async () => {}),
   reconvidar: vi.fn(async () => {}),
@@ -17,7 +18,7 @@ vi.mock('@/src/models/projetos/membros', () => ({
 
 import * as model from '@/src/models/projetos/membros';
 import { ErroValidacao } from '@/src/lib/erros';
-import { listarMembros, removerMembro, convidar, cancelarConvite, reconvidar, apagarRecusa } from './membros';
+import { listarMembros, removerMembro, sairDoProjeto, convidar, cancelarConvite, reconvidar, apagarRecusa } from './membros';
 
 const UID = '11111111-1111-1111-1111-111111111111';
 
@@ -55,6 +56,11 @@ describe('membros', () => {
     expect((await cancelarConvite('5', UID)).status).toBe(204);
     expect((await apagarRecusa('8')).status).toBe(204);
     expect(model.apagarConviteRecusado).toHaveBeenCalledWith(expect.anything(), 8);
+  });
+
+  it('sai do projeto em nome de quem está logado', async () => {
+    expect((await sairDoProjeto('5')).status).toBe(204);
+    expect(model.sairDoProjeto).toHaveBeenCalledWith(expect.anything(), 5, 'u1');
   });
 
   it('usuário inválido: 400', async () => {

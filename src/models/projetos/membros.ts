@@ -101,3 +101,22 @@ export async function removerMembro(db: SupabaseClient, projetoId: number, membr
   const { error } = await db.from('project_members').delete().eq('id', (membro as { id: number }).id);
   falhou(error);
 }
+
+/** O membro sai sozinho do projeto. O dono não sai (ele exclui o projeto). */
+export async function sairDoProjeto(db: SupabaseClient, projetoId: number, usuarioId: string): Promise<void> {
+  const { data: projeto } = await db.from('projects').select('owner_id').eq('id', projetoId).maybeSingle();
+  if ((projeto as { owner_id: string } | null)?.owner_id === usuarioId) {
+    throw new ErroValidacao('O dono não pode sair do próprio projeto');
+  }
+
+  const { data: membro } = await db
+    .from('project_members')
+    .select('id')
+    .eq('project_id', projetoId)
+    .eq('user_id', usuarioId)
+    .maybeSingle();
+  if (!membro) throw new ErroValidacao('Você não é membro deste projeto');
+
+  const { error } = await db.from('project_members').delete().eq('id', (membro as { id: number }).id);
+  falhou(error);
+}

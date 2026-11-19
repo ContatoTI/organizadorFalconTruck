@@ -93,6 +93,10 @@ export const projectAPI = {
   removeProjectMember: (projectId: number, userId: string) =>
     resultado(() => chamarApi(`${API}/${projectId}/membros/${userId}`, { method: 'DELETE' })),
 
+  /** Quem está logado sai do projeto (só membro; o dono não sai). */
+  leaveProject: (projectId: number) =>
+    resultado(() => chamarApi(`${API}/${projectId}/sair`, { method: 'POST' })),
+
   /** Página de Compartilhamentos. */
   async getSharedSummary(): Promise<{ queCompartilhei: any[]; queParticipo: any[] }> {
     try {

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback, Suspense, Fragment } from 'react';
 import { createClient } from '@/src/lib/supabase/Client';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search, Eye, EyeOff, Settings, GripVertical, MoreHorizontal } from 'lucide-react';
+import { Check, ArrowRight, XCircle, Plus, ChevronDown, Edit2, Trash2, Folder, Share, User, Search, Eye, EyeOff, Settings, GripVertical, MoreHorizontal, LogOut } from 'lucide-react';
 import { cn, getSoftCardStyle, PROJECT_COLORS } from '@/src/lib/utils';
 import { taskAPI } from '@/src/views/tarefas/clienteTarefas';
 import { projectAPI, sectionAPI } from '@/src/views/projetos/clienteProjetos';
@@ -21,6 +21,7 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ExcluirProjetoDialog } from '@/src/views/projetos/ExcluirProjetoDialog';
+import { SairDoProjetoDialog } from '@/src/views/projetos/SairDoProjetoDialog';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -246,6 +247,7 @@ function DashboardContent() {
   const [listShowInProgress, setListShowInProgress] = useState(true);
   const [listShowReview, setListShowReview] = useState(true);
   const [excluirProjetoAberto, setExcluirProjetoAberto] = useState(false);
+  const [sairProjetoAberto, setSairProjetoAberto] = useState(false);
   const [listShowCompleted, setListShowCompleted] = useState(false);
   const [now, setNow] = useState(new Date());
   const [expandedSections, setExpandedSections] = useState<Record<number, boolean>>({});
@@ -1309,6 +1311,22 @@ function DashboardContent() {
       window.dispatchEvent(new CustomEvent('tasks-updated'));
       router.push('/');
     }
+  };
+
+  // Membro sai do projeto: some da lista e volta para a tela inicial.
+  const leaveProject = async () => {
+    if (!selectedProject || !user || selectedProject.owner_id === user.id) return;
+    const projectId = selectedProject.id;
+    const result = await projectAPI.leaveProject(projectId);
+    if (!result.success) {
+      toast(`Erro ao sair do projeto: ${result.error ?? 'tente novamente'}`, 'error');
+      return;
+    }
+    setProjects(prev => prev.filter(p => p.id !== projectId));
+    window.dispatchEvent(new CustomEvent('projects_updated', { detail: { deletedId: projectId } }));
+    window.dispatchEvent(new CustomEvent('tasks-updated'));
+    toast('Você saiu do projeto', 'success');
+    router.push('/');
   };
 
   const toggleSectionExpand = (sectionId: number) => {
@@ -2375,6 +2393,15 @@ function DashboardContent() {
         />
       )}
 
+      {selectedProject && (
+        <SairDoProjetoDialog
+          open={sairProjetoAberto}
+          onOpenChange={setSairProjetoAberto}
+          nomeProjeto={selectedProject.name}
+          onConfirmar={leaveProject}
+        />
+      )}
+
       {/* Modal de criação de nova pasta */}
       <Dialog open={newSectionModalOpen} onOpenChange={(open) => { if (!open) setNewSectionModalOpen(false); }}>
         <DialogContent className="sm:max-w-sm" finalFocus={false}>
@@ -2723,6 +2750,11 @@ function DashboardContent() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </>
+            )}
+            {selectedProject && user && selectedProject.owner_id !== user.id && isProjectMemberState && (
+              <Button variant="outline" size="sm" onClick={() => setSairProjetoAberto(true)} className="rounded-full h-7 text-xs gap-1 text-destructive hover:text-destructive">
+                <LogOut className="w-3 h-3" /> Sair do projeto
+              </Button>
             )}
             {!selectedProject && (
               <InlineTaskCreator

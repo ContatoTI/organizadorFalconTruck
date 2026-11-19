@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { dbRoteiro } from '@/src/lib/testes/dbRoteiro';
 import {
   listarMembros, convitesPendentes, convidar, cancelarConvitePendente, reconvidar,
-  apagarConviteRecusado, removerMembro,
+  apagarConviteRecusado, removerMembro, sairDoProjeto,
 } from './membros';
 
 describe('membros e convites', () => {
@@ -52,5 +52,15 @@ describe('membros e convites', () => {
     const ok = dbRoteiro({ projects: [{ data: { owner_id: 'u1' } }], project_members: [{ data: { id: 3 } }, {}] });
     await removerMembro(ok.db, 5, 'p2', 'u1');
     expect(ok.gravacoes[0]).toMatchObject({ tabela: 'project_members', op: 'delete', filtros: [['id', 3]] });
+  });
+
+  it('membro sai do projeto; dono e não-membro não', async () => {
+    await expect(sairDoProjeto(dbRoteiro({ projects: [{ data: { owner_id: 'u1' } }] }).db, 5, 'u1'))
+      .rejects.toThrow(/dono não pode sair/);
+    await expect(sairDoProjeto(dbRoteiro({ projects: [{ data: { owner_id: 'outro' } }], project_members: [{ data: null }] }).db, 5, 'u1'))
+      .rejects.toThrow(/não é membro/);
+    const ok = dbRoteiro({ projects: [{ data: { owner_id: 'outro' } }], project_members: [{ data: { id: 7 } }, {}] });
+    await sairDoProjeto(ok.db, 5, 'u1');
+    expect(ok.gravacoes[0]).toMatchObject({ tabela: 'project_members', op: 'delete', filtros: [['id', 7]] });
   });
 });

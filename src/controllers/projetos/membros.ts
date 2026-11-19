@@ -29,6 +29,17 @@ export function removerMembro(idTxt: string, usuarioIdTxt: string) {
   });
 }
 
+/** Quem está logado sai do projeto. */
+export function sairDoProjeto(idTxt: string) {
+  return tratar('sair do projeto', async () => {
+    const id = idNumerico(idTxt);
+    const sessao = await exigirLogin();
+    if (sessao instanceof Response) return sessao;
+    await membros.sairDoProjeto(sessao.db, id, sessao.usuario.id);
+    return sucesso();
+  });
+}
+
 export function convidar(idTxt: string, usuarioIdTxt: string) {
   return tratar('convidar', async () => {
     const id = idNumerico(idTxt);
