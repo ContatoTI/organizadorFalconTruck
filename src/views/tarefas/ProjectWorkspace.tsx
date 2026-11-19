@@ -241,6 +241,7 @@ function DashboardContent() {
   const [showCompleted, setShowCompleted] = useState(true);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [onlyToday, setOnlyToday] = useState(false);
+  const [taskSearch, setTaskSearch] = useState('');
   // ponytail: filtros de status exclusivos da visão em lista de um projeto (não afetam o Kanban).
   // Por padrão aparece tudo que não foi concluído (A Fazer, Em Andamento, Revisão); Concluídas ficam ocultas.
   // Chaves '_v2' no localStorage: a escolha antiga (só A Fazer) não vale mais, todos começam no padrão novo.
@@ -1362,6 +1363,8 @@ function DashboardContent() {
     return tasks.filter(task => {
       if (!selectedProjectId || task.project_id !== parseInt(selectedProjectId)) return false;
       if (onlyToday && !isToday(task.due_date)) return false;
+      const q = taskSearch.trim().toLowerCase();
+      if (q && !`${task.title ?? ''} ${task.description ?? ''}`.toLowerCase().includes(q)) return false;
       // ponytail: no Kanban os 4 status sempre aparecem; na lista, Em Andamento/Revisão/Concluído
       // ficam ocultos até o usuário ligar o toggle correspondente (STATUS_GROUPS[0] = A Fazer sempre visível).
       if (viewMode === 'list') {
@@ -2755,6 +2758,28 @@ function DashboardContent() {
               <Button variant="outline" size="sm" onClick={() => setSairProjetoAberto(true)} className="rounded-full h-7 text-xs gap-1 text-destructive hover:text-destructive">
                 <LogOut className="w-3 h-3" /> Sair do projeto
               </Button>
+            )}
+            {selectedProject && (
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={taskSearch}
+                  onChange={e => setTaskSearch(e.target.value)}
+                  placeholder="Buscar tarefa…"
+                  aria-label="Buscar tarefa"
+                  className="h-7 w-44 rounded-full pl-8 pr-7 text-xs"
+                />
+                {taskSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setTaskSearch('')}
+                    aria-label="Limpar busca"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             )}
             {!selectedProject && (
               <InlineTaskCreator
