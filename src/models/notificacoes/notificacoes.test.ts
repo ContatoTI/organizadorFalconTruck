@@ -107,6 +107,20 @@ describe('convites', () => {
     });
   });
 
+  it('sem nome no perfil: usa o e-mail; sem perfil: "Usuário"', async () => {
+    const { db } = dbRoteiro({
+      projects: [{ data: [] }],
+      project_members: [{ data: [] }],
+      project_invites: [{ data: [
+        { id: 1, project_id: 30, invited_by_user_id: 'p1', created_at: 'd1', projects: null },
+        { id: 2, project_id: 31, invited_by_user_id: 'p9', created_at: 'd2', projects: null },
+      ] }],
+      profiles: [{ data: [{ id: 'p1', full_name: null, email: 'ana@x' }] }],
+    });
+    const { pendingInvites } = await convitesERecusas(db, 'u1');
+    expect(pendingInvites.map(i => i.inviter_name)).toEqual(['ana@x', 'Usuário']);
+  });
+
   it('aceitar: entra no projeto do convite e marca aceito', async () => {
     const { db, gravacoes } = dbRoteiro({
       project_invites: [{ data: { id: 1, status: 'pending', project_id: 30 } }, {}],

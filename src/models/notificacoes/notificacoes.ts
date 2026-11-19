@@ -124,6 +124,8 @@ export async function convitesERecusas(db: SupabaseClient, usuarioId: string): P
     : { data: [] };
   const perfilPorId = new Map(((perfis.data || []) as { id: string; full_name: string | null; email: string | null }[])
     .map(p => [p.id, p]));
+  // Perfil sem nome cadastrado: mostra o e-mail antes de cair no genérico.
+  const nomeDe = (id: string) => perfilPorId.get(id)?.full_name || perfilPorId.get(id)?.email || 'Usuário';
 
   return {
     pendingInvites: listaPendentes.map(inv => ({
@@ -131,7 +133,7 @@ export async function convitesERecusas(db: SupabaseClient, usuarioId: string): P
       project_id: inv.project_id,
       project_title: inv.projects?.name || 'Projeto',
       project_color: inv.projects?.color || COR_PADRAO,
-      inviter_name: perfilPorId.get(inv.invited_by_user_id)?.full_name || 'Usuário',
+      inviter_name: nomeDe(inv.invited_by_user_id),
       inviter_email: perfilPorId.get(inv.invited_by_user_id)?.email || '',
       created_at: inv.created_at,
     })),
@@ -140,7 +142,7 @@ export async function convitesERecusas(db: SupabaseClient, usuarioId: string): P
       project_id: dec.project_id,
       project_title: dec.projects?.name || 'Projeto',
       project_color: dec.projects?.color || COR_PADRAO,
-      declined_user_name: perfilPorId.get(dec.invited_user_id)?.full_name || 'Usuário',
+      declined_user_name: nomeDe(dec.invited_user_id),
       invited_user_id: dec.invited_user_id,
       created_at: dec.created_at,
     })),
