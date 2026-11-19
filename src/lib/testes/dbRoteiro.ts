@@ -33,5 +33,7 @@ export function dbRoteiro(roteiro: Record<string, Resposta[]>) {
     q.then = (ok: (v: unknown) => unknown) => ok({ data: null, error: null, ...resposta });
     return q;
   });
-  return { db: { from } as unknown as SupabaseClient, from, gravacoes };
+  // Funções do banco: respostas na fila "rpc:<nome>".
+  const rpc = vi.fn(async (nome: string) => ({ data: null, error: null, ...roteiro[`rpc:${nome}`]?.shift() }));
+  return { db: { from, rpc } as unknown as SupabaseClient, from, rpc, gravacoes };
 }

@@ -84,6 +84,36 @@ export function validarNovoAviso(entrada: Record<string, unknown>): NovoAvisoTar
 
 type Projeto = { id: number; name: string; color: string | null };
 type Convite = { id: number; project_id: number; created_at: string; projects: Projeto | null };
+type ConvitePendente = Convite & { invited_by_user_id: string };
+type LinhaConviteFuncao = {
+  id: number; project_id: number; invited_by_user_id: string; created_at: string;
+  project_name: string | null; project_color: string | null;
+};
+
+/**
+ * Convites pendentes para você, com nome e cor do projeto.
+ * Usa a função do banco my_pending_project_invites: o convidado ainda não é membro,
+ * então as regras de leitura de projects podem esconder o projeto dele.
+ * Se a função ainda não existir no banco, cai na consulta antiga (pode vir sem nome).
+ */
+async function convitesPendentesParaMim(db: SupabaseClient, usuarioId: string): Promise<ConvitePendente[]> {
+  const viaFuncao = await db.rpc('my_pending_project_invites');
+  if (!viaFuncao.error) {
+    return ((viaFuncao.data || []) as LinhaConviteFuncao[]).map(l => ({
+      id: l.id,
+      project_id: l.project_id,
+      invited_by_user_id: l.invited_by_user_id,
+      created_at: l.created_at,
+      projects: l.project_name ? { id: l.project_id, name: l.project_name, color: l.project_color } : null,
+    }));
+  }
+  console.warn('[notificacoes] my_pending_project_invites indisponível, usando consulta antiga:', viaFuncao.error.message);
+  const { data } = await db.from('project_invites')
+    .select('id, project_id, invited_by_user_id, created_at, projects(id, name, color)')
+    .eq('invited_user_id', usuarioId)
+    .eq('status', 'pending');
+  return (data || []) as unknown as ConvitePendente[];
+}
 
 export async function convitesERecusas(db: SupabaseClient, usuarioId: string): Promise<{
   pendingInvites: PendingInvite[];
@@ -99,11 +129,8 @@ export async function convitesERecusas(db: SupabaseClient, usuarioId: string): P
   (membro.data as { project_id: number }[] | null)?.forEach(m => projetoIds.add(m.project_id));
 
   // 2. Convites pendentes para você e recusas nos seus projetos (projeto vem do JOIN).
-  const [pendentes, recusados] = await Promise.all([
-    db.from('project_invites')
-      .select('id, project_id, invited_by_user_id, created_at, projects(id, name, color)')
-      .eq('invited_user_id', usuarioId)
-      .eq('status', 'pending'),
+  const [listaPendentes, recusados] = await Promise.all([
+    convitesPendentesParaMim(db, usuarioId),
     projetoIds.size > 0
       ? db.from('project_invites')
         .select('id, project_id, invited_user_id, created_at, projects(id, name, color)')
@@ -111,7 +138,6 @@ export async function convitesERecusas(db: SupabaseClient, usuarioId: string): P
         .eq('status', 'declined')
       : Promise.resolve({ data: [] }),
   ]);
-  const listaPendentes = (pendentes.data || []) as unknown as (Convite & { invited_by_user_id: string })[];
   const listaRecusados = (recusados.data || []) as unknown as (Convite & { invited_user_id: string })[];
 
   // 3. Nomes de quem convidou / recusou.

@@ -95,8 +95,10 @@ describe('convites', () => {
     const { db } = dbRoteiro({
       projects: [{ data: [{ id: 10 }] }],
       project_members: [{ data: [{ project_id: 20 }] }],
+      'rpc:my_pending_project_invites': [
+        { data: [{ id: 1, project_id: 30, invited_by_user_id: 'p1', created_at: 'd1', project_name: 'Obra', project_color: '#111' }] },
+      ],
       project_invites: [
-        { data: [{ id: 1, project_id: 30, invited_by_user_id: 'p1', created_at: 'd1', projects: { name: 'Obra', color: '#111' } }] },
         { data: [{ id: 2, project_id: 10, invited_user_id: 'p2', created_at: 'd2', projects: null }] },
       ],
       profiles: [{ data: [{ id: 'p1', full_name: 'Ana', email: 'a@x' }, { id: 'p2', full_name: 'Bia' }] }],
@@ -111,14 +113,31 @@ describe('convites', () => {
     const { db } = dbRoteiro({
       projects: [{ data: [] }],
       project_members: [{ data: [] }],
-      project_invites: [{ data: [
-        { id: 1, project_id: 30, invited_by_user_id: 'p1', created_at: 'd1', projects: null },
-        { id: 2, project_id: 31, invited_by_user_id: 'p9', created_at: 'd2', projects: null },
+      'rpc:my_pending_project_invites': [{ data: [
+        { id: 1, project_id: 30, invited_by_user_id: 'p1', created_at: 'd1', project_name: 'Obra', project_color: null },
+        { id: 2, project_id: 31, invited_by_user_id: 'p9', created_at: 'd2', project_name: null, project_color: null },
       ] }],
       profiles: [{ data: [{ id: 'p1', full_name: null, email: 'ana@x' }] }],
     });
     const { pendingInvites } = await convitesERecusas(db, 'u1');
     expect(pendingInvites.map(i => i.inviter_name)).toEqual(['ana@x', 'Usuário']);
+    expect(pendingInvites.map(i => [i.project_title, i.project_color])).toEqual([['Obra', '#6366f1'], ['Projeto', '#6366f1']]);
+  });
+
+  it('função do banco indisponível: usa a consulta antiga e não some com os convites', async () => {
+    const { db } = dbRoteiro({
+      projects: [{ data: [] }],
+      project_members: [{ data: [] }],
+      'rpc:my_pending_project_invites': [{ error: { message: 'function not found' } }],
+      project_invites: [{ data: [
+        { id: 1, project_id: 30, invited_by_user_id: 'p1', created_at: 'd1', projects: { id: 30, name: 'Obra', color: '#111' } },
+      ] }],
+      profiles: [{ data: [{ id: 'p1', full_name: 'Ana', email: 'a@x' }] }],
+    });
+    const { pendingInvites } = await convitesERecusas(db, 'u1');
+    expect(pendingInvites).toEqual([
+      { id: 1, project_id: 30, project_title: 'Obra', project_color: '#111', inviter_name: 'Ana', inviter_email: 'a@x', created_at: 'd1' },
+    ]);
   });
 
   it('aceitar: entra no projeto do convite e marca aceito', async () => {
