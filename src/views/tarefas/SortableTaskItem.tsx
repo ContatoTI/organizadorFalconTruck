@@ -5,6 +5,7 @@ import { cn, getColorFromString, getInitials } from '@/src/lib/utils';
 import type { Task, Group, Project, Section } from '@/types/index';
 import { X, XCircle, Loader2, AlertCircle, Check } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ResponsaveisBolinhas } from '@/src/views/tarefas/ResponsaveisBolinhas';
 
 export interface AssigneeCandidate {
   user_id: string;
@@ -49,7 +50,7 @@ interface SortableTaskItemProps {
   onApprove?: (taskId: number) => void;
   onReject?: (taskId: number) => void;
   assigneeCandidates?: AssigneeCandidate[];
-  onAssigneeChange?: (taskId: number, assigneeId: string | null) => void;
+  onAssigneeChange?: (taskId: number, assigneeId: string | null) => void | Promise<void>;
   isOverlay?: boolean;
   isPending?: boolean;
   size?: 'sm' | 'md';
@@ -288,33 +289,11 @@ export const SortableTaskItem = memo(function SortableTaskItem({
 
         if (onAssigneeChange && assigneeCandidates && assigneeCandidates.length > 0) {
           return (
-            <Select
-              value={task.assignee_id ?? 'none'}
-              onValueChange={(val) => onAssigneeChange(task.id, val === 'none' ? null : val)}
-            >
-              <SelectTrigger
-                className="h-[22px] w-[22px] rounded-full border-0 p-0 flex items-center justify-center [&>svg:last-child]:hidden data-[size=default]:h-[22px] data-[size=default]:w-[22px] cursor-pointer flex-shrink-0"
-                onClick={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-                title={avatarName}
-              >
-                <div
-                  className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-[9px] font-semibold text-white"
-                  style={{ backgroundColor: avatarColor }}
-                >
-                  {avatarInitials}
-                </div>
-              </SelectTrigger>
-              <SelectContent side="bottom" align="end" className="bg-popover border border-border shadow-lg z-[100]">
-                <SelectItem value="none">Sem responsável</SelectItem>
-                {assigneeCandidates.map((c) => (
-                  <SelectItem key={c.user_id} value={c.user_id}>
-                    {c.full_name || c.email || 'Usuário'}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ResponsaveisBolinhas
+              task={task}
+              candidatos={assigneeCandidates}
+              onAssigneeChange={onAssigneeChange}
+            />
           );
         }
 

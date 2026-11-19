@@ -29,6 +29,9 @@ export function definirResponsaveis(request: Request, tarefaIdTxt: string) {
 
     // O principal já é responsável; não entra de novo na lista de extras.
     const extras = ids.filter(id => id !== acesso.principal);
+    if (extras.length > responsaveis.vagasDeExtras(!!acesso.principal)) {
+      return erro(400, `No máximo ${responsaveis.LIMITE_RESPONSAVEIS} pessoas por tarefa.`);
+    }
     const entraram = await responsaveis.definir(sessao.db, tarefaId, extras);
 
     const remetente = nomeDoUsuario(sessao.usuario);

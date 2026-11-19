@@ -75,6 +75,8 @@ export interface Task {
   isSyncing?: boolean;
   assignee_id?: string | null;
   assignee_name?: string;
+  /** Outras pessoas responsáveis (além do principal); máx. 3 no total. */
+  extra_assignees?: { user_id: string; name: string }[];
   deleted_at?: string | null;
 }
 

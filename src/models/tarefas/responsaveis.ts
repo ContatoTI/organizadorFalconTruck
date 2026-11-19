@@ -14,7 +14,13 @@ export interface ResponsavelExtra {
   nome: string;
 }
 
-export const LIMITE_RESPONSAVEIS = 20;
+/** Máximo de pessoas por tarefa, contando o responsável principal. */
+export const LIMITE_RESPONSAVEIS = 3;
+
+/** Quantos extras cabem, dado se já existe principal. */
+export function vagasDeExtras(temPrincipal: boolean): number {
+  return LIMITE_RESPONSAVEIS - (temPrincipal ? 1 : 0);
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Lista de ids válida, sem repetidos. */

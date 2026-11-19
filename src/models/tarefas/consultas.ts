@@ -54,12 +54,29 @@ async function comNomesDosCriadores(db: SupabaseClient, tarefas: Task[]): Promis
 
 /** Nome do responsável (assignee) de cada tarefa. */
 async function comNomesDosResponsaveis(db: SupabaseClient, tarefas: Task[]): Promise<Task[]> {
-  const ids = [...new Set(tarefas.map(t => t.assignee_id).filter(Boolean))] as string[];
+  if (tarefas.length === 0) return tarefas;
+
+  // Extras (até 3 pessoas por tarefa no total): vêm de task_shares.
+  const { data: partilhas } = await db.from('task_shares').select('task_id, user_id').in('task_id', tarefas.map(t => t.id));
+  const extrasPorTarefa = new Map<number, string[]>();
+  for (const p of (partilhas as { task_id: number; user_id: string }[] | null) || []) {
+    const lista = extrasPorTarefa.get(p.task_id) || [];
+    lista.push(p.user_id);
+    extrasPorTarefa.set(p.task_id, lista);
+  }
+
+  const ids = [...new Set([
+    ...tarefas.map(t => t.assignee_id).filter(Boolean),
+    ...[...extrasPorTarefa.values()].flat(),
+  ])] as string[];
   if (ids.length === 0) return tarefas;
   const nomes = await nomesPorId(db, ids);
   return tarefas.map(t => ({
     ...t,
     assignee_name: t.assignee_id ? nomes.get(t.assignee_id) || undefined : undefined,
+    extra_assignees: (extrasPorTarefa.get(t.id) || [])
+      .filter(id => id !== t.assignee_id)
+      .map(id => ({ user_id: id, name: nomes.get(id) || 'Usuário' })),
   }));
 }
 

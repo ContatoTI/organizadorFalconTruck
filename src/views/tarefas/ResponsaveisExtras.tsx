@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { chamarApi } from '@/src/lib/chamarApi';
 import { useToast } from '@/src/components/Toast';
-import type { ResponsavelExtra } from '@/src/models/tarefas/responsaveis';
+import { vagasDeExtras, type ResponsavelExtra } from '@/src/models/tarefas/responsaveis';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface Candidato { user_id: string; full_name?: string; email?: string }
@@ -50,6 +50,8 @@ export function ResponsaveisExtras({ tarefaId, principalId, podeEditar, candidat
   const idsAtuais = lista.map(r => r.usuario_id);
   const disponiveis = candidatos.filter(c => c.user_id !== principalId && !idsAtuais.includes(c.user_id));
 
+  const temVaga = lista.length < vagasDeExtras(!!principalId);
+
   if (!podeEditar && lista.length === 0) return null;
 
   return (
@@ -72,7 +74,7 @@ export function ResponsaveisExtras({ tarefaId, principalId, podeEditar, candidat
             )}
           </span>
         ))}
-        {podeEditar && disponiveis.length > 0 && (
+        {podeEditar && temVaga && disponiveis.length > 0 && (
           <Select value="" onValueChange={(id: string | null) => { if (id) salvar([...idsAtuais, id]); }} disabled={salvando}>
             <SelectTrigger className="h-7 w-auto text-xs">
               <SelectValue placeholder="+ Adicionar pessoa" />
