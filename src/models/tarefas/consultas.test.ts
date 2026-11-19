@@ -105,8 +105,7 @@ describe('listar', () => {
       projects: [{ data: [{ id: 10 }] }],
       todos: [
         { data: [tarefa(1, { created_at: '2026-10-01T00:00:00Z' })] },          // pessoais
-        { data: [tarefa(2, { created_at: '2026-10-03T00:00:00Z' })] },          // dono
-        { data: [tarefa(3, { created_at: '2026-10-02T00:00:00Z' })] },          // membro
+        { data: [tarefa(2, { created_at: '2026-10-03T00:00:00Z' }), tarefa(3, { created_at: '2026-10-02T00:00:00Z' })] }, // projetos (dono + membro)
         { data: [tarefa(1, { created_at: '2026-10-01T00:00:00Z' }), tarefa(4, { created_at: '2026-10-04T00:00:00Z' })] }, // pasta compartilhada (1 repete)
         { data: [tarefa(5, { created_at: '2026-10-05T00:00:00Z' })] },          // tarefa compartilhada
       ],

@@ -203,21 +203,11 @@ export async function listar(db: SupabaseClient, usuarioId: string, filtros: Fil
   // 1. Tarefas pessoais.
   await juntar(aplicarFiltrosComuns(db.from('todos').select('*').eq('user_id', usuarioId).is('deleted_at', null)));
 
-  // 2a. Projetos em que você é dono: todas as tarefas dos outros.
-  if (idsProprios.length > 0) {
+  // 2. Projetos em que você é dono ou membro: todas as tarefas dos outros.
+  const idsProjetos = [...new Set([...idsProprios, ...idsMembro])];
+  if (idsProjetos.length > 0) {
     await juntar(aplicarFiltrosComuns(
-      db.from('todos').select('*').in('project_id', idsProprios).neq('user_id', usuarioId).is('deleted_at', null),
-    ));
-  }
-
-  // 2b. Projetos em que você é membro: só as atribuídas a você.
-  if (idsMembro.length > 0) {
-    await juntar(aplicarFiltrosComuns(
-      db.from('todos').select('*')
-        .in('project_id', idsMembro)
-        .eq('assignee_id', usuarioId)
-        .neq('user_id', usuarioId)
-        .is('deleted_at', null),
+      db.from('todos').select('*').in('project_id', idsProjetos).neq('user_id', usuarioId).is('deleted_at', null),
     ));
   }
 
