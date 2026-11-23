@@ -27,6 +27,11 @@ describe('validação', () => {
       .toEqual({ title: 'Y', position: 3 });
     expect(() => validarAlteracao({ user_id: 'hack' })).toThrow(/Nada/);
   });
+  it('alteração de status só aceita os valores do banco', () => {
+    expect(validarAlteracao({ status: 'ACOMPANHAMENTO' })).toEqual({ status: 'ACOMPANHAMENTO' });
+    expect(() => validarAlteracao({ status: 'FEITO' })).toThrow(/Status inválido/);
+    expect(() => validarAlteracao({ status: null })).toThrow(/Status inválido/);
+  });
   it('horizonte e repetição', () => {
     expect(validarHorizonte('month')).toBe('month');
     expect(() => validarHorizonte('decade')).toThrow(ErroValidacao);
@@ -93,6 +98,14 @@ describe('atualizar', () => {
     expect(gravacoes[0].valor).toMatchObject({
       status: 'EM_ANDAMENTO', status_changed_at: expect.any(String), auto_review_reason: null,
     });
+  });
+  it('arrastar para Concluído marca concluída; sair de Concluído reabre', async () => {
+    const a = dbRoteiro({});
+    await atualizar(a.db, 7, { status: 'CONCLUIDO' });
+    expect(a.gravacoes[0].valor).toMatchObject({ status: 'CONCLUIDO', is_completed: true });
+    const b = dbRoteiro({});
+    await atualizar(b.db, 7, { status: 'A_FAZER', is_completed: true });
+    expect(b.gravacoes[0].valor).toMatchObject({ status: 'A_FAZER', is_completed: false });
   });
   it('mandar para revisão não limpa a etiqueta', async () => {
     const { db, gravacoes } = dbRoteiro({});

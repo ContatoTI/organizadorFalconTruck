@@ -38,6 +38,9 @@ const CAMPOS_ALTERAVEIS = [
 
 export type AlteracaoTarefa = Partial<Pick<Task, (typeof CAMPOS_ALTERAVEIS)[number]>>;
 
+/** Os mesmos valores do CHECK todos_status_check no banco. */
+export const STATUS_VALIDOS = ['A_FAZER', 'EM_ANDAMENTO', 'ACOMPANHAMENTO', 'REVISAO', 'CONCLUIDO', 'AGUARDANDO'] as const;
+
 export interface RegraRepeticao {
   freq: RecurFreq | null;
   interval?: number | null;
@@ -137,6 +140,9 @@ export function validarAlteracao(entrada: Record<string, unknown>): AlteracaoTar
     saida.title = title;
   }
   if ('due_date' in saida) saida.due_date = dataOuNulo(saida.due_date, 'Data');
+  if ('status' in saida && !STATUS_VALIDOS.includes(saida.status as (typeof STATUS_VALIDOS)[number])) {
+    throw new ErroValidacao('Status inválido.');
+  }
   if (Object.keys(saida).length === 0) throw new ErroValidacao('Nada para alterar.');
   return saida as AlteracaoTarefa;
 }
@@ -232,11 +238,15 @@ export async function criar(db: SupabaseClient, usuarioId: string, nova: NovaTar
   return data as Task;
 }
 
-/** Mudança de status zera o relógio da revisão automática e limpa a etiqueta. */
+/**
+ * Mudança de status zera o relógio da revisão automática, limpa a etiqueta
+ * e acerta "concluída" (só CONCLUIDO é concluída) — o status manda.
+ */
 export async function atualizar(db: SupabaseClient, tarefaId: number, alteracao: AlteracaoTarefa): Promise<void> {
   const final: Record<string, unknown> = { ...alteracao };
   if ('status' in alteracao && alteracao.status !== undefined) {
     final.status_changed_at = new Date().toISOString();
+    final.is_completed = alteracao.status === 'CONCLUIDO';
     if (alteracao.status !== 'REVISAO') final.auto_review_reason = null;
   }
   const { error } = await db.from('todos').update(final).eq('id', tarefaId);

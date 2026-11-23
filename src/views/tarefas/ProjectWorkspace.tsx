@@ -72,6 +72,21 @@ function DroppableSection({ sectionId, children, className }: { sectionId: numbe
   );
 }
 
+// Grupo de status (A fazer / Em andamento / ...) dentro de uma pasta, na
+// visão em lista: soltar aqui muda o status da tarefa — inclusive quando o
+// grupo está vazio e não há card para soltar em cima.
+function DroppableStatusGroup({ sectionId, status, children }: { sectionId: number | null; status: string; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `status-group-${sectionId ?? 'none'}-${status}`,
+    data: { type: 'StatusGroup', id: `${sectionId ?? 'none'}-${status}`, sectionId, status },
+  });
+  return (
+    <div ref={setNodeRef} className={cn("transition-colors", isOver && "bg-primary/5")}>
+      {children}
+    </div>
+  );
+}
+
 function SectionReorderDrop({ sectionId, isLast }: { sectionId: number; isLast?: boolean }) {
   const { setNodeRef, isOver } = useDroppable({
     id: isLast ? `section-reorder-end` : `section-reorder-${sectionId}`,
@@ -1959,7 +1974,7 @@ function DashboardContent() {
       }
 
       // ─── SECTION / TASK DROP (reorder within project) ────────────────
-      if (overType !== 'Task' && overType !== 'Section') return;
+      if (overType !== 'Task' && overType !== 'Section' && overType !== 'StatusGroup') return;
 
       let targetSectionId: number | null = null;
       let targetIndex = 0;
@@ -1973,6 +1988,14 @@ function DashboardContent() {
          targetSectionId = over.data.current!.id === 'unsectioned' ? null : over.data.current!.id as number;
          const tasksInSection = getTasksBySection(targetSectionId);
          targetIndex = tasksInSection.length;
+      } else if (overType === 'StatusGroup') {
+         // Soltou num grupo de status: muda o status e vai para o fim da pasta
+         // (logo, para o fim do grupo também — a posição é contada por pasta).
+         targetSectionId = over.data.current!.sectionId as number | null;
+         targetStatus = over.data.current!.status as string;
+         targetIndex = getTasksBySection(targetSectionId).filter(t => t.id !== activeTask.id).length;
+         // Soltou no próprio grupo: nada muda.
+         if (targetSectionId === activeTask.section_id && targetStatus === (activeTask.status ?? 'EM_ANDAMENTO')) return;
       } else if (overType === 'Task') {
          const overTask = over.data.current!.task as Task;
          targetSectionId = overTask.section_id;
@@ -2113,7 +2136,7 @@ function DashboardContent() {
       };
       const style = statusStyle[group.key];
       return (
-        <div key={group.key}>
+        <DroppableStatusGroup key={group.key} sectionId={sectionId} status={group.key}>
           <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 bg-muted/[0.03]">
             <div className={cn("w-2 h-2 rounded-full flex-shrink-0", style.dot)} />
             <span className="text-xs font-semibold text-foreground">{group.label}</span>
@@ -2126,7 +2149,7 @@ function DashboardContent() {
               Arraste tarefas para cá
             </div>
           )}
-        </div>
+        </DroppableStatusGroup>
       );
     });
   };
