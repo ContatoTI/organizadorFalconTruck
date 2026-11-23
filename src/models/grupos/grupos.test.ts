@@ -29,6 +29,10 @@ describe('validarDados', () => {
   it('alteração parcial só passa campos permitidos', () => {
     expect(validarDados({ show_on_dashboard: false, user_id: 'hack' })).toEqual({ show_on_dashboard: false });
   });
+  it('aceita posição inteira e recusa o resto', () => {
+    expect(validarDados({ position: 2 })).toEqual({ position: 2 });
+    expect(() => validarDados({ position: 'a' })).toThrow(/Posição/);
+  });
   it('recusa vazio e visibilidade inválida', () => {
     expect(() => validarDados({ id: 1 })).toThrow(ErroValidacao);
     expect(() => validarDados({ show_on_dashboard: 'sim' })).toThrow(/Visibilidade/);
@@ -41,6 +45,12 @@ describe('banco', () => {
     await listar(db, 'u1', 'title');
     expect(chamadas.eq).toEqual([['user_id', 'u1']]);
     expect(chamadas.order).toEqual([['title']]);
+  });
+
+  it('ordem manual: posição e depois criação', async () => {
+    const { db, chamadas } = dbFalso({ data: [] });
+    await listar(db, 'u1', 'position');
+    expect(chamadas.order).toEqual([['position', { ascending: true, nullsFirst: false }], ['created_at']]);
   });
 
   it('cria com o dono', async () => {

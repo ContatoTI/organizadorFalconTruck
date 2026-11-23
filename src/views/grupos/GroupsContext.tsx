@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { createClient } from '@/src/lib/supabase/Client';
 import type { Group } from '@/types/index';
 import { grupoAPI } from './clienteGrupos';
@@ -28,7 +28,11 @@ export function useGroups() {
 }
 
 export function GroupsProvider({ children }: { children: ReactNode }) {
-  const [groups, setGroups] = useState<Group[]>([]);
+  const [rawGroups, setGroups] = useState<Group[]>([]);
+  // Ordem manual (position); sem posição vai para o fim, por data de criação.
+  const groups = useMemo(() => [...rawGroups].sort((a, b) =>
+    ((a.position ?? Infinity) - (b.position ?? Infinity)) || a.created_at.localeCompare(b.created_at)
+  ), [rawGroups]);
   const [loading, setLoading] = useState(true);
   const client = createClient();
 
@@ -41,7 +45,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const data = await grupoAPI.list('created_at').catch((e) => {
+    const data = await grupoAPI.list('position').catch((e) => {
       console.error('[GroupsContext] erro ao carregar grupos:', e);
       return null;
     });

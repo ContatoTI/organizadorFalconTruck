@@ -1,7 +1,7 @@
 import * as grupos from '@/src/models/grupos/grupos';
 import { erro, exigirLogin, idNumerico, lerJson, tratar } from '../sessao';
 
-const ORDENS: readonly grupos.OrdemGrupos[] = ['created_at', 'title'];
+const ORDENS: readonly grupos.OrdemGrupos[] = ['created_at', 'title', 'position'];
 
 export function listarGrupos(request: Request) {
   return tratar('carregar os grupos', async () => {

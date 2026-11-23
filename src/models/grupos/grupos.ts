@@ -7,7 +7,7 @@ import type { BlockSchedule, Group } from '@/types/index';
 import { ErroValidacao } from '@/src/lib/erros';
 
 export type TipoGrupo = Group['type'];
-export type OrdemGrupos = 'created_at' | 'title';
+export type OrdemGrupos = 'created_at' | 'title' | 'position';
 
 /** O que o formulário de grupo preenche. */
 export interface FormularioGrupo {
@@ -26,10 +26,10 @@ export interface FormularioGrupo {
 /** Colunas que a tela pode gravar. */
 export type DadosGrupo = Partial<Pick<Group,
   'title' | 'type' | 'icon' | 'color' | 'start_time' | 'end_time' |
-  'recurrence_type' | 'recurrence_days' | 'schedules' | 'show_on_dashboard'>>;
+  'recurrence_type' | 'recurrence_days' | 'schedules' | 'show_on_dashboard' | 'position'>>;
 
 const CAMPOS = ['title', 'type', 'icon', 'color', 'start_time', 'end_time',
-  'recurrence_type', 'recurrence_days', 'schedules', 'show_on_dashboard'] as const;
+  'recurrence_type', 'recurrence_days', 'schedules', 'show_on_dashboard', 'position'] as const;
 const TIPOS: readonly TipoGrupo[] = ['time', 'list'];
 
 /**
@@ -68,6 +68,7 @@ export function validarDados(entrada: Record<string, unknown>, criacao = false):
   if ('show_on_dashboard' in saida && typeof saida.show_on_dashboard !== 'boolean') {
     throw new ErroValidacao('Visibilidade inválida.');
   }
+  if ('position' in saida && !Number.isInteger(saida.position)) throw new ErroValidacao('Posição inválida.');
   if (Object.keys(saida).length === 0) throw new ErroValidacao('Nada para alterar.');
   return saida as DadosGrupo;
 }
@@ -77,7 +78,10 @@ function falhou(error: { message: string } | null) {
 }
 
 export async function listar(db: SupabaseClient, usuarioId: string, ordem: OrdemGrupos = 'created_at'): Promise<Group[]> {
-  const { data, error } = await db.from('view_groups').select('*').eq('user_id', usuarioId).order(ordem);
+  const consulta = db.from('view_groups').select('*').eq('user_id', usuarioId);
+  const { data, error } = ordem === 'position'
+    ? await consulta.order('position', { ascending: true, nullsFirst: false }).order('created_at')
+    : await consulta.order(ordem);
   falhou(error);
   return (data as Group[]) || [];
 }

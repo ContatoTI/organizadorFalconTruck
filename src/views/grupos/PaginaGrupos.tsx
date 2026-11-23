@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { clienteAuth } from '@/src/views/autenticacao/clienteAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useGroups } from '@/src/views/grupos/GroupsContext';
-import { Plus, X, Edit2, Trash2, Clock, List, Eye, EyeOff, Check, Smile } from 'lucide-react';
+import { Plus, X, Edit2, Trash2, Clock, List, Eye, EyeOff, Check, Smile, ChevronUp, ChevronDown } from 'lucide-react';
 import { grupoAPI } from './clienteGrupos';
 import { montarDadosGrupo } from '@/src/models/grupos/grupos';
 import { GroupIcon, PROJECT_COLORS, GROUP_EMOJIS, cn, getSoftCardStyle } from '@/src/lib/utils';
@@ -168,6 +168,30 @@ function ConteudoGrupos() {
     window.dispatchEvent(new CustomEvent('tasks-updated'));
   };
 
+  // Criação rápida: só o nome, vira uma lista no fim.
+  const [novoNome, setNovoNome] = useState('');
+  const criarRapido = async () => {
+    const title = novoNome.trim();
+    if (!title) return;
+    setNovoNome('');
+    const res = await grupoAPI.create({ title, type: 'list' });
+    if (res.success && res.data) addGroup(res.data);
+    else console.error('Erro ao criar grupo:', res.error);
+  };
+
+  // Sobe/desce um grupo: regrava a posição de todos (poucos itens).
+  const moverGrupo = async (index: number, delta: -1 | 1) => {
+    const alvo = index + delta;
+    if (alvo < 0 || alvo >= groups.length) return;
+    const ordem = [...groups];
+    [ordem[index], ordem[alvo]] = [ordem[alvo], ordem[index]];
+    ordem.forEach((g, i) => { if (g.position !== i) updateGroup(g.id, { position: i }); });
+    const resultados = await Promise.all(
+      ordem.map((g, i) => g.position !== i ? grupoAPI.update(g.id, { position: i }) : null)
+    );
+    if (resultados.some(r => r && !r.success)) refreshGroups();
+  };
+
   const toggleGroupVisibility = async (group: any) => {
     const next = !group.show_on_dashboard;
     // OPTIMISTIC: atualiza estado local antes da rede.
@@ -250,6 +274,17 @@ function ConteudoGrupos() {
         }
       />
 
+      <div className="flex items-center gap-2 mb-3">
+        <Input
+          value={novoNome}
+          onChange={(e) => setNovoNome(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && criarRapido()}
+          placeholder="Novo grupo: digite o nome e tecle Enter"
+          className="h-9"
+        />
+        <Button size="sm" onClick={criarRapido} disabled={!novoNome.trim()} className="h-9">Criar</Button>
+      </div>
+
       <div className="grid gap-3 md:grid-cols-2">
         {loading ? (
           <div className="col-span-2"><PageSkeleton rows={3} /></div>
@@ -267,7 +302,7 @@ function ConteudoGrupos() {
             />
           </div>
         ) : (
-          groups.map((group) => (
+          groups.map((group, index) => (
             <Card
               key={group.id}
               className={cn(
@@ -294,6 +329,16 @@ function ConteudoGrupos() {
                       </>
                     )}
                   </p>
+                </div>
+                <div className="flex flex-col">
+                  <button type="button" aria-label="Subir" disabled={index === 0} onClick={() => moverGrupo(index, -1)}
+                    className="text-muted-foreground hover:text-primary disabled:opacity-30">
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                  <button type="button" aria-label="Descer" disabled={index === groups.length - 1} onClick={() => moverGrupo(index, 1)}
+                    className="text-muted-foreground hover:text-primary disabled:opacity-30">
+                    <ChevronDown className="w-4 h-4" />
+                  </button>
                 </div>
                 <Button
                   variant="ghost" size="sm"

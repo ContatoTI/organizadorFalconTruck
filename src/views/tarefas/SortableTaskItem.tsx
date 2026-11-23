@@ -146,8 +146,8 @@ export const SortableTaskItem = memo(function SortableTaskItem({
       )}
 
       {/* 6-dot drag handle */}
-      <div 
-        {...attributes} 
+      <div
+        {...attributes}
         {...listeners}
         style={{ touchAction: 'none' }}
         className={cn(

@@ -26,6 +26,8 @@ export interface Group {
   /** Horario por dia da semana. Quando preenchido, manda em start/end/recurrence. */
   schedules?: BlockSchedule[] | null;
   show_on_dashboard: boolean;
+  /** Ordem manual na lista de grupos; nulo vai para o fim. */
+  position?: number | null;
   created_at: string;
 }
 
