@@ -224,6 +224,7 @@ function DashboardContent() {
   const STATUS_GROUPS = [
     { key: 'A_FAZER', label: 'A fazer', match: (s: string | null | undefined) => !s || s === 'A_FAZER' },
     { key: 'EM_ANDAMENTO', label: 'Em andamento', match: (s: string | null | undefined) => s === 'EM_ANDAMENTO' },
+    { key: 'ACOMPANHAMENTO', label: 'Acompanhamento', match: (s: string | null | undefined) => s === 'ACOMPANHAMENTO' },
     { key: 'REVISAO', label: 'Revisão', match: (s: string | null | undefined) => s === 'REVISAO' },
     { key: 'CONCLUIDO', label: 'Concluído', match: (s: string | null | undefined) => s === 'CONCLUIDO' },
   ] as const;
@@ -1390,7 +1391,7 @@ function DashboardContent() {
   };
 
   // ponytail: ordem de exibição na visão em lista — "Em andamento" antes de "A fazer" (Kanban sempre usa STATUS_GROUPS completo, ordem inalterada).
-  const LIST_STATUS_ORDER = ['EM_ANDAMENTO', 'A_FAZER', 'REVISAO', 'CONCLUIDO'];
+  const LIST_STATUS_ORDER = ['EM_ANDAMENTO', 'A_FAZER', 'ACOMPANHAMENTO', 'REVISAO', 'CONCLUIDO'];
   const visibleStatusGroups = STATUS_GROUPS.filter(g => {
     if (g.key === 'EM_ANDAMENTO') return listShowInProgress;
     if (g.key === 'REVISAO') return listShowReview;
@@ -2106,6 +2107,7 @@ function DashboardContent() {
       const statusStyle: Record<string, { dot: string; text: string; bg: string }> = {
         'A_FAZER': { dot: 'bg-slate-400', text: 'text-slate-600 dark:text-slate-300', bg: 'bg-slate-400/10' },
         'EM_ANDAMENTO': { dot: 'bg-blue-500', text: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-500/10' },
+        'ACOMPANHAMENTO': { dot: 'bg-purple-500', text: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-500/10' },
         'REVISAO': { dot: 'bg-yellow-500', text: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-500/10' },
         'CONCLUIDO': { dot: 'bg-green-500', text: 'text-green-600 dark:text-green-400', bg: 'bg-green-500/10' },
       };
@@ -2850,7 +2852,7 @@ function DashboardContent() {
                   key={col.key}
                   status={col.key}
                   label={col.label}
-                  color={col.key === 'A_FAZER' ? 'bg-slate-500' : col.key === 'REVISAO' ? 'bg-yellow-500' : col.key === 'CONCLUIDO' ? 'bg-green-500' : 'bg-blue-500'}
+                  color={col.key === 'A_FAZER' ? 'bg-slate-500' : col.key === 'REVISAO' ? 'bg-yellow-500' : col.key === 'ACOMPANHAMENTO' ? 'bg-purple-500' : col.key === 'CONCLUIDO' ? 'bg-green-500' : 'bg-blue-500'}
                   tasks={grouped[col.key] || []}
                   onSelect={setSelectedTask}
                   onToggle={toggleTask}
@@ -2915,6 +2917,7 @@ function DashboardContent() {
                     const statusStyle: Record<string, { dot: string; text: string; bg: string }> = {
                       'A_FAZER': { dot: 'bg-slate-400', text: 'text-slate-600 dark:text-slate-300', bg: 'bg-slate-400/10' },
                       'EM_ANDAMENTO': { dot: 'bg-blue-500', text: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-500/10' },
+                      'ACOMPANHAMENTO': { dot: 'bg-purple-500', text: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-500/10' },
                       'REVISAO': { dot: 'bg-yellow-500', text: 'text-yellow-700 dark:text-yellow-400', bg: 'bg-yellow-500/10' },
                       'CONCLUIDO': { dot: 'bg-green-500', text: 'text-green-600 dark:text-green-400', bg: 'bg-green-500/10' },
                     };

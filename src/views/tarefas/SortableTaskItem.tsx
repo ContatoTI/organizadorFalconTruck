@@ -16,6 +16,7 @@ export interface AssigneeCandidate {
 const STATUS_DOT_COLOR: Record<string, string> = {
   A_FAZER: '#94a3b8',
   EM_ANDAMENTO: '#3b82f6',
+  ACOMPANHAMENTO: '#a855f7',
   REVISAO: '#eab308',
   CONCLUIDO: '#22c55e',
 };
@@ -23,6 +24,7 @@ const STATUS_DOT_COLOR: Record<string, string> = {
 const STATUS_BADGE_CLASS: Record<string, string> = {
   A_FAZER: 'bg-slate-500 text-white',
   EM_ANDAMENTO: 'bg-blue-500 text-white',
+  ACOMPANHAMENTO: 'bg-purple-500 text-white',
   REVISAO: 'bg-amber-500 text-black',
   CONCLUIDO: 'bg-green-600 text-white',
 };
@@ -30,6 +32,7 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   A_FAZER: 'A Fazer',
   EM_ANDAMENTO: 'Em Andamento',
+  ACOMPANHAMENTO: 'Acompanhamento',
   REVISAO: 'Em Revisão',
   CONCLUIDO: 'Concluído',
 };
@@ -265,6 +268,10 @@ export const SortableTaskItem = memo(function SortableTaskItem({
               <SelectItem value="EM_ANDAMENTO">
                 <span className="w-2 h-2 rounded-full bg-blue-500" />
                 Em Andamento
+              </SelectItem>
+              <SelectItem value="ACOMPANHAMENTO">
+                <span className="w-2 h-2 rounded-full bg-purple-500" />
+                Acompanhamento
               </SelectItem>
               <SelectItem value="REVISAO">
                 <span className="w-2 h-2 rounded-full bg-amber-500" />

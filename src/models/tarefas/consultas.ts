@@ -124,7 +124,7 @@ async function paradasParaRevisao(db: SupabaseClient, tarefas: Task[], agoraMs =
   const limite = new Date(agoraMs - UM_DIA_MS).toISOString();
   const paradas = tarefas.filter(t => {
     if (t.is_completed) return false;
-    if (t.status === 'CONCLUIDO' || t.status === 'REVISAO') return false;
+    if (t.status === 'CONCLUIDO' || t.status === 'REVISAO' || t.status === 'ACOMPANHAMENTO') return false;
     if (!t.status_changed_at) return false;
     return t.status_changed_at < limite;
   });

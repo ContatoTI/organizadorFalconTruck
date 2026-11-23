@@ -30,14 +30,16 @@ import { perfilAPI } from '@/src/views/perfis/clientePerfis';
 const STATUS_OPTIONS = [
   { value: 'A_FAZER', label: 'A fazer' },
   { value: 'EM_ANDAMENTO', label: 'Em andamento' },
+  { value: 'ACOMPANHAMENTO', label: 'Acompanhamento' },
   { value: 'REVISAO', label: 'Revisão' },
   { value: 'CONCLUIDO', label: 'Concluído' },
 ] as const;
 
 function getAllowedStatuses(current: string | null): string[] {
   switch (current) {
-    case 'A_FAZER': return ['A_FAZER', 'EM_ANDAMENTO'];
-    case 'EM_ANDAMENTO': return ['EM_ANDAMENTO', 'REVISAO'];
+    case 'A_FAZER': return ['A_FAZER', 'EM_ANDAMENTO', 'ACOMPANHAMENTO'];
+    case 'EM_ANDAMENTO': return ['EM_ANDAMENTO', 'ACOMPANHAMENTO', 'REVISAO'];
+    case 'ACOMPANHAMENTO': return ['ACOMPANHAMENTO', 'A_FAZER', 'EM_ANDAMENTO', 'REVISAO'];
     case 'REVISAO': return ['REVISAO', 'EM_ANDAMENTO', 'CONCLUIDO'];
     case 'CONCLUIDO': return ['CONCLUIDO', 'A_FAZER'];
     default: return ['A_FAZER', 'EM_ANDAMENTO'];
